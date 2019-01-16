@@ -1,0 +1,31 @@
+{
+  "title":"SubsKey",
+  "keySelect":"KEY_MSIDOnly",
+  "mmeUpdateData":{
+    "mmePurgeFlag":false,
+    "mmeRoamRest":false,
+    "mmeRest":false,
+    "mmeHost":"mme42.ktlte.com",
+    "mmePlmn":"54F080",
+    "mmeUFlag":2,
+    "mmeRat":1004,
+    "mmeVgmlc":"040A0A0A0A000000000000000000000000",
+    "regTimeMme":"2018-07-03T10:08:04.747029+09:00"
+  },
+  "suckyou":{
+    "mmePurgeFlag":false,
+    "mmeRoamRest":false,
+    "mmeRest":false,
+    "mmeHost":"mme42.ktlte.com",
+    "mmePlmn":"54F080",
+    "mmeUFlag":2,
+    "mmeRat":1004,
+      "roamType":[
+        "nIGIMA",
+        "LTE_MME2"
+      ],
+    "mmeVgmlc":"040A0A0A0A000000000000000000000000",
+    "regTimeMme":"2018-07-03T10:08:04.747029+09:00"
+  },
+  "imsi":"450081700007486"
+}

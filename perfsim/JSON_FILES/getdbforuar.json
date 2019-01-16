@@ -1,0 +1,11 @@
+{
+  "title":"DbKey",
+  "keyType":"KEY_PRI_PUI",
+  "prid":"450081700007486@ims.mnc008.mcc450.3gppnetwork.org",
+  "puidSet":[
+    {
+      "puid":"sip:01072017486@ims.mnc008.mcc450.3gppnetwork.org"
+    }
+  ],
+  "qry3gdbFlag":1
+}

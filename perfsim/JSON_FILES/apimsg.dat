@@ -1,0 +1,181 @@
+[GENERAL]
+RSRC_NAME = Perf-Testing
+#RSRC_NAME = GetDataLte
+#RSRC_NAME = EpsLoc
+#RSRC_NAME = GetDbForUar
+#RSRC_NAME = GetDbForMar
+#RSRC_NAME = PutDbForMar
+#RSRC_NAME = GetDbSar
+#RSRC_NAME = PutDbForSAR
+#RSRC_NAME = GetDbLir
+#RSRC_NAME = GetDataKor
+#RSRC_NAME = GetDataUdr
+
+
+[Perf-Testing]
+{
+  "title":"SubsKey",
+  "keySelect":"KEY_MDNOnly",
+  "msisdn":"01070007815"
+}
+
+
+[GetDataLte]
+{
+  "title":"SubsKey",
+  "keySelect":"KEY_MSIDOnly",
+  "imsi":"450081700007486"
+}
+
+
+[EpsLoc]
+{
+  "imsi":"450081700007486",
+  "msisdn":"",
+  "roamType":[
+    "LTE_MME"
+  ],
+  "lastNodePlmn":"HOME_PLMN",
+  "mmeUpdateData":{
+    "mmePurgeFlag":false,
+    "mmeRoamRest":false,
+    "mmeRest":false,
+    "mmeHost":"mme42.ktlte.com",
+    "mmeRealm":"ktlte.com",
+    "mmeFeat":"FFFFFFFF",
+    "mmeFeat2":"00000000",
+    "mmeFeat3":"00000000",
+    "mmeSgsnNum":"821029199988",
+    "mmePlmn":"54F080",
+    "mmeUFlag":2,
+    "mmeRat":1004,
+    "mmeVgmlc":"040A0A0A0A000000000000000000000000",
+    "regTimeMme":"2018-07-03T10:08:04.747029+09:00"
+  },
+  "lteOtherUpdateData":{
+    "urrp":0,
+    "imeiSv":"1234567890554450\u0001\u0001",
+    "trace2":"000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    "vopsSupp":257,
+    "srvccCapa":0
+  }
+}
+
+
+[GetDbForUar]
+{
+  "title":"DbKey",
+  "keyType":"KEY_PRI_PUI",
+  "prid":"450081700007486@ims.mnc008.mcc450.3gppnetwork.org",
+  "puidSet":[
+    {
+      "puid":"sip:01072017486@ims.mnc008.mcc450.3gppnetwork.org"
+    }
+  ],
+  "qry3gdbFlag":1
+}
+
+
+[GetDbForMar]
+{
+  "title":"DbKey",
+  "keyType":"KEY_PRI_PUI",
+  "prid":"450081700007486@ims.mnc008.mcc450.3gppnetwork.org",
+  "puidSet":[
+    {
+      "puid":"sip:01072017486@ims.mnc008.mcc450.3gppnetwork.org"
+    }
+  ],
+  "scscfName":"sip:wmm-scscf-v6.ims.mnc008.mcc450.3gppnetwork.org",
+  "qry3gdbFlag":0
+}
+
+
+[PutDbForMar] 
+{
+  "title":"PutMarData",
+  "imsId":"450081700007486",
+  "irsId":1,
+  "authFlag":1,
+  "reAsFlag":0,
+  "sCscfName":"sip:wmm-scscf-v6.ims.mnc008.mcc450.3gppnetwork.org",
+  "sqn":"000007641580"
+}
+
+
+[GetDbSar] 
+{
+  "title":"DbKeyForSar",
+  "keyType":"KEY_PRI_PUI",
+  "prid":"450081700007486@ims.mnc008.mcc450.3gppnetwork.org",
+  "puidSet":[
+    {
+      "puid":"sip:01072017486@ims.mnc008.mcc450.3gppnetwork.org"
+    }
+  ],
+  "qry3gdbFlag":0,
+  "profFlag":1,
+  "qryScscfRestore":0
+}
+
+
+[PutDbForSAR]
+{
+  "title":"PutSarData",
+  "sarDataSet":[
+    {
+      "puid":"sip:01072017486@ims.mnc008.mcc450.3gppnetwork.org",
+      "prid":"450081700007486@ims.mnc008.mcc450.3gppnetwork.org",
+      "imsId":"450081700007486",
+      "authFlag":0,
+      "regSts":2,
+      "irsId":1,
+      "idType":0,
+      "sCscfName":"sip:wmm-scscf-v6.ims.mnc008.mcc450.3gppnetwork.org",
+      "sCscfRealm":"ktims.com",
+      "reAssignFlag":0,
+      "cscfFeat":13,
+      "deRegType":0,
+      "regTime":"2018-07-03T16:08:42.069304+09:00",
+      "deRegTime":"******",
+      "pridIdx":0,
+      "sCscfRestoreInfo":{
+        "imsId":"450081700007486",
+        "prid":"450081700007486@ims.mnc008.mcc450.3gppnetwork.org",
+        "restoreInfo":"0001026450084444441234@ims.kt.com0640098<sip:TEST%03d.@wm-pcscf4.octave.com;ftk=MjguMTI2LjU2LjE4Nzo1MDYwMTI1LjE1Mi4xLjE1Mzo1MDgwIDE;ob;l
+        "updateTime":"2018-07-03T16:08:42.071166+09:00"
+      }
+    }
+  ],
+  "timeFlag":1,
+  "rtrFlag":0
+}
+
+
+[GetDbLir]
+{
+  "title":"DbKey",
+  "keyType":"KEY_ONLY_PUI",
+  "puidSet":[
+    {
+      "puid":"sip:01072017486@ims.mnc008.mcc450.3gppnetwork.org"
+    }
+  ],
+  "qry3gdbFlag":0
+}
+
+
+[GetDataKor]
+{
+  "title":"SubsKey",
+  "keySelect":"KEY_MDNOnly",
+  "msisdn":"01070007815"
+}
+
+
+[GetDataUdr]
+{
+  "title":"SubsKey",
+  "keySelect":"KEY_MDNOnly",
+  "msisdn":"01070007815"
+}

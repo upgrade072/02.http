@@ -1,0 +1,823 @@
+Flat profile:
+
+Each sample counts as 0.01 seconds.
+  %   cumulative   self              self     total           
+ time   seconds   seconds    calls  us/call  us/call  name    
+ 13.00     11.42    11.42                             lh_table_lookup_entry
+ 10.55     20.69     9.27                             json_tokener_parse_ex
+  8.99     28.59     7.90                             lh_char_hash
+  6.99     34.73     6.14 114621430    0.05     0.05  set_key_change
+  5.37     39.45     4.72 76649278     0.06     0.06  get_parse_data
+  5.26     44.07     4.62                             min_heap_shift_down_
+  4.76     48.25     4.18                             json_escape_str
+  4.18     51.92     3.67                             shmqlib_getMsg
+  3.86     55.31     3.39 10841241     0.31     1.41  recurse_obj
+  2.63     57.62     2.31                             printbuf_memappend
+  2.60     59.90     2.28                             lh_table_insert
+  2.48     62.08     2.18                             sprintbuf
+  1.91     63.76     1.68                             shmqlib_putMsg
+  1.81     65.35     1.59                             receiverThread
+  1.72     66.86     1.51                             min_heap_shift_up_
+  1.70     68.36     1.50  2383817     0.63     2.46  replace_obj
+  1.54     69.71     1.35                             event_del_nolock_
+  1.37     70.91     1.20  2161618     0.56     0.56  ctx_timeout
+  1.20     71.96     1.05                             event_add_nolock_
+  1.20     73.01     1.05 21345180     0.05     0.05  set_parse_data
+  1.00     73.89     0.88                             event_assign
+  0.87     74.65     0.76                             lh_char_equal
+  0.79     75.34     0.69                             event_mm_calloc_
+  0.69     75.95     0.61  2492977     0.24     6.19  send_action
+  0.68     76.55     0.60                             lh_ptr_equal
+  0.61     77.09     0.54                             event_base_once
+  0.54     77.56     0.48                             event_mm_free_
+  0.52     78.02     0.46                             event_debug_unassign
+  0.50     78.46     0.44                             event_queue_insert_timeout
+  0.49     78.89     0.43  1622839     0.26     2.22  recv_action
+  0.48     79.31     0.42                             json_object_object_to_json_string
+  0.42     79.68     0.37                             event_process_active_single_queue
+  0.42     80.05     0.37                             json_tokener_reset_level
+  0.41     80.41     0.36   619709     0.58     0.58  set_key_val
+  0.40     80.77     0.36  1289793     0.28     1.53  check_fwd_field
+  0.39     81.11     0.34                             json_object_is_type
+  0.31     81.38     0.27                             printbuf_reset
+  0.30     81.64     0.26                             lh_table_new
+  0.28     81.89     0.25                             json_object_put
+  0.25     82.11     0.22                             event_queue_insert_active
+  0.24     82.32     0.22  2920744     0.07     2.94  change_keyvalue
+  0.24     82.53     0.21  2951959     0.07     0.07  reset_key_val
+  0.24     82.74     0.21                             json_object_object_add
+  0.24     82.95     0.21                             printbuf_new
+  0.22     83.14     0.19                             lh_table_resize
+  0.20     83.32     0.18                             Free_CtxId
+  0.20     83.50     0.18                             json_parse_int64
+  0.18     83.66     0.16                             array_list_get_idx
+  0.17     83.81     0.15                             event_once_cb
+  0.17     83.96     0.15                             min_heap_erase_
+  0.16     84.10     0.14                             lh_table_free
+  0.16     84.24     0.14                             json_object_string_to_json_string
+  0.15     84.37     0.13                             json_object_array_get_idx
+  0.15     84.50     0.13                             commlib_getCurrTime_double
+  0.14     84.62     0.12                             json_object_array_to_json_string
+  0.14     84.74     0.12                             json_object_get
+  0.14     84.86     0.12                             json_object_new
+  0.14     84.98     0.12                             lh_table_lookup
+  0.13     85.09     0.11                             event_active_nolock_
+  0.12     85.19     0.11  2412953     0.04     0.04  make_ahif_header
+  0.11     85.29     0.10                             array_list_add
+  0.11     85.39     0.10                             array_list_put_idx
+  0.11     85.49     0.10                             event_queue_remove_timeout
+  0.11     85.59     0.10                             json_object_get_object
+  0.09     85.67     0.08  3103481     0.03     0.03  pf_stat_inc
+  0.09     85.75     0.08                             json_object_new_string
+  0.08     85.82     0.07                             evthread_posix_unlock
+  0.08     85.89     0.07                             json_object_get_type
+  0.08     85.96     0.07                             printbuf_free
+  0.08     86.03     0.07                             json_tokener_reset
+  0.08     86.10     0.07  1737571     0.04     0.04  pf_recv_stat_inc
+  0.08     86.17     0.07                             is_common_timeout
+  0.07     86.23     0.06                             json_object_object_delete
+  0.07     86.29     0.06                             json_object_string_delete
+  0.07     86.35     0.06                             lh_table_delete_entry
+  0.07     86.41     0.06                             min_heap_size_
+  0.07     86.47     0.06                             event_queue_remove_active
+  0.06     86.53     0.06                             min_heap_elt_is_top_
+  0.06     86.58     0.06                             min_heap_reserve_
+  0.06     86.63     0.05  1960731     0.03     0.03  set_call_end_info
+  0.06     86.68     0.05                             array_list_free
+  0.06     86.73     0.05                             json_object_object_get
+  0.06     86.78     0.05                             min_heap_top_
+  0.05     86.83     0.05   570799     0.08     0.08  check_success
+  0.05     86.87     0.05                             event_callback_activate_nolock_
+  0.05     86.91     0.04                             evthread_posix_lock
+  0.05     86.95     0.04                             json_object_boolean_to_json_string
+  0.05     86.99     0.04                             json_object_new_object
+  0.05     87.03     0.04                             timeout_process
+  0.04     87.07     0.04  1839877     0.02     0.02  save_call_end_info
+  0.04     87.10     0.04                             gettime
+  0.03     87.13     0.03  6837968     0.00     0.00  get_ctx
+  0.03     87.16     0.03  1475807     0.02     0.69  check_result
+  0.03     87.19     0.03   575391     0.05     0.73  perf_gen
+  0.03     87.22     0.03                             event_once
+  0.03     87.25     0.03                             event_to_event_callback
+  0.03     87.28     0.03                             evthread_posix_lock_free
+  0.03     87.31     0.03                             json_object_array_delete
+  0.03     87.34     0.03                             json_object_array_length
+  0.03     87.37     0.03                             json_object_int_to_json_string
+  0.03     87.40     0.03                             json_object_to_file
+  0.03     87.43     0.03                             json_object_to_json_string
+  0.03     87.46     0.03                             json_tokener_free
+  0.03     87.49     0.03                             libconfig_yyparse
+  0.02     87.51     0.02                             commlib_getOtherSideMachineName
+  0.02     87.53     0.02                             event_callback_to_event
+  0.02     87.55     0.02                             evthread_notify_base
+  0.02     87.57     0.02                             json_object_array_add
+  0.02     87.59     0.02                             json_object_new_array
+  0.02     87.61     0.02                             json_tokener_new
+  0.02     87.63     0.02                             json_tokener_parse
+  0.02     87.65     0.02                             main
+  0.02     87.67     0.02                             min_heap_elem_init_
+  0.02     87.69     0.02                             print_parse_result
+  0.01     87.70     0.01   659932     0.02     0.02  assign_ctx
+  0.01     87.71     0.01                             Get_CtxId
+  0.01     87.72     0.01                             array_list_new
+  0.01     87.73     0.01                             epoll_nochangelist_del
+  0.01     87.74     0.01                             event_queue_insert_inserted
+  0.01     87.75     0.01                             event_queue_remove_inserted
+  0.01     87.76     0.01                             evthread_posix_get_id
+  0.01     87.77     0.01                             json_object_double_to_json_string
+  0.01     87.78     0.01                             json_object_get_array
+  0.01     87.79     0.01                             lh_abort
+  0.01     87.80     0.01                             lh_table_delete
+  0.01     87.81     0.01                             min_heap_push_
+  0.01     87.82     0.01                             shmqlib_init
+  0.01     87.83     0.01   572603     0.01     0.01  make_cid
+  0.01     87.83     0.01                             event_callback_activate_
+  0.01     87.84     0.01                             event_debug_map_HT_REP_IS_BAD_
+  0.01     87.84     0.01                             event_mm_realloc_
+  0.01     87.85     0.01                             frame_dummy
+  0.01     87.85     0.01                             min_heap_shift_up_unconditional_
+  0.00     87.85     0.00  1663988     0.00     0.00  resolve_cid
+  0.00     87.85     0.00       27     0.00     0.00  calc_and_print_sndrcv
+  0.00     87.85     0.00       24     0.00     0.00  main_tick_callback
+  0.00     87.85     0.00       22     0.00     0.00  move_stat_return_stat
+  0.00     87.85     0.00       21     0.00     0.00  calc_and_print_stat
+  0.00     87.85     0.00        4     0.00     0.00  set_scenario_at_thread
+  0.00     87.85     0.00        1     0.00     0.00  config_load
+  0.00     87.85     0.00        1     0.00     0.00  create_thread
+  0.00     87.85     0.00        1     0.00     0.00  getch
+  0.00     87.85     0.00        1     0.00     0.00  init_cfg
+  0.00     87.85     0.00        1     0.00     0.00  init_sem
+  0.00     87.85     0.00        1     0.00     0.00  initialize
+  0.00     87.85     0.00        1     0.00     0.00  load_scenario_suit
+  0.00     87.85     0.00        1     0.00     0.00  restore_term
+
+ %         the percentage of the total running time of the
+time       program used by this function.
+
+cumulative a running sum of the number of seconds accounted
+ seconds   for by this function and those listed above it.
+
+ self      the number of seconds accounted for by this
+seconds    function alone.  This is the major sort for this
+           listing.
+
+calls      the number of times this function was invoked, if
+           this function is profiled, else blank.
+ 
+ self      the average number of milliseconds spent in this
+ms/call    function per call, if this function is profiled,
+	   else blank.
+
+ total     the average number of milliseconds spent in this
+ms/call    function and its descendents per call, if this 
+	   function is profiled, else blank.
+
+name       the name of the function.  This is the minor sort
+           for this listing. The index shows the location of
+	   the function in the gprof listing. If the index is
+	   in parenthesis it shows where it would appear in
+	   the gprof listing if it were to be printed.
+
+Copyright (C) 2012-2014 Free Software Foundation, Inc.
+
+Copying and distribution of this file, with or without modification,
+are permitted in any medium without royalty provided the copyright
+notice and this notice are preserved.
+
+		     Call graph (explanation follows)
+
+
+granularity: each sample hit covers 2 byte(s) for 0.01% of 87.85 seconds
+
+index % time    self  children    called     name
+                                                 <spontaneous>
+[1]     19.1    0.15   16.65                 event_once_cb [1]
+                0.61   14.83 2492977/2492977     send_action [2]
+                1.20    0.01 2161618/2161618     ctx_timeout [23]
+                0.00    0.00      24/24          main_tick_callback [136]
+-----------------------------------------------
+                0.61   14.83 2492977/2492977     event_once_cb [1]
+[2]     17.6    0.61   14.83 2492977         send_action [2]
+                0.22    8.37 2920744/2920744     change_keyvalue [6]
+                1.50    4.36 2383817/2383817     replace_obj [9]
+                0.21    0.00 2951959/2951959     reset_key_val [46]
+                0.11    0.00 2412953/2412953     make_ahif_header [63]
+                0.07    0.00 2525918/3103481     pf_stat_inc [68]
+                0.01    0.00 2704752/6837968     get_ctx [95]
+-----------------------------------------------
+                             23685357             recurse_obj [3]
+                0.21    0.74  671031/10841241     check_result [26]
+                0.36    1.26 1151043/10841241     check_fwd_field [19]
+                0.97    3.39 3089751/10841241     replace_obj [9]
+                1.85    6.51 5929416/10841241     change_keyvalue [6]
+[3]     17.4    3.39   11.91 10841241+23685357 recurse_obj [3]
+                6.14    0.00 114621430/114621430     set_key_change [8]
+                4.72    0.00 76649278/76649278     get_parse_data [11]
+                1.05    0.00 21345180/21345180     set_parse_data [25]
+                             23685357             recurse_obj [3]
+-----------------------------------------------
+                                                 <spontaneous>
+[4]     13.0   11.42    0.00                 lh_table_lookup_entry [4]
+-----------------------------------------------
+                                                 <spontaneous>
+[5]     10.6    9.27    0.00                 json_tokener_parse_ex [5]
+-----------------------------------------------
+                0.22    8.37 2920744/2920744     send_action [2]
+[6]      9.8    0.22    8.37 2920744         change_keyvalue [6]
+                1.85    6.51 5929416/10841241     recurse_obj [3]
+-----------------------------------------------
+                                                 <spontaneous>
+[7]      9.0    7.90    0.00                 lh_char_hash [7]
+-----------------------------------------------
+                6.14    0.00 114621430/114621430     recurse_obj [3]
+[8]      7.0    6.14    0.00 114621430         set_key_change [8]
+-----------------------------------------------
+                1.50    4.36 2383817/2383817     send_action [2]
+[9]      6.7    1.50    4.36 2383817         replace_obj [9]
+                0.97    3.39 3089751/10841241     recurse_obj [3]
+-----------------------------------------------
+                                                 <spontaneous>
+[10]     5.9    1.59    3.60                 receiverThread [10]
+                0.43    3.17 1622839/1622839     recv_action [15]
+-----------------------------------------------
+                4.72    0.00 76649278/76649278     recurse_obj [3]
+[11]     5.4    4.72    0.00 76649278         get_parse_data [11]
+-----------------------------------------------
+                                                 <spontaneous>
+[12]     5.3    4.62    0.00                 min_heap_shift_down_ [12]
+-----------------------------------------------
+                                                 <spontaneous>
+[13]     4.8    4.18    0.00                 json_escape_str [13]
+-----------------------------------------------
+                                                 <spontaneous>
+[14]     4.2    3.67    0.00                 shmqlib_getMsg [14]
+-----------------------------------------------
+                0.43    3.17 1622839/1622839     receiverThread [10]
+[15]     4.1    0.43    3.17 1622839         recv_action [15]
+                0.36    1.62 1289793/1289793     check_fwd_field [19]
+                0.03    0.99 1475807/1475807     check_result [26]
+                0.07    0.00 1737571/1737571     pf_recv_stat_inc [74]
+                0.05    0.00 1960731/1960731     set_call_end_info [83]
+                0.04    0.00 1839877/1839877     save_call_end_info [93]
+                0.01    0.00 1961601/6837968     get_ctx [95]
+                0.00    0.00 1663988/1663988     resolve_cid [134]
+-----------------------------------------------
+                                                 <spontaneous>
+[16]     2.6    2.31    0.00                 printbuf_memappend [16]
+-----------------------------------------------
+                                                 <spontaneous>
+[17]     2.6    2.28    0.00                 lh_table_insert [17]
+-----------------------------------------------
+                                                 <spontaneous>
+[18]     2.5    2.18    0.00                 sprintbuf [18]
+-----------------------------------------------
+                0.36    1.62 1289793/1289793     recv_action [15]
+[19]     2.3    0.36    1.62 1289793         check_fwd_field [19]
+                0.36    1.26 1151043/10841241     recurse_obj [3]
+-----------------------------------------------
+                                                 <spontaneous>
+[20]     1.9    1.68    0.00                 shmqlib_putMsg [20]
+-----------------------------------------------
+                                                 <spontaneous>
+[21]     1.7    1.51    0.00                 min_heap_shift_up_ [21]
+-----------------------------------------------
+                                                 <spontaneous>
+[22]     1.5    1.35    0.00                 event_del_nolock_ [22]
+-----------------------------------------------
+                1.20    0.01 2161618/2161618     event_once_cb [1]
+[23]     1.4    1.20    0.01 2161618         ctx_timeout [23]
+                0.01    0.00 2171615/6837968     get_ctx [95]
+-----------------------------------------------
+                                                 <spontaneous>
+[24]     1.2    1.05    0.00                 event_add_nolock_ [24]
+-----------------------------------------------
+                1.05    0.00 21345180/21345180     recurse_obj [3]
+[25]     1.2    1.05    0.00 21345180         set_parse_data [25]
+-----------------------------------------------
+                0.03    0.99 1475807/1475807     recv_action [15]
+[26]     1.2    0.03    0.99 1475807         check_result [26]
+                0.21    0.74  671031/10841241     recurse_obj [3]
+                0.05    0.00  570799/570799      check_success [87]
+-----------------------------------------------
+                                                 <spontaneous>
+[27]     1.0    0.88    0.00                 event_assign [27]
+-----------------------------------------------
+                                                 <spontaneous>
+[28]     0.9    0.76    0.00                 lh_char_equal [28]
+-----------------------------------------------
+                                                 <spontaneous>
+[29]     0.8    0.69    0.00                 event_mm_calloc_ [29]
+-----------------------------------------------
+                                                 <spontaneous>
+[30]     0.7    0.60    0.00                 lh_ptr_equal [30]
+-----------------------------------------------
+                                                 <spontaneous>
+[31]     0.6    0.54    0.00                 event_base_once [31]
+-----------------------------------------------
+                                                 <spontaneous>
+[32]     0.5    0.48    0.00                 event_mm_free_ [32]
+-----------------------------------------------
+                                                 <spontaneous>
+[33]     0.5    0.46    0.00                 event_debug_unassign [33]
+-----------------------------------------------
+                                                 <spontaneous>
+[34]     0.5    0.44    0.00                 event_queue_insert_timeout [34]
+-----------------------------------------------
+                                                 <spontaneous>
+[35]     0.5    0.02    0.42                 main [35]
+                0.03    0.39  575391/575391      perf_gen [37]
+                0.00    0.00       1/1           init_cfg [143]
+                0.00    0.00       1/1           config_load [140]
+                0.00    0.00       1/1           initialize [145]
+                0.00    0.00       1/1           create_thread [141]
+                0.00    0.00       1/1           restore_term [147]
+-----------------------------------------------
+                                                 <spontaneous>
+[36]     0.5    0.42    0.00                 json_object_object_to_json_string [36]
+-----------------------------------------------
+                0.03    0.39  575391/575391      main [35]
+[37]     0.5    0.03    0.39  575391         perf_gen [37]
+                0.36    0.00  619709/619709      set_key_val [40]
+                0.01    0.01  659932/659932      assign_ctx [115]
+                0.01    0.00  577563/3103481     pf_stat_inc [68]
+-----------------------------------------------
+                                                 <spontaneous>
+[38]     0.4    0.37    0.00                 event_process_active_single_queue [38]
+-----------------------------------------------
+                                                 <spontaneous>
+[39]     0.4    0.37    0.00                 json_tokener_reset_level [39]
+-----------------------------------------------
+                0.36    0.00  619709/619709      perf_gen [37]
+[40]     0.4    0.36    0.00  619709         set_key_val [40]
+-----------------------------------------------
+                                                 <spontaneous>
+[41]     0.4    0.34    0.00                 json_object_is_type [41]
+-----------------------------------------------
+                                                 <spontaneous>
+[42]     0.3    0.27    0.00                 printbuf_reset [42]
+-----------------------------------------------
+                                                 <spontaneous>
+[43]     0.3    0.26    0.00                 lh_table_new [43]
+-----------------------------------------------
+                                                 <spontaneous>
+[44]     0.3    0.25    0.00                 json_object_put [44]
+-----------------------------------------------
+                                                 <spontaneous>
+[45]     0.3    0.22    0.00                 event_queue_insert_active [45]
+-----------------------------------------------
+                0.21    0.00 2951959/2951959     send_action [2]
+[46]     0.2    0.21    0.00 2951959         reset_key_val [46]
+-----------------------------------------------
+                                                 <spontaneous>
+[47]     0.2    0.21    0.00                 json_object_object_add [47]
+-----------------------------------------------
+                                                 <spontaneous>
+[48]     0.2    0.21    0.00                 printbuf_new [48]
+-----------------------------------------------
+                                                 <spontaneous>
+[49]     0.2    0.19    0.00                 lh_table_resize [49]
+-----------------------------------------------
+                                                 <spontaneous>
+[50]     0.2    0.18    0.00                 Free_CtxId [50]
+-----------------------------------------------
+                                                 <spontaneous>
+[51]     0.2    0.18    0.00                 json_parse_int64 [51]
+-----------------------------------------------
+                                                 <spontaneous>
+[52]     0.2    0.16    0.00                 array_list_get_idx [52]
+-----------------------------------------------
+                                                 <spontaneous>
+[53]     0.2    0.15    0.00                 min_heap_erase_ [53]
+-----------------------------------------------
+                                                 <spontaneous>
+[54]     0.2    0.14    0.00                 lh_table_free [54]
+-----------------------------------------------
+                                                 <spontaneous>
+[55]     0.2    0.14    0.00                 json_object_string_to_json_string [55]
+-----------------------------------------------
+                                                 <spontaneous>
+[56]     0.1    0.13    0.00                 json_object_array_get_idx [56]
+-----------------------------------------------
+                                                 <spontaneous>
+[57]     0.1    0.13    0.00                 commlib_getCurrTime_double [57]
+-----------------------------------------------
+                                                 <spontaneous>
+[58]     0.1    0.12    0.00                 json_object_array_to_json_string [58]
+-----------------------------------------------
+                                                 <spontaneous>
+[59]     0.1    0.12    0.00                 json_object_get [59]
+-----------------------------------------------
+                                                 <spontaneous>
+[60]     0.1    0.12    0.00                 json_object_new [60]
+-----------------------------------------------
+                                                 <spontaneous>
+[61]     0.1    0.12    0.00                 lh_table_lookup [61]
+-----------------------------------------------
+                                                 <spontaneous>
+[62]     0.1    0.11    0.00                 event_active_nolock_ [62]
+-----------------------------------------------
+                0.11    0.00 2412953/2412953     send_action [2]
+[63]     0.1    0.11    0.00 2412953         make_ahif_header [63]
+-----------------------------------------------
+                                                 <spontaneous>
+[64]     0.1    0.10    0.00                 array_list_add [64]
+-----------------------------------------------
+                                                 <spontaneous>
+[65]     0.1    0.10    0.00                 array_list_put_idx [65]
+-----------------------------------------------
+                                                 <spontaneous>
+[66]     0.1    0.10    0.00                 event_queue_remove_timeout [66]
+-----------------------------------------------
+                                                 <spontaneous>
+[67]     0.1    0.10    0.00                 json_object_get_object [67]
+-----------------------------------------------
+                0.01    0.00  577563/3103481     perf_gen [37]
+                0.07    0.00 2525918/3103481     send_action [2]
+[68]     0.1    0.08    0.00 3103481         pf_stat_inc [68]
+-----------------------------------------------
+                                                 <spontaneous>
+[69]     0.1    0.08    0.00                 json_object_new_string [69]
+-----------------------------------------------
+                                                 <spontaneous>
+[70]     0.1    0.07    0.00                 evthread_posix_unlock [70]
+-----------------------------------------------
+                                                 <spontaneous>
+[71]     0.1    0.07    0.00                 json_object_get_type [71]
+-----------------------------------------------
+                                                 <spontaneous>
+[72]     0.1    0.07    0.00                 printbuf_free [72]
+-----------------------------------------------
+                                                 <spontaneous>
+[73]     0.1    0.07    0.00                 json_tokener_reset [73]
+-----------------------------------------------
+                0.07    0.00 1737571/1737571     recv_action [15]
+[74]     0.1    0.07    0.00 1737571         pf_recv_stat_inc [74]
+-----------------------------------------------
+                                                 <spontaneous>
+[75]     0.1    0.07    0.00                 is_common_timeout [75]
+-----------------------------------------------
+                                                 <spontaneous>
+[76]     0.1    0.06    0.00                 json_object_object_delete [76]
+-----------------------------------------------
+                                                 <spontaneous>
+[77]     0.1    0.06    0.00                 json_object_string_delete [77]
+-----------------------------------------------
+                                                 <spontaneous>
+[78]     0.1    0.06    0.00                 lh_table_delete_entry [78]
+-----------------------------------------------
+                                                 <spontaneous>
+[79]     0.1    0.06    0.00                 min_heap_size_ [79]
+-----------------------------------------------
+                                                 <spontaneous>
+[80]     0.1    0.06    0.00                 event_queue_remove_active [80]
+-----------------------------------------------
+                                                 <spontaneous>
+[81]     0.1    0.06    0.00                 min_heap_elt_is_top_ [81]
+-----------------------------------------------
+                                                 <spontaneous>
+[82]     0.1    0.06    0.00                 min_heap_reserve_ [82]
+-----------------------------------------------
+                0.05    0.00 1960731/1960731     recv_action [15]
+[83]     0.1    0.05    0.00 1960731         set_call_end_info [83]
+-----------------------------------------------
+                                                 <spontaneous>
+[84]     0.1    0.05    0.00                 array_list_free [84]
+-----------------------------------------------
+                                                 <spontaneous>
+[85]     0.1    0.05    0.00                 json_object_object_get [85]
+-----------------------------------------------
+                                                 <spontaneous>
+[86]     0.1    0.05    0.00                 min_heap_top_ [86]
+-----------------------------------------------
+                0.05    0.00  570799/570799      check_result [26]
+[87]     0.1    0.05    0.00  570799         check_success [87]
+-----------------------------------------------
+                                                 <spontaneous>
+[88]     0.1    0.05    0.00                 event_callback_activate_nolock_ [88]
+-----------------------------------------------
+                                                 <spontaneous>
+[89]     0.0    0.04    0.00                 evthread_posix_lock [89]
+-----------------------------------------------
+                                                 <spontaneous>
+[90]     0.0    0.04    0.00                 json_object_boolean_to_json_string [90]
+-----------------------------------------------
+                                                 <spontaneous>
+[91]     0.0    0.04    0.00                 json_object_new_object [91]
+-----------------------------------------------
+                                                 <spontaneous>
+[92]     0.0    0.04    0.00                 timeout_process [92]
+-----------------------------------------------
+                0.04    0.00 1839877/1839877     recv_action [15]
+[93]     0.0    0.04    0.00 1839877         save_call_end_info [93]
+-----------------------------------------------
+                                                 <spontaneous>
+[94]     0.0    0.04    0.00                 gettime [94]
+-----------------------------------------------
+                0.01    0.00 1961601/6837968     recv_action [15]
+                0.01    0.00 2171615/6837968     ctx_timeout [23]
+                0.01    0.00 2704752/6837968     send_action [2]
+[95]     0.0    0.03    0.00 6837968         get_ctx [95]
+-----------------------------------------------
+                                                 <spontaneous>
+[96]     0.0    0.03    0.00                 event_once [96]
+-----------------------------------------------
+                                                 <spontaneous>
+[97]     0.0    0.03    0.00                 event_to_event_callback [97]
+-----------------------------------------------
+                                                 <spontaneous>
+[98]     0.0    0.03    0.00                 evthread_posix_lock_free [98]
+-----------------------------------------------
+                                                 <spontaneous>
+[99]     0.0    0.03    0.00                 json_object_array_delete [99]
+-----------------------------------------------
+                                                 <spontaneous>
+[100]    0.0    0.03    0.00                 json_object_array_length [100]
+-----------------------------------------------
+                                                 <spontaneous>
+[101]    0.0    0.03    0.00                 json_object_int_to_json_string [101]
+-----------------------------------------------
+                                                 <spontaneous>
+[102]    0.0    0.03    0.00                 json_object_to_file [102]
+-----------------------------------------------
+                                                 <spontaneous>
+[103]    0.0    0.03    0.00                 json_object_to_json_string [103]
+-----------------------------------------------
+                                                 <spontaneous>
+[104]    0.0    0.03    0.00                 json_tokener_free [104]
+-----------------------------------------------
+                                                 <spontaneous>
+[105]    0.0    0.03    0.00                 libconfig_yyparse [105]
+-----------------------------------------------
+                                                 <spontaneous>
+[106]    0.0    0.02    0.00                 commlib_getOtherSideMachineName [106]
+-----------------------------------------------
+                                                 <spontaneous>
+[107]    0.0    0.02    0.00                 event_callback_to_event [107]
+-----------------------------------------------
+                                                 <spontaneous>
+[108]    0.0    0.02    0.00                 evthread_notify_base [108]
+-----------------------------------------------
+                                                 <spontaneous>
+[109]    0.0    0.02    0.00                 json_object_array_add [109]
+-----------------------------------------------
+                                                 <spontaneous>
+[110]    0.0    0.02    0.00                 json_object_new_array [110]
+-----------------------------------------------
+                                                 <spontaneous>
+[111]    0.0    0.02    0.00                 json_tokener_new [111]
+-----------------------------------------------
+                                                 <spontaneous>
+[112]    0.0    0.02    0.00                 json_tokener_parse [112]
+-----------------------------------------------
+                                                 <spontaneous>
+[113]    0.0    0.02    0.00                 min_heap_elem_init_ [113]
+-----------------------------------------------
+                                                 <spontaneous>
+[114]    0.0    0.02    0.00                 print_parse_result [114]
+-----------------------------------------------
+                0.01    0.01  659932/659932      perf_gen [37]
+[115]    0.0    0.01    0.01  659932         assign_ctx [115]
+                0.01    0.00  572603/572603      make_cid [128]
+-----------------------------------------------
+                                                 <spontaneous>
+[116]    0.0    0.01    0.00                 Get_CtxId [116]
+-----------------------------------------------
+                                                 <spontaneous>
+[117]    0.0    0.01    0.00                 array_list_new [117]
+-----------------------------------------------
+                                                 <spontaneous>
+[118]    0.0    0.01    0.00                 epoll_nochangelist_del [118]
+-----------------------------------------------
+                                                 <spontaneous>
+[119]    0.0    0.01    0.00                 event_queue_insert_inserted [119]
+-----------------------------------------------
+                                                 <spontaneous>
+[120]    0.0    0.01    0.00                 event_queue_remove_inserted [120]
+-----------------------------------------------
+                                                 <spontaneous>
+[121]    0.0    0.01    0.00                 evthread_posix_get_id [121]
+-----------------------------------------------
+                                                 <spontaneous>
+[122]    0.0    0.01    0.00                 json_object_double_to_json_string [122]
+-----------------------------------------------
+                                                 <spontaneous>
+[123]    0.0    0.01    0.00                 json_object_get_array [123]
+-----------------------------------------------
+                                                 <spontaneous>
+[124]    0.0    0.01    0.00                 lh_abort [124]
+-----------------------------------------------
+                                                 <spontaneous>
+[125]    0.0    0.01    0.00                 lh_table_delete [125]
+-----------------------------------------------
+                                                 <spontaneous>
+[126]    0.0    0.01    0.00                 min_heap_push_ [126]
+-----------------------------------------------
+                                                 <spontaneous>
+[127]    0.0    0.01    0.00                 shmqlib_init [127]
+-----------------------------------------------
+                0.01    0.00  572603/572603      assign_ctx [115]
+[128]    0.0    0.01    0.00  572603         make_cid [128]
+-----------------------------------------------
+                                                 <spontaneous>
+[129]    0.0    0.01    0.00                 event_callback_activate_ [129]
+-----------------------------------------------
+                                                 <spontaneous>
+[130]    0.0    0.01    0.00                 event_debug_map_HT_REP_IS_BAD_ [130]
+-----------------------------------------------
+                                                 <spontaneous>
+[131]    0.0    0.01    0.00                 event_mm_realloc_ [131]
+-----------------------------------------------
+                                                 <spontaneous>
+[132]    0.0    0.01    0.00                 frame_dummy [132]
+-----------------------------------------------
+                                                 <spontaneous>
+[133]    0.0    0.01    0.00                 min_heap_shift_up_unconditional_ [133]
+-----------------------------------------------
+                0.00    0.00 1663988/1663988     recv_action [15]
+[134]    0.0    0.00    0.00 1663988         resolve_cid [134]
+-----------------------------------------------
+                0.00    0.00      27/27          main_tick_callback [136]
+[135]    0.0    0.00    0.00      27         calc_and_print_sndrcv [135]
+-----------------------------------------------
+                0.00    0.00      24/24          event_once_cb [1]
+[136]    0.0    0.00    0.00      24         main_tick_callback [136]
+                0.00    0.00      27/27          calc_and_print_sndrcv [135]
+                0.00    0.00      21/21          calc_and_print_stat [138]
+-----------------------------------------------
+                0.00    0.00      22/22          calc_and_print_stat [138]
+[137]    0.0    0.00    0.00      22         move_stat_return_stat [137]
+-----------------------------------------------
+                0.00    0.00      21/21          main_tick_callback [136]
+[138]    0.0    0.00    0.00      21         calc_and_print_stat [138]
+                0.00    0.00      22/22          move_stat_return_stat [137]
+-----------------------------------------------
+                0.00    0.00       4/4           initialize [145]
+[139]    0.0    0.00    0.00       4         set_scenario_at_thread [139]
+-----------------------------------------------
+                0.00    0.00       1/1           main [35]
+[140]    0.0    0.00    0.00       1         config_load [140]
+                0.00    0.00       1/1           load_scenario_suit [146]
+-----------------------------------------------
+                0.00    0.00       1/1           main [35]
+[141]    0.0    0.00    0.00       1         create_thread [141]
+-----------------------------------------------
+                0.00    0.00       1/1           modifyThread [684]
+[142]    0.0    0.00    0.00       1         getch [142]
+-----------------------------------------------
+                0.00    0.00       1/1           main [35]
+[143]    0.0    0.00    0.00       1         init_cfg [143]
+-----------------------------------------------
+                0.00    0.00       1/1           initialize [145]
+[144]    0.0    0.00    0.00       1         init_sem [144]
+-----------------------------------------------
+                0.00    0.00       1/1           main [35]
+[145]    0.0    0.00    0.00       1         initialize [145]
+                0.00    0.00       4/4           set_scenario_at_thread [139]
+                0.00    0.00       1/1           init_sem [144]
+-----------------------------------------------
+                0.00    0.00       1/1           config_load [140]
+[146]    0.0    0.00    0.00       1         load_scenario_suit [146]
+-----------------------------------------------
+                0.00    0.00       1/1           main [35]
+[147]    0.0    0.00    0.00       1         restore_term [147]
+-----------------------------------------------
+
+ This table describes the call tree of the program, and was sorted by
+ the total amount of time spent in each function and its children.
+
+ Each entry in this table consists of several lines.  The line with the
+ index number at the left hand margin lists the current function.
+ The lines above it list the functions that called this function,
+ and the lines below it list the functions this one called.
+ This line lists:
+     index	A unique number given to each element of the table.
+		Index numbers are sorted numerically.
+		The index number is printed next to every function name so
+		it is easier to look up where the function is in the table.
+
+     % time	This is the percentage of the `total' time that was spent
+		in this function and its children.  Note that due to
+		different viewpoints, functions excluded by options, etc,
+		these numbers will NOT add up to 100%.
+
+     self	This is the total amount of time spent in this function.
+
+     children	This is the total amount of time propagated into this
+		function by its children.
+
+     called	This is the number of times the function was called.
+		If the function called itself recursively, the number
+		only includes non-recursive calls, and is followed by
+		a `+' and the number of recursive calls.
+
+     name	The name of the current function.  The index number is
+		printed after it.  If the function is a member of a
+		cycle, the cycle number is printed between the
+		function's name and the index number.
+
+
+ For the function's parents, the fields have the following meanings:
+
+     self	This is the amount of time that was propagated directly
+		from the function into this parent.
+
+     children	This is the amount of time that was propagated from
+		the function's children into this parent.
+
+     called	This is the number of times this parent called the
+		function `/' the total number of times the function
+		was called.  Recursive calls to the function are not
+		included in the number after the `/'.
+
+     name	This is the name of the parent.  The parent's index
+		number is printed after it.  If the parent is a
+		member of a cycle, the cycle number is printed between
+		the name and the index number.
+
+ If the parents of the function cannot be determined, the word
+ `<spontaneous>' is printed in the `name' field, and all the other
+ fields are blank.
+
+ For the function's children, the fields have the following meanings:
+
+     self	This is the amount of time that was propagated directly
+		from the child into the function.
+
+     children	This is the amount of time that was propagated from the
+		child's children to the function.
+
+     called	This is the number of times the function called
+		this child `/' the total number of times the child
+		was called.  Recursive calls by the child are not
+		listed in the number after the `/'.
+
+     name	This is the name of the child.  The child's index
+		number is printed after it.  If the child is a
+		member of a cycle, the cycle number is printed
+		between the name and the index number.
+
+ If there are any cycles (circles) in the call graph, there is an
+ entry for the cycle-as-a-whole.  This entry shows who called the
+ cycle (as parents) and the members of the cycle (as children.)
+ The `+' recursive calls entry shows the number of function calls that
+ were internal to the cycle, and the calls entry for each member shows,
+ for that member, how many times it was called from other members of
+ the cycle.
+
+Copyright (C) 2012-2014 Free Software Foundation, Inc.
+
+Copying and distribution of this file, with or without modification,
+are permitted in any medium without royalty provided the copyright
+notice and this notice are preserved.
+
+Index by function name
+
+  [50] Free_CtxId             [95] get_ctx                [17] lh_table_insert
+ [116] Get_CtxId              [11] get_parse_data         [61] lh_table_lookup
+  [64] array_list_add        [142] getch                   [4] lh_table_lookup_entry
+  [84] array_list_free        [94] gettime                [43] lh_table_new
+  [52] array_list_get_idx    [143] init_cfg               [49] lh_table_resize
+ [117] array_list_new        [144] init_sem              [105] libconfig_yyparse
+  [65] array_list_put_idx    [145] initialize            [146] load_scenario_suit
+ [115] assign_ctx             [75] is_common_timeout      [35] main
+ [135] calc_and_print_sndrcv  [13] json_escape_str       [136] main_tick_callback
+ [138] calc_and_print_stat   [109] json_object_array_add  [63] make_ahif_header
+   [6] change_keyvalue        [99] json_object_array_delete [128] make_cid
+  [19] check_fwd_field        [56] json_object_array_get_idx [113] min_heap_elem_init_
+  [26] check_result          [100] json_object_array_length [81] min_heap_elt_is_top_
+  [87] check_success          [58] json_object_array_to_json_string [53] min_heap_erase_
+  [57] commlib_getCurrTime_double [90] json_object_boolean_to_json_string [126] min_heap_push_
+ [106] commlib_getOtherSideMachineName [122] json_object_double_to_json_string [82] min_heap_reserve_
+ [140] config_load            [59] json_object_get        [12] min_heap_shift_down_
+ [141] create_thread         [123] json_object_get_array  [21] min_heap_shift_up_
+  [23] ctx_timeout            [67] json_object_get_object [133] min_heap_shift_up_unconditional_
+ [118] epoll_nochangelist_del [71] json_object_get_type   [79] min_heap_size_
+  [62] event_active_nolock_  [101] json_object_int_to_json_string (json_object.c) [86] min_heap_top_
+  [24] event_add_nolock_      [41] json_object_is_type   [137] move_stat_return_stat
+  [27] event_assign           [60] json_object_new        [37] perf_gen
+  [31] event_base_once       [110] json_object_new_array  [74] pf_recv_stat_inc
+ [129] event_callback_activate_ [91] json_object_new_object [68] pf_stat_inc
+  [88] event_callback_activate_nolock_ [69] json_object_new_string [114] print_parse_result
+ [107] event_callback_to_event [47] json_object_object_add [72] printbuf_free
+ [130] event_debug_map_HT_REP_IS_BAD_ [76] json_object_object_delete [16] printbuf_memappend
+  [33] event_debug_unassign   [85] json_object_object_get [48] printbuf_new
+  [22] event_del_nolock_      [36] json_object_object_to_json_string [42] printbuf_reset
+  [29] event_mm_calloc_       [44] json_object_put        [10] receiverThread
+  [32] event_mm_free_         [77] json_object_string_delete [3] recurse_obj
+ [131] event_mm_realloc_      [55] json_object_string_to_json_string [15] recv_action
+  [96] event_once            [102] json_object_to_file     [9] replace_obj
+   [1] event_once_cb         [103] json_object_to_json_string [46] reset_key_val
+  [38] event_process_active_single_queue [51] json_parse_int64 [134] resolve_cid
+  [45] event_queue_insert_active [104] json_tokener_free [147] restore_term
+ [119] event_queue_insert_inserted [111] json_tokener_new [93] save_call_end_info
+  [34] event_queue_insert_timeout [112] json_tokener_parse [2] send_action
+  [80] event_queue_remove_active [5] json_tokener_parse_ex [83] set_call_end_info
+ [120] event_queue_remove_inserted [73] json_tokener_reset [8] set_key_change
+  [66] event_queue_remove_timeout [39] json_tokener_reset_level (json_tokener.c) [40] set_key_val
+  [97] event_to_event_callback [124] lh_abort             [25] set_parse_data
+ [108] evthread_notify_base   [28] lh_char_equal         [139] set_scenario_at_thread
+ [121] evthread_posix_get_id   [7] lh_char_hash           [14] shmqlib_getMsg
+  [89] evthread_posix_lock    [30] lh_ptr_equal          [127] shmqlib_init
+  [98] evthread_posix_lock_free [125] lh_table_delete     [20] shmqlib_putMsg
+  [70] evthread_posix_unlock  [78] lh_table_delete_entry  [18] sprintbuf
+ [132] frame_dummy            [54] lh_table_free          [92] timeout_process
