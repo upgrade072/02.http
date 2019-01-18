@@ -1,10 +1,15 @@
 include ../../../MakeVars
 
-CFLAG		= $(CFLAGS) -g -DHAVE_INTTYPE_H
+TARGET		= epcf
+CFLAG		= -std=gnu99 $(CFLAGS) -g -DHAVE_INTTYPE_H
 #CFLAG		= $(CFLAGS) -pg -DHAVE_INTTYPES_H -DDEBUG -DLOCAL
 INC_PATH	= -I. -I../../../include -I../../../libsrc/COMM
 LIB_PATH	= -L../../../lib
+ifeq ($(TARGET),udmr)
 LIBS		= -lShmQueue -lcomm -lLog -lpthread -ldl -lrt -lm
+else
+LIBS		= -lcomm -lpthread -ldl -lrt -lm
+endif
 
 BUILD_INC_PATH	= -I../build/include
 BUILD_LIBS_PATH	= ../build/lib

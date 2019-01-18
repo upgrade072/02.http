@@ -4,7 +4,12 @@
 
 #include <http_comm.h>
 #include <commlib.h>
+#ifdef UDMR
 #include <stm_msgtypes_udmudr.h>
+#else
+#include <sfm_msgtypes.h>
+#include <stm_msgtypes.h>
+#endif
 
 /* ------------------------- libmml.c --------------------------- */
 int     get_mml_para_int (MMLReqMsgType *msg, char *paraName);

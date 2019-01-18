@@ -2,8 +2,10 @@
 
 char mySysName[COMM_MAX_NAME_LEN];
 char myProcName[COMM_MAX_NAME_LEN];
+#ifdef UDMR
 int logLevel = APPLOG_DEBUG;
 int *lOG_FLAG = &logLevel;
+#endif
 
 int httpcQid, httpcTxQid, httpcRxQid, ixpcQid;
 //int MSG_ID;
@@ -394,8 +396,13 @@ static int on_stream_close_callback(nghttp2_session *session, int32_t stream_id,
 #endif
 	/* send to upper */
 	pthread_mutex_lock(&PUTQUE_WRITE_LOCK);
+#ifdef UDMR
 	if (shmqlib_putMsg(httpcTxQid, (char*)&httpc_ctx->user_ctx, 
 				HTTPC_AHIF_SEND_SIZE(httpc_ctx->user_ctx)) <= 0) {
+#else
+	if (msgsnd(httpcTxQid, (char*)&httpc_ctx->user_ctx,
+				HTTPC_AHIF_SEND_SIZE(httpc_ctx->user_ctx) - sizeof(long), 0) < 0) {
+#endif
 		APPLOG(APPLOG_DEBUG, "%s) shmq_put fail", __func__);
 	}
 	pthread_mutex_unlock(&PUTQUE_WRITE_LOCK);
@@ -942,6 +949,9 @@ void *workerThread(void *arg)
 void *receiverThread(void *arg)
 {
 	char rxMsg[sizeof(AhifHttpCSMsgType) + 1024];
+#ifndef UDMR
+	size_t rxMsgSize = sizeof(rxMsg);
+#endif
 	httpc_ctx_t *ReqMsg = (httpc_ctx_t *)&rxMsg;
 	int thrd_idx, sess_idx, idx, session_id;
 	int list_index, found;
@@ -952,7 +962,11 @@ void *receiverThread(void *arg)
 	while(1)
 	{
         THRD_RECEIVER.running_index ++;
+#ifdef UDMR
 		if((msgSize = shmqlib_getMsg (httpcRxQid, rxMsg)) <= 0 ) {
+#else
+		if((msgSize = msgrcv (httpcRxQid, rxMsg, rxMsgSize - sizeof(long), 0, IPC_NOWAIT | MSG_NOERROR)) <= 0 ) {
+#endif
 			sleep_cnt ++;
 			if (sleep_cnt >= 1000) {
 				usleep(10);
@@ -1269,8 +1283,11 @@ int initialize()
 #else
 	sprintf(fname, "./log");
 #endif
+
+#ifdef UDMR
 	LogInit(myProcName, fname);
 	*lOG_FLAG = CLIENT_CONF.log_level;
+#endif
 	APPLOG(APPLOG_ERR, "[Welcome Process Started]");
 
     if (config_load() < 0) {
@@ -1305,10 +1322,27 @@ int initialize()
 	sprintf(fname, "%s", "../dev_check/temp.conf");
 #endif
 
+#ifdef UDMR
 	if ((httpcRxQid = shmqlib_getQid (fname, "AHIF_TO_APP_SHMQ", myProcName, SHMQLIB_MODE_GETTER)) < 0)
 		return -1;
 	if ((httpcTxQid = shmqlib_getQid (fname, "APP_TO_AHIF_SHMQ", myProcName, SHMQLIB_MODE_PUTTER)) < 0)
 		return -1;
+#else
+    if (conflib_getNthTokenInFileSection (fname, "AHIF_TO_APP_SHMQ", myProcName, 3, tmp) < 0)
+        return (-1);
+    key = strtol(tmp,0,0);
+    if ((httpcRxQid = msgget(key,IPC_CREAT|0666)) < 0) {
+        APPLOG(APPLOG_ERR, "[%s] msgget fail; key=0x%x,err=%d(%s)", __func__, key, errno, strerror(errno));
+        return (-1);
+    }
+    if (conflib_getNthTokenInFileSection (fname, "APP_TO_AHIF_SHMQ", myProcName, 3, tmp) < 0)
+        return (-1);
+    key = strtol(tmp,0,0);
+    if ((httpcTxQid = msgget(key,IPC_CREAT|0666)) < 0) {
+        APPLOG(APPLOG_ERR, "[%s] msgget fail; key=0x%x,err=%d(%s)", __func__, key, errno, strerror(errno));
+        return (-1);
+    }
+#endif
 
 	/* create recv-mq */
 #ifndef TEST
