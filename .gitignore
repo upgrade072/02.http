@@ -1,3 +1,7 @@
 *.zip
 *.tar
 *.gz
+*.o
+*.swp
+*.a
+tags

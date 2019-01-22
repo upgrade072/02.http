@@ -1,4 +1,3 @@
-
 #include "server.h"
 
 char mySysName[COMM_MAX_NAME_LEN];
@@ -12,9 +11,9 @@ int httpsQid, httpsTxQid, httpsRxQid, ixpcQid;
 //int MSG_ID;
 
 int THREAD_NO[MAX_THRD_NUM] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
-int THRD_RR;
+//int THRD_RR;
 int SESSION_ID;
-int TIME_VAL;
+//int TIME_VAL;
 int SESS_IDX;
 server_conf SERVER_CONF;
 
@@ -26,9 +25,11 @@ https_ctx_t *HttpsCtx[MAX_THRD_NUM];
 allow_list_t ALLOW_LIST[MAX_LIST_NUM];
 http_stat_t HTTP_STAT;
 
+hdr_index_t HDR_INDEX[MAX_HDR_RELAY_CNT] = {0,};
+
 static unsigned char next_proto_list[256];
 static size_t next_proto_list_len;
-static void readcb(struct bufferevent *bev, void *ptr);
+static void readcb(struct bufferevent *bev, void *ptr); // TODO, remove this define to .h
 static void writecb(struct bufferevent *bev, void *ptr);
 static void eventcb(struct bufferevent *bev, short events, void *ptr);
 
@@ -414,7 +415,7 @@ static ssize_t ptr_read_callback_ctx(nghttp2_session *session, int32_t stream_id
 
     return len;
 }
-static int send_response_only_ctx(nghttp2_session *session, int32_t stream_id,
+static int send_response_by_ctx(nghttp2_session *session, int32_t stream_id,
 		nghttp2_nv *nva, size_t nvlen, https_ctx_t *https_ctx) {
 	int rv;
 	nghttp2_data_provider data_prd;
@@ -455,7 +456,6 @@ static int on_header_callback(nghttp2_session *session,
 	http2_stream_data *stream_data;
 	int stream_id, thrd_idx, idx;
 	https_ctx_t *https_ctx = NULL;
-	const char PATH[] = ":path";
 	(void)flags;
 	(void)user_data;
 
@@ -482,14 +482,9 @@ static int on_header_callback(nghttp2_session *session,
 				break;
 			}
 
-			if (namelen == sizeof(PATH) - 1 && memcmp(PATH, name, namelen) == 0) {
+			/* get headers, if PATH, get query together */ // TODO!!! use memcmp?
+			if (!strcmp(HDR_PATH, name)) {
 				size_t j;
-#if 0
-				for (j = 0; j < valuelen && value[j] != '?'; ++j)
-					;
-				strncpy(https_ctx->user_ctx.head.rsrcUri, value, valuelen);
-// QUERY TEST
-#else
                 char request_path[AHIF_MAX_RESOURCE_URI_LEN + 1 + AHIF_MAX_RESOURCE_URI_LEN] = {0,};
                 int query_len = 0;
 				strncpy(request_path, value, valuelen);
@@ -500,20 +495,21 @@ static int on_header_callback(nghttp2_session *session,
                 if (j == valuelen) {
                     sprintf(https_ctx->user_ctx.head.rsrcUri, "%s", request_path);
                 } else {
-                    // path 
+                    /* path */
                     strncpy(https_ctx->user_ctx.head.rsrcUri, request_path, j);
                     https_ctx->user_ctx.head.rsrcUri[j] = '\0';
-                    // query
+                    /* query */
                     query_len = strlen(request_path) - strlen(https_ctx->user_ctx.head.rsrcUri) - 1;
                     strncpy(https_ctx->user_ctx.head.queryParam, request_path + j + 1, query_len);
                     https_ctx->user_ctx.head.queryParam[query_len] = '\0';
                 }
-#endif
-			}
-			if (!strcmp(name, ":method")) {
+			} else if (!strcmp(name, HDR_METHOD)) {
 				sprintf(https_ctx->user_ctx.head.httpMethod, "%s", value);
-			} else if (!strcmp(name, "content-encoding")) {
+			} else if (!strcmp(name, HDR_CONTENT_ENCODING)) {
 				sprintf(https_ctx->user_ctx.head.contentEncoding, "%s", value);
+			} else {
+				/* vHeader relay */
+				set_defined_header((char *)name, (char *)value, &https_ctx->user_ctx);
 			}
 			break;
 	}
@@ -1063,18 +1059,27 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 					continue;
 				}
 
+#if 0
 				sprintf(result_code, "%d", https_ctx->user_ctx.head.respCode);
 				nghttp2_nv hdrs[12] = { MAKE_NV(":status", result_code, strlen(result_code))};
 
-				/* Set Content-Encoding */
+				/* if contain Content-Encoding */
 				int hdrs_len = 1;
-				if (HttpsCtx[thrd_index][ctx_id].user_ctx.head.contentEncoding[0]) {
+				if (https_ctx->user_ctx.head.contentEncoding[0]) {
 					hdrs_len ++;
-					nghttp2_nv hd_add[] = { MAKE_NV("content-encoding", https_ctx->user_ctx.head.contentEncoding, strlen(https_ctx->user_ctx.head.contentEncoding)) };
+					nghttp2_nv hd_add[] = { MAKE_NV(HDR_CONTENT_ENCODING, https_ctx->user_ctx.head.contentEncoding, strlen(https_ctx->user_ctx.head.contentEncoding)) };
 					memcpy(&hdrs[1], &hd_add, sizeof(nghttp2_nv));
 				}
-				if (send_response_only_ctx(session_data->session, stream_id, hdrs, hdrs_len, https_ctx) != 0) {
-				} else {
+#else
+				/* assign more virtual header */
+				sprintf(result_code, "%d", https_ctx->user_ctx.head.respCode);
+				nghttp2_nv hdrs[MAX_HDR_RELAY_CNT + 2] = { MAKE_NV(":status", result_code, strlen(result_code))};
+				int hdrs_len = 1; /* :status */
+
+				hdrs_len = assign_more_headers(&hdrs[0], MAX_HDR_RELAY_CNT + 2, hdrs_len, &https_ctx->user_ctx);
+#endif
+				if (send_response_by_ctx(session_data->session, stream_id, hdrs, hdrs_len, https_ctx) == 0) {
+					/* submit success */
 					if (session_send(session_data) != 0) {
 						// err
 					} else {
@@ -1498,6 +1503,18 @@ int initialize()
             HttpsCtx[i][j].occupied = 0;
         }
     }
+
+
+    /* create header enum:string list for bsearch and relay */
+    if (set_relay_vhdr(HDR_INDEX, VH_END) < 0)
+        return -1;
+    else
+        print_relay_vhdr(HDR_INDEX, VH_END);
+
+    if (sort_relay_vhdr(HDR_INDEX, VH_END) < 0)
+        return -1;
+    else
+        print_relay_vhdr(HDR_INDEX, VH_END);
 
 	/* process start run */
 #ifndef TEST

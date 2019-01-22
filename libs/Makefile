@@ -9,7 +9,7 @@ BUILD_INC_PATH	=  -I../build/include
 BUILD_LIBS_PATH	= 
 BUILD_LIBS = 
 
-SRCS		= libid.c libutil.c libmml.c liblist.c libomp.c
+SRCS		= libid.c libutil.c libmml.c liblist.c libomp.c libhdr.c
 OBJS		= $(SRCS:.c=.o)
 AOUT		= libs.a
 DEST		= ../build
@@ -29,7 +29,7 @@ $(AOUT): $(OBJS)
 install:
 	\cp $(AOUT) $(DEST)/lib
 	\cp libs.h $(DEST)/include
-#\cp uninclude.h ../build/include
+	\cp uninclude.h ../build/include
 
 clean:
 	\rm -f $(OBJS) $(AOUT) core.*

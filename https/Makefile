@@ -1,7 +1,7 @@
 include ../../../MakeVars
 
 TARGET		= epcf
-CFLAG		= $(CFLAGS) -g -DHOLDSESS -DPERFORM
+CFLAG		= -std=gnu99 $(CFLAGS) -g -DHOLDSESS -DPERFORM
 #CFLAG		= $(CFLAGS) -g -DHOLDSESS 
 INC_PATH	= -I. -I../../../include -I../../../libsrc/COMM
 LIB_PATH	= -L../../../lib
@@ -20,6 +20,7 @@ BUILD_LIBS = $(BUILD_LIBS_PATH)/libssl.a \
 			 $(BUILD_LIBS_PATH)/libevent_pthreads.a \
 			 $(BUILD_LIBS_PATH)/libnghttp2.a \
 			 $(BUILD_LIBS_PATH)/libconfig.a \
+			 $(BUILD_LIBS_PATH)/libhttp.a \
 			 $(BUILD_LIBS_PATH)/libs.a 
 
 SRCS		= main.c list.c config.c command.c

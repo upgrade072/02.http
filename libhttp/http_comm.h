@@ -26,6 +26,16 @@
 #define HTTPS_AHIF_SEND_SIZE	HTTPC_AHIF_SEND_SIZE
 #define AHIF_HTTPS_SEND_SIZE	AHIF_HTTPC_SEND_SIZE
 
+// for AHIF special purpose
+/* exception header : start with semi-colon */
+#define HDR_METHOD					":method"
+#define HDR_SCHEME					":scheme"
+#define HDR_AUTHORITY				":authority"
+#define HDR_PATH					":path"
+#define HDR_STATUS					":status"
+/* virtual header : non semi-colon start */
+#define HDR_CONTENT_ENCODING		"content-encoding"
+
 typedef struct HttpCSAhifTagType {
 	int thrd_index;
 	int session_index;
@@ -127,6 +137,15 @@ typedef struct shm_http {
 #define SHM_HTTP_SIZE sizeof(shm_http_t)
 
 /* function proto type */
+
+/* ------------------------- libshm.c --------------------------- */
 int     get_http_shm(void);
 void    set_httpc_status(conn_list_status_t conn_status[]);
+
+/* ------------------------- libvhdr.c --------------------------- */
+int     set_relay_vhdr(hdr_index_t hdr_index[], int array_size);
+int     print_relay_vhdr(hdr_index_t hdr_index[], int array_size);
+int     sort_relay_vhdr(hdr_index_t hdr_index[], int array_size);
+hdr_index_t     *search_vhdr(hdr_index_t hdr_index[], int array_size, char *vhdr_name);
+
 #endif /* __HTTP_COMMON_H__ */

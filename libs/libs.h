@@ -11,6 +11,8 @@
 #include <stm_msgtypes.h>
 #endif
 
+#include <nghttp2/nghttp2.h>
+
 /* ------------------------- libmml.c --------------------------- */
 int     get_mml_para_int (MMLReqMsgType *msg, char *paraName);
 int     get_mml_para_str (MMLReqMsgType *msg, char *paraName, char *buff);
@@ -43,3 +45,7 @@ int     Check_CtxId(int thrd_idx, uint id);
 /* ------------------------- libutil.c --------------------------- */
 void    DumpHex(const void* data, size_t size);
 unsigned        long create_unique_id(unsigned long u_id);
+
+/* ------------------------- libhdr.c --------------------------- */
+void    set_defined_header(char *name, char *val, AhifHttpCSMsgType *appData);
+int		assign_more_headers(nghttp2_nv *hdrs, int size, int cur_len, AhifHttpCSMsgType *appData);

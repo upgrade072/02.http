@@ -2,6 +2,8 @@
 #include <libconfig.h>
 
 #include <http_comm.h>
+#include <http_vhdr.h>
+
 #include <shmQueue.h>
 #include <commlib.h>
 #include <ahif_msgtypes.h>

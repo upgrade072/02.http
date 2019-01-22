@@ -8,32 +8,30 @@ int *lOG_FLAG = &logLevel;
 #endif
 
 int httpcQid, httpcTxQid, httpcRxQid, ixpcQid;
-//int MSG_ID;
-int TIME_VAL;
+//int TIME_VAL;
 
 int THREAD_NO[MAX_THRD_NUM] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
-int THRD_RR;
+//int THRD_RR;
 int SESSION_ID;
 int SESS_IDX;
 
 shm_http_t *SHM_HTTP_PTR;
 client_conf_t CLIENT_CONF;
-thrd_context_t THRD_WORKER[MAX_THRD_NUM];
 thrd_context_t THRD_RECEIVER;
+thrd_context_t THRD_WORKER[MAX_THRD_NUM];
 http2_session_data SESS[MAX_THRD_NUM][MAX_SVR_NUM];
-pthread_mutex_t ONLY_CRT_SESS_LOCK = PTHREAD_MUTEX_INITIALIZER; // we want remove this 
+pthread_mutex_t ONLY_CRT_SESS_LOCK = PTHREAD_MUTEX_INITIALIZER; // TODO!!! we want remove this 
 pthread_mutex_t PUTQUE_WRITE_LOCK = PTHREAD_MUTEX_INITIALIZER;
-httpc_ctx_t *HttpcCtx[MAX_THRD_NUM];
-conn_list_t CONN_LIST[MAX_SVR_NUM];
 
-/* initial by config_load()
- * fulfilled by pub_conn_callback()
- * use by pub_conn_callback(), send_status_to_omp()
- */
+httpc_ctx_t *HttpcCtx[MAX_THRD_NUM];
+
+conn_list_t CONN_LIST[MAX_SVR_NUM];
 conn_list_status_t CONN_STATUS[MAX_CON_NUM];
 http_stat_t HTTP_STAT;
 
 extern int     CTX_NUM_FREEIDS[MAX_THRD_NUM];
+
+hdr_index_t HDR_INDEX[MAX_HDR_RELAY_CNT] = {0,};
 
 static http2_session_data *
 create_http2_session_data() {
@@ -168,10 +166,13 @@ static int on_header_callback(nghttp2_session *session,
 				break;
 			}
 
-			if (!strcmp(name, ":status")) {
+			if (!strcmp(name, HDR_STATUS)) {
 				httpc_ctx->user_ctx.head.respCode = atoi(value);
-			} else if (!strcmp(name, "content-encoding")) {
+			} else if (!strcmp(name, HDR_CONTENT_ENCODING)) {
 				sprintf(httpc_ctx->user_ctx.head.contentEncoding, "%s", value);
+			} else {
+				/* vHeader relay */
+				set_defined_header((char *)name, (char *)value, &httpc_ctx->user_ctx);
 			}
 			break;
 	}
@@ -247,32 +248,37 @@ static ssize_t ptr_read_callback(nghttp2_session *session, int32_t stream_id,
 static int submit_request(http2_session_data *session_data, httpc_ctx_t *httpc_ctx, http2_stream_data *stream_data) {
 	int32_t stream_id;
 
-#if 1 // QUREY ADD
     char request_path[AHIF_MAX_RESOURCE_URI_LEN + 1 + AHIF_MAX_RESOURCE_URI_LEN] = {0,}; // rsrc ? query
     if (strlen(httpc_ctx->user_ctx.head.queryParam)) {
         sprintf(request_path, "%s?%s", httpc_ctx->user_ctx.head.rsrcUri, httpc_ctx->user_ctx.head.queryParam);
     } else {
         sprintf(request_path, "%s", httpc_ctx->user_ctx.head.rsrcUri);
     }
-#endif
 
+#if 0
 	int hdrs_len = 4;
 	nghttp2_nv hdrs[12] = {
-		MAKE_NV(":method", httpc_ctx->user_ctx.head.httpMethod, strlen(httpc_ctx->user_ctx.head.httpMethod)),
-		MAKE_NV(":scheme", "https", 5),
-		MAKE_NV(":authority", session_data->authority, session_data->authority_len),
-#if 0 // QUERY ADD
-		MAKE_NV(":path", httpc_ctx->user_ctx.head.rsrcUri, strlen(httpc_ctx->user_ctx.head.rsrcUri))};
-#else
-		MAKE_NV(":path", request_path, strlen(request_path))};
-#endif
+		MAKE_NV(HDR_METHOD, httpc_ctx->user_ctx.head.httpMethod, strlen(httpc_ctx->user_ctx.head.httpMethod)),
+		MAKE_NV(HDR_SCHEME, "https", 5),
+		MAKE_NV(HDR_AUTHORITY, session_data->authority, session_data->authority_len),
+		MAKE_NV(HDR_PATH, request_path, strlen(request_path))};
 
 	/* if contain Content-Encoding */
 	if (httpc_ctx->user_ctx.head.contentEncoding[0]) {
 		hdrs_len ++;
-		nghttp2_nv hd_add[] = { MAKE_NV("content-encoding", httpc_ctx->user_ctx.head.contentEncoding, strlen(httpc_ctx->user_ctx.head.contentEncoding))};
+		nghttp2_nv hd_add[] = { MAKE_NV(HDR_CONTENT_ENCODING, httpc_ctx->user_ctx.head.contentEncoding, strlen(httpc_ctx->user_ctx.head.contentEncoding))};
 		memcpy(&hdrs[4], &hd_add[0], sizeof(nghttp2_nv));
 	}
+#else
+	nghttp2_nv hdrs[MAX_HDR_RELAY_CNT + 5] = {
+		MAKE_NV(HDR_METHOD, httpc_ctx->user_ctx.head.httpMethod, strlen(httpc_ctx->user_ctx.head.httpMethod)),
+		MAKE_NV(HDR_SCHEME, "https", 5),
+		MAKE_NV(HDR_AUTHORITY, session_data->authority, session_data->authority_len),
+		MAKE_NV(HDR_PATH, request_path, strlen(request_path))};
+	int hdrs_len = 4; /* :method :scheme :authority :path */
+
+	hdrs_len = assign_more_headers(&hdrs[0], MAX_HDR_RELAY_CNT + 5, hdrs_len, &httpc_ctx->user_ctx);
+#endif
 
 #ifndef PERFORM
 	fprintf(stderr, "Request headers:\n");
@@ -981,11 +987,8 @@ void *receiverThread(void *arg)
 
 		/* find session index */
 		found = 0;
-#if 1
-		list_index = find_packet_index(ReqMsg->user_ctx.head.destHost, LSMODE_LS);
-#else
-		list_index = find_packet_index(ReqMsg->user_ctx.head.destHost, LSMODE_RR);
-#endif
+		list_index = find_packet_index(ReqMsg->user_ctx.head.destHost, LSMODE_LS); /* also you can LSMODE_RR */
+
 		if (list_index > 0) {
 			found = 1;
 			thrd_idx = CONN_LIST[list_index].thrd_index;
@@ -1384,6 +1387,17 @@ int initialize()
 			HttpcCtx[i][j].occupied = 0;
 		}
 	}
+
+	/* create header enum:string list for bsearch and relay */
+	if (set_relay_vhdr(HDR_INDEX, VH_END) < 0)
+		return -1;
+	else
+		print_relay_vhdr(HDR_INDEX, VH_END);
+
+	if (sort_relay_vhdr(HDR_INDEX, VH_END) < 0)
+		return -1;
+	else
+		print_relay_vhdr(HDR_INDEX, VH_END);
 
 	/* process start run */
 #ifndef TEST

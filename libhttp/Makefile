@@ -1,6 +1,6 @@
 include ../../../MakeVars
 
-CFLAG		= $(CFLAGS)
+CFLAG		= -std=gnu99 $(CFLAGS)
 INC_PATH	= -I. -I../../../include
 LIB_PATH	= 
 LIBS		=
@@ -9,7 +9,7 @@ BUILD_INC_PATH	=
 BUILD_LIBS_PATH	= 
 BUILD_LIBS = 
 
-SRCS		= libshm.c libchk.c
+SRCS		= libshm.c libchk.c libvhdr.c
 OBJS		= $(SRCS:.c=.o)
 AOUT		= libhttp.a
 DEST_PKG	= ../../..
@@ -22,7 +22,7 @@ all:: clean $(AOUT) install
 
 .SUFFIXES: .c .o
 .c.o:
-	$(CC) $(CFLAGS) $(BUILD_INC_PATH) $(INC_PATH) -c $<
+	$(CC) $(CFLAG) $(BUILD_INC_PATH) $(INC_PATH) -c $<
 
 $(AOUT): $(OBJS) 
 	$(AR) -rc $(AOUT) $(OBJS) $(BUILD_LIBS) $(LIB_PATH) $(LIBS) 

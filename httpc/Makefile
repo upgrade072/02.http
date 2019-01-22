@@ -23,7 +23,7 @@ BUILD_LIBS = $(BUILD_LIBS_PATH)/libssl.a \
 			 $(BUILD_LIBS_PATH)/libhttp.a \
 			 $(BUILD_LIBS_PATH)/libs.a 
 
-SRCS		= main.c list.c config.c command.c bsearch.c
+SRCS		= main.c list.c config.c command.c
 
 OBJS		= $(SRCS:.c=.o)
 
