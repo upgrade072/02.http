@@ -1,4 +1,5 @@
 #include "header.h"
+#include <ctype.h>
 
 /* global */
 float BULK_SND;
@@ -29,8 +30,10 @@ extern stat_t STAT;
 extern sndrcv_t SNDRCV;
 
 /* log */
+#ifdef UDMR
 int logLevel = APPLOG_DEBUG;
 int *lOG_FLAG = &logLevel;
+#endif
 
 app_ctx_t *get_ctx(int thrd_idx, int ctx_idx)
 {
@@ -92,15 +95,37 @@ int initialize()
 
     /* log initialize */
     sprintf(fname, "%s/log", getenv(IV_HOME));
+#ifdef UDMR
     LogInit(my_name, fname);
+#endif
     APPLOG(APPLOG_ERR, "\n\n\n\n\n[Welcome Process Started]");
 
     /* shmq initialize */
     sprintf(fname, "%s/%s", getenv(IV_HOME), AHIF_CONF_FILE);
+#ifdef UDMR
     if ((appRxQid = shmqlib_getQid (fname, "AHIF_TO_APP_SHMQ", my_name, SHMQLIB_MODE_GETTER)) < 0)
         return (-1);
     if ((appTxQid = shmqlib_getQid (fname, "APP_TO_AHIF_SHMQ", my_name, SHMQLIB_MODE_PUTTER)) < 0)
         return (-1);
+#else
+	char tmp[64] = {0,};
+	int key = 0;
+
+    if (conflib_getNthTokenInFileSection (fname, "AHIF_TO_APP_SHMQ", my_name, 3, tmp) < 0)
+        return (-1);
+    key = strtol(tmp,0,0);
+    if ((appRxQid = msgget(key,IPC_CREAT|0666)) < 0) {
+        APPLOG(APPLOG_ERR, "[%s] msgget fail; key=0x%x,err=%d(%s)", __func__, key, errno, strerror(errno));
+        return (-1);
+    }
+    if (conflib_getNthTokenInFileSection (fname, "APP_TO_AHIF_SHMQ", my_name, 3, tmp) < 0)
+        return (-1);
+    key = strtol(tmp,0,0);
+    if ((appTxQid = msgget(key,IPC_CREAT|0666)) < 0) {
+        APPLOG(APPLOG_ERR, "[%s] msgget fail; key=0x%x,err=%d(%s)", __func__, key, errno, strerror(errno));
+        return (-1);
+    }
+#endif
 
     /* sender thread initialize */
     for (int index = 0; index < PERF_CONF.sender_thread_num; index++) {
@@ -237,13 +262,20 @@ void *receiverThread(void *arg)
 {
     int index = *(int *)arg;
     char rxMsg[sizeof(AhifAppMsgType) + 1024] = {0,};
+#ifndef UDMR
+	size_t rxMsgSize = sizeof(rxMsg);
+#endif
     AhifAppMsgType *recvMsg = (AhifAppMsgType *)&rxMsg;
     int msgSize = 0, sleep_cnt = 0;
 
     while (1)
     {
         pthread_mutex_lock(&SHMQ_READ_MUTEX);
+#ifdef UDMR
         msgSize = shmqlib_getMsg(appRxQid, rxMsg);
+#else
+        msgSize = msgrcv(appRxQid, rxMsg, rxMsgSize - sizeof(long), 0, IPC_NOWAIT | MSG_NOERROR);
+#endif
         pthread_mutex_unlock(&SHMQ_READ_MUTEX);
 
         if (msgSize <= 0) {
@@ -368,7 +400,11 @@ void send_action(evutil_socket_t fd, short what, void *arg)
         /* trigger timeout event*/
 
     pthread_mutex_lock(&SHMQ_WRITE_MUTEX);
+#ifdef UDMR
     int res = shmqlib_putMsg(appTxQid, (char*)&txMsg, shmq_len);
+#else
+    int res = msgsnd(appTxQid, (char*)&txMsg, shmq_len - sizeof(long), 0);
+#endif
     pthread_mutex_unlock(&SHMQ_WRITE_MUTEX);
 
     if (res <= 0) {

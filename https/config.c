@@ -75,11 +75,13 @@ int config_load_just_log()
         fprintf(stderr, "config log_level not exist\n");
         goto CF_LOGLEVEL_LOAD_ERR;
     } else {
+#ifdef UDMR
         if (log_level < APPLOG_NONE || log_level > APPLOG_DEBUG) {
             fprintf(stderr, "config log_level value invalid[%d] (%d~%d)\n",
                     log_level, APPLOG_NONE, APPLOG_DEBUG);
             goto CF_LOGLEVEL_LOAD_ERR;
         }
+#endif
         SERVER_CONF.log_level = log_level;
         fprintf(stderr, "log_level is [%d]\n", log_level);
     }

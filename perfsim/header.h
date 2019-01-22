@@ -22,10 +22,14 @@ try this with json-c (https://github.com/jehiah/json-c)
 #include <errno.h>
 #include <time.h>
 
+#ifdef UDMR
 #include <appLog.h>
-#include <commlib.h>
 #include <shmQueue.h>
+#endif
+
+#include <commlib.h>
 #include <ahif_msgtypes.h>
+#include <http_comm.h> // schlee! for TEMP MACRO disable APPLOG
 
 // JSON related -----------------------------------------------------------
 

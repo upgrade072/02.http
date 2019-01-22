@@ -6,7 +6,9 @@
 #include <commlib.h>
 #include <ahif_msgtypes.h>
 #include <sfm_msgtypes.h>
+#ifdef UDMR
 #include <appLog.h>
+#endif
 
 #include <event2/thread.h>
 #include <sys/types.h>

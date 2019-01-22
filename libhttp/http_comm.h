@@ -1,6 +1,10 @@
 #ifndef __HTTP_COMMON_H__
 #define __HTTP_COMMON_H__
 
+
+/* CAUTION TEST MACRO for PORTING!!!! */
+#define APPLOG(x, ...) fprintf(stderr, __VA_ARGS__)
+
 #include <ahif_msgtypes.h>
 #include <arpa/inet.h>
 
