@@ -182,7 +182,7 @@ void    assign_rcv_ctx_info(https_ctx_t *https_ctx, AhifHttpCSMsgType *ResMsg);
 void    clear_and_free_ctx(https_ctx_t *https_ctx);
 void    set_intl_req_msg(intl_req_t *intl_req, int thrd_idx, int ctx_idx, int sess_idx, int session_id, int stream_id, int msg_type);
 http2_session_data      *get_session(int thrd_idx, int sess_idx, int session_id);
-void    save_session_info(https_ctx_t *https_ctx, int thrd_idx, int sess_idx, int session_id);
+void    save_session_info(https_ctx_t *https_ctx, int thrd_idx, int sess_idx, int session_id, char *ipaddr);
 int     check_allow(char *ip);
 int     add_to_allowlist(int list_idx, int thrd_idx, int sess_idx, int session_id);
 int     del_from_allowlist(int list_idx, int thrd_idx, int sess_idx);

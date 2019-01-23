@@ -557,7 +557,7 @@ static int on_begin_headers_callback(nghttp2_session *session,
 		stream_data->ctx_id = idx;
 
 		assign_new_ctx_info(https_ctx, session_data, stream_data);
-		save_session_info(https_ctx, session_data->thrd_index, session_data->session_index, session_data->session_id);
+		save_session_info(https_ctx, session_data->thrd_index, session_data->session_index, session_data->session_id, session_data->client_addr);
 	}
 
 #ifndef PERFORM

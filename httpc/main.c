@@ -960,7 +960,7 @@ void *receiverThread(void *arg)
 #endif
 	httpc_ctx_t *ReqMsg = (httpc_ctx_t *)&rxMsg;
 	int thrd_idx, sess_idx, idx, session_id;
-	int list_index, found;
+	int list_index;
 	intl_req_t intl_req;
 	int sleep_cnt, msgSize;
 	httpc_ctx_t *httpc_ctx = NULL;
@@ -986,16 +986,13 @@ void *receiverThread(void *arg)
 		//DumpHex(rxMsg,  msgSize);
 
 		/* find session index */
-		found = 0;
 		list_index = find_packet_index(ReqMsg->user_ctx.head.destHost, LSMODE_LS); /* also you can LSMODE_RR */
 
 		if (list_index > 0) {
-			found = 1;
 			thrd_idx = CONN_LIST[list_index].thrd_index;
 			sess_idx = CONN_LIST[list_index].session_index;
 			session_id = CONN_LIST[list_index].session_id;
-		}
-		if (!found) {
+		} else {
 			/* stat HTTP_DEST_N_AVAIL */
 			http_stat_inc(0, 0, HTTP_DEST_N_AVAIL);
 
@@ -1020,7 +1017,7 @@ void *receiverThread(void *arg)
 			continue;
 		}
 		httpc_ctx->recv_time_index = THRD_WORKER[thrd_idx].time_index;
-		save_session_info(httpc_ctx, thrd_idx, sess_idx, session_id); /* for timeout case */
+		save_session_info(httpc_ctx, thrd_idx, sess_idx, session_id, CONN_LIST[list_index].ip); 
 		httpc_ctx->occupied = 1; /* after time set */
 
 		memcpy(&httpc_ctx->user_ctx.head, &ReqMsg->user_ctx.head, AHIF_HTTPCS_MSG_HEAD_LEN);

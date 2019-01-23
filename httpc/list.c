@@ -67,11 +67,12 @@ http2_session_data *get_session(int thrd_idx, int sess_idx, int session_id)
 
 	return session_data;
 }
-void save_session_info(httpc_ctx_t *httpc_ctx, int thrd_idx, int sess_idx, int session_id)
+void save_session_info(httpc_ctx_t *httpc_ctx, int thrd_idx, int sess_idx, int session_id, char *ipaddr)
 {
 	httpc_ctx->thrd_idx = thrd_idx;
 	httpc_ctx->sess_idx = sess_idx;
 	httpc_ctx->session_id = session_id;
+	sprintf(httpc_ctx->user_ctx.head.destIp, "%s", ipaddr);
 }
 
 int find_least_conn_worker()

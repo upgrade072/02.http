@@ -171,7 +171,7 @@ void    clear_send_ctx(httpc_ctx_t *httpc_ctx);
 void    clear_and_free_ctx(httpc_ctx_t *httpc_ctx);
 void    set_intl_req_msg(intl_req_t *intl_req, int thrd_idx, int ctx_idx, int sess_idx, int session_id, int stream_id, int msg_type);
 http2_session_data      *get_session(int thrd_idx, int sess_idx, int session_id);
-void    save_session_info(httpc_ctx_t *httpc_ctx, int thrd_idx, int sess_idx, int session_id);
+void    save_session_info(httpc_ctx_t *httpc_ctx, int thrd_idx, int sess_idx, int session_id, char *ipaddr);
 int     find_least_conn_worker();
 void    print_list(conn_list_status_t conn_status[]);
 void    print_raw_list();

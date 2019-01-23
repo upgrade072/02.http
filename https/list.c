@@ -86,11 +86,12 @@ http2_session_data *get_session(int thrd_idx, int sess_idx, int session_id)
 
     return session_data;
 }
-void save_session_info(https_ctx_t *https_ctx, int thrd_idx, int sess_idx, int session_id)
+void save_session_info(https_ctx_t *https_ctx, int thrd_idx, int sess_idx, int session_id, char *ipaddr)
 {
     https_ctx->thrd_idx = thrd_idx;
     https_ctx->sess_idx = sess_idx;
     https_ctx->session_id = session_id;
+	sprintf(https_ctx->user_ctx.head.destIp, "%s", ipaddr);
 }
 
 // schlee, if ip-match == allow, else, disconnect
