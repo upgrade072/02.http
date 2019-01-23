@@ -1,0 +1,26 @@
+
+### TARGET : epcf, udmr, ausf, perf, test
+TARGET      = epcf
+
+## HOLDSESS : do not close session in no more read/write exist
+CFLAGS      = -std=gnu99 -g -m64 -Wall -DHOLDSESS
+INC_PATH    = -I. -I../../../include -I../../../libsrc/COMM
+LIB_PATH    = -L../../../lib
+
+ifeq ($(TARGET),epcf)
+CFLAGS		+= -DEPCF
+else ifeq ($(TARGET),udmr)
+CFLAGS		+= -DUDMR
+else ifeq ($(TARGET),ausf)
+CFLAGS		+= -DAUSF
+else ifeq ($(TARGET),perf)
+CFLAGS		+= -DPERFORM
+else ifeq ($(TARGET),test)
+CFLAGS		+= -pg -DTEST
+endif
+
+ifeq ($(TARGET),epcf)
+LIBS        = -lcomm -lpthread -ldl -lrt
+else
+LIBS        = -lShmQueue -lcomm -lLog -lpthread -ldl -lrt
+endif

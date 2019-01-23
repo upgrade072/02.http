@@ -8,7 +8,7 @@
 #include <commlib.h>
 #include <ahif_msgtypes.h>
 #include <sfm_msgtypes.h>
-#ifdef UDMR
+#ifndef EPCF
 #include <appLog.h>
 #endif
 

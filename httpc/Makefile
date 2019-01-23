@@ -1,15 +1,6 @@
-include ../../../MakeVars
+include ../MakeVars
 
-TARGET		= epcf
-CFLAG		= -std=gnu99 $(CFLAGS) -g -DHOLDSESS -DPERFORM
-#CFLAG		= $(CFLAGS) -g -DHOLDSESS 
-INC_PATH	= -I. -I../../../include -I../../../libsrc/COMM
-LIB_PATH	= -L../../../lib
-ifeq ($TARGET,udmr)
-LIBS		= -lShmQueue -lcomm -lLog -lpthread -ldl -lrt
-else
-LIBS		= -lcomm -lpthread -ldl -lrt
-endif
+CFLAG		= $(CFLAGS)
 
 BUILD_INC_PATH	= -I../build/include
 BUILD_LIBS_PATH	= ../build/lib

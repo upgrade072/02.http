@@ -48,7 +48,7 @@ void message_handle(evutil_socket_t fd, short what, void *arg)
 				continue;
 #endif
 			default:
-				APPLOG(APPLOG_ERR, "not yet ready (mtype:%d)", msg->mtype);
+				APPLOG(APPLOG_ERR, "not yet ready (mtype:%ld)", (long)msg->mtype); // fuck! genq_mtype_t, it just long
 				continue;
 		}
 	}

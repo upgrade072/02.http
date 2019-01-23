@@ -1,6 +1,6 @@
 /* omp status and statistic related */
 
-#ifdef UDMR
+#ifndef EPCF
 #include <appLog.h>
 #endif
 #include "libs.h"
@@ -219,7 +219,7 @@ void print_stat(STM_CommonStatMsgType *commStatMsg, STM_CommonStatMsg *commStatI
 	//APPLOG(APPLOG_ERR, "CommStatMsg num now [%d]\n", commStatMsg->num);
 	//APPLOG(APPLOG_ERR, "Item Write [%-15s]  ", commStatItem->strkey1);
 	for (int i = 0; i < size; i++) {
-		APPLOG(APPLOG_ERR, "%-15s: %-7d ", str[i], commStatItem->ldata[i]);
+		APPLOG(APPLOG_ERR, "%-15s: %-7ld ", str[i], commStatItem->ldata[i]);
 	}
 	APPLOG(APPLOG_ERR, "\n");
 }

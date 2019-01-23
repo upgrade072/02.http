@@ -22,10 +22,10 @@ try this with json-c (https://github.com/jehiah/json-c)
 #include <errno.h>
 #include <time.h>
 
-#ifdef UDMR
+#ifndef EPCF
 #include <appLog.h>
-#include <shmQueue.h>
 #endif
+#include <shmQueue.h>
 
 #include <commlib.h>
 #include <ahif_msgtypes.h>

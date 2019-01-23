@@ -37,11 +37,7 @@ void clear_and_free_ctx(httpc_ctx_t *httpc_ctx)
 void set_intl_req_msg(intl_req_t *intl_req, int thrd_idx, int ctx_idx, int sess_idx, int session_id, int stream_id, int msg_type)
 {
 	memset(intl_req, 0x00, sizeof(intl_req_t));
-#if 0
-	intl_req->msgq_index = thrd_idx + 1;		/* thrd use 1~12 msgqid */
-#else
 	intl_req->msgq_index = 1;					/* worker use personal msgq_id & type:0 */
-#endif
 	intl_req->tag.thrd_index = thrd_idx;
 	intl_req->tag.ctx_id = ctx_idx;
 	intl_req->tag.session_index = sess_idx;

@@ -38,7 +38,7 @@ unsigned long create_unique_id(unsigned long u_id) // u_id == seed, 0 also ok
 	struct timeval t;
 	unsigned long id;
 	gettimeofday(&t,NULL);
-	id = (t.tv_sec * 1000 * 1000) + (t.tv_usec * 1000) << 42;
+	id = (t.tv_sec * 1000 * 1000) + ((t.tv_usec * 1000) << 42);
 	id |= (u_id % 16777216) << 24;
 	return id;
 }

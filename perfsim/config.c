@@ -336,7 +336,6 @@ extern float BULK_SND;
 void *modifyThread(void *arg)
 {
     int ch;
-    char conf_setting_name[256] = {0,};
     config_setting_t *root = NULL;
     config_setting_t *scenario = NULL;
     config_setting_t *setting = NULL;

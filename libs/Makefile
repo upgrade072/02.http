@@ -1,16 +1,10 @@
-include ../../../MakeVars
+include ../MakeVars
 
-CFLAG		= -std=gnu99
-INC_PATH	= -I. -I../../../include
-LIB_PATH	= 
-LIBS		= 
-
-BUILD_INC_PATH	=  -I../build/include
-BUILD_LIBS_PATH	= 
-BUILD_LIBS = 
+CFLAG		= $(CFLAGS)
 
 SRCS		= libid.c libutil.c libmml.c liblist.c libomp.c libhdr.c
 OBJS		= $(SRCS:.c=.o)
+
 AOUT		= libs.a
 DEST		= ../build
 
@@ -24,7 +18,7 @@ all:: clean $(AOUT) install
 	$(CC) $(CFLAG) $(BUILD_INC_PATH) $(INC_PATH) -c $<
 
 $(AOUT): $(OBJS) 
-	$(AR) -rc $(AOUT) $(OBJS) $(BUILD_LIBS) $(LIB_PATH) $(LIBS) 
+	$(AR) -rc $(AOUT) $(OBJS)
 
 install:
 	\cp $(AOUT) $(DEST)/lib

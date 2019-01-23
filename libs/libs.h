@@ -4,7 +4,7 @@
 
 #include <http_comm.h>
 #include <commlib.h>
-#ifdef UDMR
+#ifndef EPCF
 #include <stm_msgtypes_udmudr.h>
 #else
 #include <sfm_msgtypes.h>

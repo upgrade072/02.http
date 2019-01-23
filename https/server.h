@@ -8,7 +8,7 @@
 #include <commlib.h>
 #include <ahif_msgtypes.h>
 #include <sfm_msgtypes.h>
-#ifdef UDMR
+#ifndef EPCF
 #include <appLog.h>
 #endif
 
@@ -218,3 +218,4 @@ int     func_chg_http_client_act(IxpcQMsgType *rxIxpcMsg, int change_to_act);
 int     func_chg_http_client(IxpcQMsgType *rxIxpcMsg);
 int     func_del_http_cli_ip(IxpcQMsgType *rxIxpcMsg);
 int     func_del_http_client(IxpcQMsgType *rxIxpcMsg);
+

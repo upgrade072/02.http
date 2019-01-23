@@ -7,7 +7,6 @@
 #define CF_CONNECT_LIST		"connect_list"
 extern client_conf_t CLIENT_CONF;
 extern conn_list_t CONN_LIST[MAX_SVR_NUM];
-//extern int MSG_ID;
 thrd_context_t THRD_WORKER[MAX_THRD_NUM];
 
 config_t CFG;
@@ -67,14 +66,14 @@ int destroy_cfg()
 
 int config_load_just_log()
 {
-    config_setting_t *setting;
+    //config_setting_t *setting;
 	int log_level;
 
     if (config_lookup_int(&CFG, CF_LOG_LEVEL, &log_level) == CONFIG_FALSE) {
         fprintf(stderr, "config log_level not exist\n");
         goto CF_LOGLEVEL_LOAD_ERR;
     } else {
-#ifdef UDMR
+#ifndef EPCF
         if (log_level < APPLOG_NONE || log_level > APPLOG_DEBUG) {
             fprintf(stderr, "config log_level value invalid[%d] (%d~%d)\n", 
 					log_level, APPLOG_NONE, APPLOG_DEBUG);
@@ -98,7 +97,6 @@ CF_LOGLEVEL_LOAD_ERR:
 int config_load()
 {
     config_setting_t *setting;
-    const char *str;
 	int list_index, item_index;
 
     /* worker num cfg loading */
@@ -156,7 +154,7 @@ int config_load()
 			const char *type;
 			int port;
 			int cnt;
-			int act_val;
+			//int act_val;
 
 			group = config_setting_get_elem(setting, i);
 			if (group == NULL)
@@ -264,7 +262,6 @@ CF_LOAD_ERR:
 int addcfg_server_hostname(char *hostname, char *type)
 {
     config_setting_t *setting;
-    const char *str;
 	int i, found = 0;
 
     if ((setting = config_lookup(&CFG, CF_CONNECT_LIST)) == NULL) {
@@ -315,7 +312,6 @@ CF_ADD_SVR_HOSTNAME_ERR:
 int addcfg_server_ipaddr(int id, char *ipaddr, int port, int conn_cnt)
 {
     config_setting_t *setting;
-    const char *str;
 
     if ((setting = config_lookup(&CFG, CF_CONNECT_LIST)) == NULL) {
         APPLOG(APPLOG_ERR, "connect list cfg not exist");
@@ -407,7 +403,6 @@ CF_ADD_SVR_IPADDR_ERR:
 int actcfg_http_server(int id, int ip_exist, char *ipaddr, int port, int change_to_act)
 { 
     config_setting_t *setting;
-    const char *str;
 
     if ((setting = config_lookup(&CFG, CF_CONNECT_LIST)) == NULL) {
         APPLOG(APPLOG_ERR, "connect list cfg not exist");
@@ -415,7 +410,7 @@ int actcfg_http_server(int id, int ip_exist, char *ipaddr, int port, int change_
     } else {
         config_setting_t *group;
         config_setting_t *list;
-        int list_count, list_index, item_index, i, cnt = 0;
+        int list_count, list_index, item_index, i;
 		int found = 0;
 
 		/* if id param receive, but not exist */
@@ -494,19 +489,12 @@ int actcfg_http_server(int id, int ip_exist, char *ipaddr, int port, int change_
 
 				set_intl_req_msg(&intl_req, CONN_LIST[i].thrd_index, 0, 
 						CONN_LIST[i].session_index, CONN_LIST[i].session_id, 0,  HTTP_INTL_SESSION_DEL);
-#if 0
-				if (-1 == msgsnd(MSG_ID, &intl_req, sizeof(intl_req) - sizeof(long), 0)) {
-					APPLOG(APPLOG_ERR, "some err in %s msgq_idx %ld thrd_idx %d session_idx %d",
-							__func__, intl_req.msgq_index, intl_req.tag.thrd_index, intl_req.tag.session_index);
-					continue;
-				}
-#else
+
 				if (-1 == msgsnd(THRD_WORKER[thrd_idx].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0)) {
 					APPLOG(APPLOG_ERR, "some err in %s msgq_idx %ld thrd_idx %d session_idx %d",
 							__func__, intl_req.msgq_index, intl_req.tag.thrd_index, intl_req.tag.session_index);
 					continue;
 				}
-#endif
 			}
 		}
 	}
@@ -523,7 +511,6 @@ CF_ACT_SERVER_ERR:
 int chgcfg_server_conn_cnt(int id, char *ipaddr, int port, int conn_cnt)
 {
     config_setting_t *setting;
-    const char *str;
 
     if ((setting = config_lookup(&CFG, CF_CONNECT_LIST)) == NULL) {
         APPLOG(APPLOG_ERR, "connect list cfg not exist");
@@ -533,7 +520,7 @@ int chgcfg_server_conn_cnt(int id, char *ipaddr, int port, int conn_cnt)
 		const char *type;
         config_setting_t *list;
         config_setting_t *item_cnt;
-        int list_count, i, list_index, item_index, cnt = 0, gap = 0;
+        int list_count, i, list_index, item_index, cnt = 0;
 		int found = 0;
 		const char *cf_ip;
 		int cf_port;
@@ -638,7 +625,6 @@ CF_CHG_SERVER_CONN_ERR:
 int delcfg_server_ipaddr(int id, char *ipaddr, int port)
 {
     config_setting_t *setting;
-    const char *str;
 
     if ((setting = config_lookup(&CFG, CF_CONNECT_LIST)) == NULL) {
         APPLOG(APPLOG_ERR, "connect list cfg not exist");
@@ -646,7 +632,7 @@ int delcfg_server_ipaddr(int id, char *ipaddr, int port)
     } else {
         config_setting_t *group;
         config_setting_t *list;
-        config_setting_t *item_cnt;
+        //config_setting_t *item_cnt;
         int i, list_count, list_index, item_index, idx;
 		int found = 0;
 		const char *cf_ip, *cf_act;
@@ -741,8 +727,6 @@ CF_DEL_SVR_IPADDR_ERR:
 int delcfg_server_hostname(int id)
 {
     config_setting_t *setting;
-    const char *str;
-	int i, found;
 
     if ((setting = config_lookup(&CFG, CF_CONNECT_LIST)) == NULL) {
         APPLOG(APPLOG_ERR, "connect list cfg not exist");
@@ -750,7 +734,7 @@ int delcfg_server_hostname(int id)
 	} else {
 		config_setting_t *group;
 		config_setting_t *list;
-		int list_count, list_index, item_index, i, cnt = 0;
+		int list_count, list_index, i;
 
         if (get_list_name(id) == NULL) {
             goto CF_DEL_SVR_HOSTNAME_ERR;
