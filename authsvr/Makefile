@@ -13,10 +13,10 @@ BUILD_LIBS = $(BUILD_LIBS_PATH)/libjwt.a \
 			 $(BUILD_LIBS_PATH)/libevent_pthreads.a \
 			 $(BUILD_LIBS_PATH)/libnghttp2.a \
 			 $(BUILD_LIBS_PATH)/libconfig.a \
-			 $(BUILD_LIBS_PATH)/libhttp.a \
-			 $(BUILD_LIBS_PATH)/libs.a
+			 $(BUILD_LIBS_PATH)/libs.a \
+			 $(BUILD_LIBS_PATH)/libhttp.a 
 
-SRCS		= main.c test.c
+SRCS		= main.c config.c http.c nrf.c test.c
 
 OBJS		= $(SRCS:.c=.o)
 

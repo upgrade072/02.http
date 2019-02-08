@@ -1,4 +1,7 @@
 
+#ifndef HTTP_LIBS_INVOKED
+#define HTTP_LIBS_INVOKED
+
 // system header wierd
 #include "uninclude.h"
 
@@ -45,7 +48,16 @@ int     Check_CtxId(int thrd_idx, uint id);
 /* ------------------------- libutil.c --------------------------- */
 void    DumpHex(const void* data, size_t size);
 unsigned        long create_unique_id(unsigned long u_id);
+int 	ishex(int x);
+void    encode(const char *s, char *enc, int scheme);
+int     decode(const char *s, char *dec);
+char    *replaceAll(char *s, const char *olds, const char *news) ;
 
 /* ------------------------- libhdr.c --------------------------- */
-void    set_defined_header(char *name, char *val, AhifHttpCSMsgType *appData);
-int		assign_more_headers(nghttp2_nv *hdrs, int size, int cur_len, AhifHttpCSMsgType *appData);
+void    set_defined_header(hdr_index_t HDR_INDEX[], char *name, char *val, AhifHttpCSMsgType *appData);
+int		assign_more_headers(hdr_index_t HDR_INDEX[], nghttp2_nv *hdrs, int size, int cur_len, AhifHttpCSMsgType *appData);
+void    print_header(FILE *f, const uint8_t *name, size_t namelen, const uint8_t *value, size_t valuelen);
+void    print_headers(FILE *f, nghttp2_nv *nva, size_t nvlen);
+
+
+#endif

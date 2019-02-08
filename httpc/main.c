@@ -17,7 +17,7 @@ shm_http_t *SHM_HTTP_PTR;
 client_conf_t CLIENT_CONF;
 thrd_context_t THRD_RECEIVER;
 thrd_context_t THRD_WORKER[MAX_THRD_NUM];
-http2_session_data SESS[MAX_THRD_NUM][MAX_SVR_NUM];
+http2_session_data_t SESS[MAX_THRD_NUM][MAX_SVR_NUM];
 pthread_mutex_t ONLY_CRT_SESS_LOCK = PTHREAD_MUTEX_INITIALIZER; // TODO!!! we want remove this 
 pthread_mutex_t PUTQUE_WRITE_LOCK = PTHREAD_MUTEX_INITIALIZER;
 
@@ -31,9 +31,14 @@ extern int     CTX_NUM_FREEIDS[MAX_THRD_NUM];
 
 hdr_index_t HDR_INDEX[MAX_HDR_RELAY_CNT];
 
-static http2_session_data *
+#ifdef OAUTH 
+/* NRF OAuth 2.0 */
+acc_token_list_t	ACC_TOKEN_LIST[MAX_ACC_TOKEN_NUM];
+#endif
+
+static http2_session_data_t *
 create_http2_session_data() {
-	http2_session_data *session_data = NULL;
+	http2_session_data_t *session_data = NULL;
 	int index, i, found = 0, sess_idx = 0;
 
 	/* schlee, session index always forward, prevent conflict */
@@ -51,7 +56,7 @@ create_http2_session_data() {
 		return NULL; 
 	}
 	session_data = &SESS[index][sess_idx];
-	memset(session_data, 0, sizeof(http2_session_data));
+	memset(session_data, 0, sizeof(http2_session_data_t));
 	session_data->session_index = sess_idx;
 	session_data->session_id = ++SESSION_ID;
 	SESSION_ID = SESSION_ID % 65535 + 1;
@@ -61,7 +66,7 @@ create_http2_session_data() {
 	return session_data;
 }
 
-static void delete_http2_session_data(http2_session_data *session_data) 
+static void delete_http2_session_data(http2_session_data_t *session_data) 
 {
 	session_data->connected = 0;
 
@@ -92,34 +97,12 @@ static void delete_http2_session_data(http2_session_data *session_data)
 	pthread_mutex_unlock(&ONLY_CRT_SESS_LOCK);
 }
 
-static void print_header(FILE *f, const uint8_t *name, size_t namelen,
-		const uint8_t *value, size_t valuelen) {
-#ifndef PERFORM
-	fwrite(name, 1, namelen, f);
-	fprintf(f, ": ");
-	fwrite(value, 1, valuelen, f);
-	fprintf(f, "\n");
-#endif
-}
-
-/* Print HTTP headers to |f|. Please note that this function does not
-   take into account that header name and value are sequence of
-   octets, therefore they may contain non-printable characters. */
-static void print_headers(FILE *f, nghttp2_nv *nva, size_t nvlen) {
-#ifndef PERFORM
-	size_t i;
-	for (i = 0; i < nvlen; ++i) {
-		print_header(f, nva[i].name, nva[i].namelen, nva[i].value, nva[i].valuelen);
-	}
-#endif
-}
-
 /* nghttp2_send_callback. Here we transmit the |data|, |length| bytes,
    to the network. Because we are using libevent bufferevent, we just
    write those bytes into bufferevent buffer. */
 static ssize_t send_callback(nghttp2_session *session, const uint8_t *data,
 		size_t length, int flags, void *user_data) {
-	http2_session_data *session_data = (http2_session_data *)user_data;
+	http2_session_data_t *session_data = (http2_session_data_t *)user_data;
 	struct bufferevent *bev = session_data->bev;
 	(void)session;
 	(void)flags;
@@ -134,7 +117,7 @@ static int on_header_callback(nghttp2_session *session,
 		const nghttp2_frame *frame, const uint8_t *name,
 		size_t namelen, const uint8_t *value,
 		size_t valuelen, uint8_t flags, void *user_data) {
-	http2_session_data *session_data = (http2_session_data *)user_data;
+	http2_session_data_t *session_data = (http2_session_data_t *)user_data;
 	(void)session;
 	(void)flags;
 	http2_stream_data *stream_data = NULL;
@@ -169,7 +152,7 @@ static int on_header_callback(nghttp2_session *session,
 				sprintf(httpc_ctx->user_ctx.head.contentEncoding, "%s", header_value);
 			} else {
 				/* vHeader relay */
-				set_defined_header(header_name, header_value, &httpc_ctx->user_ctx);
+				set_defined_header(HDR_INDEX, header_name, header_value, &httpc_ctx->user_ctx);
 			}
 			break;
 	}
@@ -200,7 +183,7 @@ static int on_begin_headers_callback(nghttp2_session *session,
    received a complete frame from the remote peer. */
 static int on_frame_recv_callback(nghttp2_session *session,
 		const nghttp2_frame *frame, void *user_data) {
-	http2_session_data *session_data = (http2_session_data *)user_data;
+	http2_session_data_t *session_data = (http2_session_data_t *)user_data;
 	(void)session;
 
 	switch (frame->hd.type) {
@@ -241,7 +224,7 @@ static ssize_t ptr_read_callback(nghttp2_session *session, int32_t stream_id,
 	return len;
 }
 
-static int submit_request(http2_session_data *session_data, httpc_ctx_t *httpc_ctx, http2_stream_data *stream_data) {
+static int submit_request(http2_session_data_t *session_data, httpc_ctx_t *httpc_ctx, http2_stream_data *stream_data) {
 	int32_t stream_id;
 
     char request_path[AHIF_MAX_RESOURCE_URI_LEN + 1 + AHIF_MAX_RESOURCE_URI_LEN] = {0,}; // rsrc ? query
@@ -258,7 +241,7 @@ static int submit_request(http2_session_data *session_data, httpc_ctx_t *httpc_c
 		MAKE_NV(HDR_PATH, request_path, strlen(request_path))};
 	int hdrs_len = 4; /* :method :scheme :authority :path */
 
-	hdrs_len = assign_more_headers(&hdrs[0], MAX_HDR_RELAY_CNT + 5, hdrs_len, &httpc_ctx->user_ctx);
+	hdrs_len = assign_more_headers(HDR_INDEX, &hdrs[0], MAX_HDR_RELAY_CNT + 5, hdrs_len, &httpc_ctx->user_ctx);
 
 #ifndef PERFORM
 	fprintf(stderr, "Request headers:\n");
@@ -270,7 +253,7 @@ static int submit_request(http2_session_data *session_data, httpc_ctx_t *httpc_c
 		data_prd.source.ptr = httpc_ctx;
 		data_prd.read_callback = ptr_read_callback;
 #ifndef PERFORM
-		fwrite(httpc_ctx->user_ctx.body, 1, httpc_ctx->user_ctx.head.bodyLen, stdout);
+		fwrite(httpc_ctx->user_ctx.body, 1, httpc_ctx->user_ctx.head.bodyLen, stderr);
 		fprintf(stderr, "\n");
 #endif
 		stream_id = nghttp2_submit_request(session_data->session, NULL, hdrs, 
@@ -289,7 +272,7 @@ static int submit_request(http2_session_data *session_data, httpc_ctx_t *httpc_c
 
 /* Serialize the frame and send (or buffer) the data to
    bufferevent. */
-static int session_send(http2_session_data *session_data) {
+static int session_send(http2_session_data_t *session_data) {
 	int rv;
 
 	rv = nghttp2_session_send(session_data->session);
@@ -308,7 +291,7 @@ static int session_send(http2_session_data *session_data) {
 static int on_data_chunk_recv_callback(nghttp2_session *session, uint8_t flags,
 		int32_t stream_id, const uint8_t *data,
 		size_t len, void *user_data) {
-	http2_session_data *session_data = (http2_session_data *)user_data;
+	http2_session_data_t *session_data = (http2_session_data_t *)user_data;
 	(void)session;
 	(void)flags;
 	/* get stream fron contex for defragment */
@@ -353,7 +336,7 @@ static int on_data_chunk_recv_callback(nghttp2_session *session, uint8_t flags,
    session */
 static int on_stream_close_callback(nghttp2_session *session, int32_t stream_id,
 		uint32_t error_code, void *user_data) {
-	http2_session_data *session_data = (http2_session_data *)user_data;
+	http2_session_data_t *session_data = (http2_session_data_t *)user_data;
 	/* if recv EOF, send re-assembled data to upper */
 	http2_stream_data *stream_data = NULL;
 	httpc_ctx_t *httpc_ctx = NULL;
@@ -377,7 +360,7 @@ static int on_stream_close_callback(nghttp2_session *session, int32_t stream_id,
 
 #ifndef PERFORM
 	fprintf(stderr, "Whole received data[%d]\n", httpc_ctx->user_ctx.head.bodyLen);
-	fwrite(httpc_ctx->user_ctx.body, 1, httpc_ctx->user_ctx.head.bodyLen, stdout);
+	fwrite(httpc_ctx->user_ctx.body, 1, httpc_ctx->user_ctx.head.bodyLen, stderr);
 	fprintf(stderr, "\n");
 #endif
 	/* send to upper */
@@ -442,7 +425,7 @@ static SSL *create_ssl(SSL_CTX *ssl_ctx) {
 	return ssl;
 }
 
-static void initialize_nghttp2_session(http2_session_data *session_data) {
+static void initialize_nghttp2_session(http2_session_data_t *session_data) {
 	nghttp2_session_callbacks *callbacks;
 
 	nghttp2_session_callbacks_new(&callbacks);
@@ -469,7 +452,8 @@ static void initialize_nghttp2_session(http2_session_data *session_data) {
 	nghttp2_session_callbacks_del(callbacks);
 }
 
-static void send_client_connection_header(http2_session_data *session_data) {
+static void send_client_connection_header(http2_session_data_t *session_data) {
+	/* schlee, IMPORTANT, this means MAX SND/RCV SIZE */
 	nghttp2_settings_entry iv[5] = {
 		{NGHTTP2_SETTINGS_HEADER_TABLE_SIZE, 65535},
 		{NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS, 1024},
@@ -490,7 +474,7 @@ static void send_client_connection_header(http2_session_data *session_data) {
    nghttp2 callbacks. It may also queues the frame in nghttp2 session
    context. To send them, we call session_send() in the end. */
 static void readcb(struct bufferevent *bev, void *ptr) {
-	http2_session_data *session_data = (http2_session_data *)ptr;
+	http2_session_data_t *session_data = (http2_session_data_t *)ptr;
 	ssize_t readlen;
 	struct evbuffer *input = bufferevent_get_input(bev);
 	size_t datalen = evbuffer_get_length(input);
@@ -519,7 +503,7 @@ static void readcb(struct bufferevent *bev, void *ptr) {
    library and output buffer of bufferevent. If it indicates we have
    no business to this session, tear down the connection. */
 static void writecb(struct bufferevent *bev, void *ptr) {
-	http2_session_data *session_data = (http2_session_data *)ptr;
+	http2_session_data_t *session_data = (http2_session_data_t *)ptr;
 	(void)bev;
 
 	if (nghttp2_session_want_read(session_data->session) == 0 &&
@@ -538,7 +522,7 @@ static void writecb(struct bufferevent *bev, void *ptr) {
    nghttp2 library session, and send client connection header. Then
    send HTTP request. */
 static void eventcb(struct bufferevent *bev, short events, void *ptr) {
-	http2_session_data *session_data = (http2_session_data *)ptr;
+	http2_session_data_t *session_data = (http2_session_data_t *)ptr;
 	if (events & BEV_EVENT_CONNECTED) {
 		int fd = bufferevent_getfd(bev);
 		int val = 1;
@@ -615,7 +599,7 @@ static void eventcb(struct bufferevent *bev, short events, void *ptr) {
 /* Start connecting to the remote peer |ip:port| */
 static void initiate_connection(struct event_base *evbase, SSL_CTX *ssl_ctx,
 		const char *ip, uint16_t port,
-		http2_session_data *session_data) {
+		http2_session_data_t *session_data) {
 	int rv;
 	struct bufferevent *bev;
 	SSL *ssl;
@@ -635,7 +619,7 @@ static void initiate_connection(struct event_base *evbase, SSL_CTX *ssl_ctx,
 	session_data->bev = bev;
 }
 
-int send_request(struct http2_session_data *session_data, int thrd_index, int ctx_id)
+int send_request(http2_session_data_t *session_data, int thrd_index, int ctx_id)
 {
 	int stream_id;
 
@@ -703,7 +687,7 @@ void chk_tmout_callback(evutil_socket_t fd, short what, void *arg)
 void send_ping_callback(evutil_socket_t fd, short what, void *arg)
 {
     int thrd_idx, sess_idx;
-    http2_session_data *session_data = NULL;
+    http2_session_data_t *session_data = NULL;
     intl_req_t intl_req;
 
     for (thrd_idx = 0; thrd_idx < CLIENT_CONF.worker_num; thrd_idx++) {
@@ -769,7 +753,7 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 	int res;
 	intl_req_t intl_req;
 
-	struct http2_session_data *session_data = NULL;
+	http2_session_data_t *session_data = NULL;
 	httpc_ctx_t *httpc_ctx = NULL;
 
 	int thrd_index, session_index, ctx_id, session_id;
@@ -1007,7 +991,7 @@ void thrd_initialize()
 void conn_func(evutil_socket_t fd, short what, void *arg)
 {
 	SSL_CTX *ssl_ctx = (SSL_CTX *)arg;
-	http2_session_data *session_data;
+	http2_session_data_t *session_data;
 	int i;
 
 	pthread_mutex_lock(&ONLY_CRT_SESS_LOCK);
@@ -1030,6 +1014,7 @@ void conn_func(evutil_socket_t fd, short what, void *arg)
 		http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_CONN);
 
 		// schlee, create session authority data
+		/* authority   = [ userinfo "@" ] host [ ":" port ] */
 		sprintf(session_data->authority, "%s", CONN_LIST[i].ip);
 		sprintf(session_data->authority + strlen(session_data->authority), "%s", ":");
 		sprintf(session_data->authority + strlen(session_data->authority), "%d", CONN_LIST[i].port);
@@ -1330,8 +1315,51 @@ int initialize()
 	return 0;
 }
 
-int main(int argc, char **argv) {
+void oauth_test()
+{
+	/* CAUTION BUFF SIZE!!!! */
+	char tmpbuf[1024] = {0,};
+	sprintf(tmpbuf, HBODY_ACCESS_TOKEN_REQ_FOR_INSTANCE, "1111-2222-3333-4444", "UDM", "UDR", "nudr-dr", "fuck-you-kill-you");
+	//sprintf(tmpbuf, HBODY_ACCESS_TOKEN_REQ_FOR_TYPE, "1111-2222-3333-4444", "UDM", "UDR", "nudr-dr");
+	fprintf(stderr, "%s\n", tmpbuf);
+
+	char encbuf[1024] = {0,};
+	encode(tmpbuf, encbuf, HTTP_EN_XWWW);
+	fprintf(stderr, "%s\n", encbuf);
+
+	char request_uri[] = "https://127.0.0.1:9999/oauth2/token";
+	char request_method[] = "POST";
+	char request_content_type[] = CONTENT_TYPE_OAUTH_REQ;
+	char *request_body = encbuf;
+
+	libhttp_single_sndreq_t request = {request_uri, request_method, request_content_type, request_body, strlen(request_body) };
+	char recv_body[10240] = {0,};
+	libhttp_single_rcvres_t response = {0, recv_body, sizeof(recv_body), 0};
+	single_run(&request, &response);
+
+	fprintf(stderr, "RESULT (%d len : %d)\n", response.res_code, response.body_len);
+	if (response.res_code == 200 && response.body_len > 0) {
+		fprintf(stderr, "result success\n");
+		fwrite(response.body, 1, response.body_len, stderr);
+		fprintf(stderr, "\n");
+	}
+}
+
+int main(int argc, char **argv) 
+{
 	struct sigaction act;
+
+	/* for test */
+    if (init_cfg() < 0) {
+        fprintf(stderr, "fail to init config\n");
+        return (-1);
+    }
+    if (config_load() < 0) {
+        fprintf(stderr, "fail to load config\n");
+		return (-1);
+	}
+	oauth_test();
+	exit(0);
 
 	memset(&act, 0, sizeof(struct sigaction));
 	act.sa_handler = SIG_IGN;

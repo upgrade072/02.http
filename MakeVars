@@ -8,7 +8,7 @@ INC_PATH    = -I. -I../../../include -I../../../libsrc/COMM
 LIB_PATH    = -L../../../lib
 
 ifeq ($(TARGET),epcf)
-CFLAGS		+= -DEPCF
+CFLAGS		+= -DEPCF -DOAUTH
 else ifeq ($(TARGET),udmr)
 CFLAGS		+= -DUDMR
 else ifeq ($(TARGET),ausf)

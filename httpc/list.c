@@ -4,7 +4,10 @@ extern client_conf_t CLIENT_CONF;
 extern httpc_ctx_t *HttpcCtx[MAX_THRD_NUM];
 extern conn_list_t CONN_LIST[MAX_SVR_NUM];
 extern thrd_context_t THRD_WORKER[MAX_THRD_NUM];
-extern http2_session_data SESS[MAX_THRD_NUM][MAX_SVR_NUM];
+extern http2_session_data_t SESS[MAX_THRD_NUM][MAX_SVR_NUM];
+#ifdef OAUTH 
+extern acc_token_list_t ACC_TOKEN_LIST[MAX_ACC_TOKEN_NUM];
+#endif
 
 httpc_ctx_t *get_context(int thrd_idx, int ctx_idx, int used)
 {
@@ -45,9 +48,9 @@ void set_intl_req_msg(intl_req_t *intl_req, int thrd_idx, int ctx_idx, int sess_
 	intl_req->tag.stream_id = stream_id;
 	intl_req->intl_msg_type = msg_type;
 }
-http2_session_data *get_session(int thrd_idx, int sess_idx, int session_id)
+http2_session_data_t *get_session(int thrd_idx, int sess_idx, int session_id)
 {
-	struct http2_session_data *session_data = NULL;
+	http2_session_data_t *session_data = NULL;
 
 	if (thrd_idx < 0 || thrd_idx >= MAX_THRD_NUM)
 		return NULL;
@@ -345,3 +348,47 @@ int find_packet_index(char *host, int ls_mode) {
     APPLOG(APPLOG_DEBUG, "fail to send");
     return (-1);
 }
+
+#ifdef OAUTH
+acc_token_list_t *get_token_list(int id, int used)
+{
+	if (id < 1 || id >= MAX_ACC_TOKEN_NUM) /* 1 ~ 127 */
+		return NULL;
+	if (used) {
+		/* return specific list */
+		if (ACC_TOKEN_LIST[id].occupied != 1)
+			return NULL;
+		else
+			return &ACC_TOKEN_LIST[id];
+	} else {
+		/* return empty list */
+		for (int i = 0; i < MAX_ACC_TOKEN_NUM; i++) {
+			if (ACC_TOKEN_LIST[i].occupied != 1) {
+				ACC_TOKEN_LIST[i].occupied = 1;
+				return &ACC_TOKEN_LIST[i];
+			}
+		}
+	}
+	return NULL;
+}
+
+void print_token_list_raw(acc_token_list_t input_token_list[])
+{
+	for (int i = 0; i < MAX_ACC_TOKEN_NUM; i++) {
+		acc_token_list_t *token_list = &input_token_list[i];
+		if (token_list->occupied != 1)
+			continue;
+		fprintf(stderr, "%3d) %-24s %-5s %-5s %-20s %-30s %10s %19s",
+			token_list->token_id,
+			token_list->nrf_addr,
+			(token_list->acc_type == AT_SVC) ? "SVC" : "INST",
+			token_list->nf_type,
+			token_list->nf_instance_id,
+			token_list->scope,
+			(token_list->status == TA_INIT) ? "INIT" :
+			(token_list->status == TA_FAILED) ? "FAILED" :
+			(token_list->status == TA_TRYING) ? "TRYING" : "ACCUIRED",
+			ctime(&token_list->due_date));
+	}
+}
+#endif

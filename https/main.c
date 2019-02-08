@@ -114,28 +114,6 @@ static SSL *create_ssl(SSL_CTX *ssl_ctx) {
 	return ssl;
 }
 
-static void print_header(FILE *f, const uint8_t *name, size_t namelen,
-		const uint8_t *value, size_t valuelen) {
-#ifndef PERFORM
-	fwrite(name, 1, namelen, f);
-	fprintf(f, ": ");
-	fwrite(value, 1, valuelen, f);
-	fprintf(f, "\n");
-#endif
-}
-
-/* Print HTTP headers to |f|. Please note that this function does not
-   take into account that header name and value are sequence of
-   octets, therefore they may contain non-printable characters. */
-static void print_headers(FILE *f, nghttp2_nv *nva, size_t nvlen) {
-#ifndef PERFORM
-	size_t i;
-	for (i = 0; i < nvlen; ++i) {
-		print_header(f, nva[i].name, nva[i].namelen, nva[i].value, nva[i].valuelen);
-	}
-#endif
-}
-
 static void add_stream(http2_session_data *session_data,
 		http2_stream_data *stream_data) {
 	stream_data->next = session_data->root.next;
@@ -383,7 +361,7 @@ static int send_response(nghttp2_session *session, int32_t stream_id,
 #ifndef PERFORM
 	fprintf(stderr, "Response headers:\n");
 	print_headers(stderr, nva, nvlen);
-	fwrite(ptr, 1, strlen(ptr), stdout);
+	fwrite(ptr, 1, strlen(ptr), stderr);
 	fprintf(stderr, "\n");
 #endif
 
@@ -484,7 +462,7 @@ static int on_header_callback(nghttp2_session *session,
 				size_t j;
                 char request_path[AHIF_MAX_RESOURCE_URI_LEN + 1 + AHIF_MAX_RESOURCE_URI_LEN] = {0,};
                 int query_len = 0;
-				strncpy(request_path, (char *)value, valuelen);
+				strncpy(request_path, header_value, valuelen);
                 request_path[valuelen] = '\0';
 
 				for (j = 0; j < valuelen && value[j] != '?'; ++j)
@@ -501,12 +479,12 @@ static int on_header_callback(nghttp2_session *session,
                     https_ctx->user_ctx.head.queryParam[query_len] = '\0';
                 }
 			} else if (!strcmp(header_name, HDR_METHOD)) {
-				sprintf(https_ctx->user_ctx.head.httpMethod, "%s", value);
+				sprintf(https_ctx->user_ctx.head.httpMethod, "%s", header_value);
 			} else if (!strcmp(header_name, HDR_CONTENT_ENCODING)) {
-				sprintf(https_ctx->user_ctx.head.contentEncoding, "%s", value);
+				sprintf(https_ctx->user_ctx.head.contentEncoding, "%s", header_value);
 			} else {
 				/* vHeader relay */
-				set_defined_header(header_name, header_value, &https_ctx->user_ctx);
+				set_defined_header(HDR_INDEX, header_name, header_value, &https_ctx->user_ctx);
 			}
 			break;
 	}
@@ -1052,7 +1030,7 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 				nghttp2_nv hdrs[MAX_HDR_RELAY_CNT + 2] = { MAKE_NV(":status", result_code, strlen(result_code))};
 				int hdrs_len = 1; /* :status */
 
-				hdrs_len = assign_more_headers(&hdrs[0], MAX_HDR_RELAY_CNT + 2, hdrs_len, &https_ctx->user_ctx);
+				hdrs_len = assign_more_headers(HDR_INDEX, &hdrs[0], MAX_HDR_RELAY_CNT + 2, hdrs_len, &https_ctx->user_ctx);
 				if (send_response_by_ctx(session_data->session, stream_id, hdrs, hdrs_len, https_ctx) == 0) {
 					/* submit success */
 					if (session_send(session_data) != 0) {

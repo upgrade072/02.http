@@ -29,10 +29,14 @@
 #include <event2/bufferevent_ssl.h>
 #include <event2/dns.h>
 #include <nghttp2/nghttp2.h>
+#include <http_parser.h>
 #include <pthread.h>
 #include <sys/types.h>
 #include <sys/ipc.h>
 #include <sys/msg.h>
+
+/* for single request */
+#include <libreq.h>
 
 #define TM_INTERVAL		20000   // every 20 ms check, 
 #if 0
@@ -66,6 +70,64 @@ typedef enum loadshare_mode {
 	LSMODE_RR = 0,		// round robin
 	LSMODE_LS			// least send
 } loadshare_mode_t;
+
+#ifdef OAUTH		/* OAuth define from here */
+
+#define CONTENT_TYPE_OAUTH_REQ "application/x-www-form-urlencoded"
+
+#define HBODY_ACCESS_TOKEN_REQ_FOR_TYPE "\
+grant_type=client_credentials&\
+nfInstanceId=%s&\
+nfType=%s&\
+targetNfType=%s&\
+scope=%s"
+
+#define HBODY_ACCESS_TOKEN_REQ_FOR_INSTANCE "\
+grant_type=client_credentials&\
+nfInstanceId=%s&\
+nfType=%s&\
+targetNfType=%s&\
+scope=%s&\
+targetNfInstanceId=%s"
+
+#define MAX_ACC_TOKEN_NUM		128
+typedef enum nrf_acc_type {
+	AT_SVC = 0,			// token for SVC
+	AT_INST				// token for specific {Instance}
+} nrf_acc_type_t;
+
+typedef enum token_acuire_status {
+	TA_INIT = 0,		// not any action
+	TA_FAILED,			// requested but failed
+	TA_TRYING,			// trying to get token
+	TA_ACCUIRED			// token accuired
+} token_acuire_status_t;
+
+#define MAX_NRF_TYPE_LEN	24
+#define MAX_NRF_INST_LEN	24
+#define MAX_NRF_SCOPE_LEN	256
+typedef struct acc_token_list {
+	/* used */
+	int occupied;
+
+	/* table view */
+	int token_id;
+	char nrf_addr[INET6_ADDRSTRLEN + 12];
+	int acc_type;
+	char nf_type[MAX_NRF_TYPE_LEN];
+	char nf_instance_id[MAX_NRF_INST_LEN];
+	char scope[MAX_NRF_SCOPE_LEN];
+	int status;
+	time_t due_date;
+
+	/* internal use */
+	int inet_type;
+	struct sockaddr_in sa;
+	struct sockaddr_in6 sa6;
+	int port;
+} acc_token_list_t;
+
+#endif		/* OAuth define to here */
 
 #define MAX_COUNT_NUM	1024
 typedef struct conn_list {
@@ -151,7 +213,7 @@ typedef struct http2_session_data {
 
 	int connected;
 	int ping_snd;
-} http2_session_data;
+} http2_session_data_t;
 
 /* ------------------------- config.c --------------------------- */
 int     init_cfg();
@@ -170,7 +232,7 @@ httpc_ctx_t     *get_context(int thrd_idx, int ctx_idx, int used);
 void    clear_send_ctx(httpc_ctx_t *httpc_ctx);
 void    clear_and_free_ctx(httpc_ctx_t *httpc_ctx);
 void    set_intl_req_msg(intl_req_t *intl_req, int thrd_idx, int ctx_idx, int sess_idx, int session_id, int stream_id, int msg_type);
-http2_session_data      *get_session(int thrd_idx, int sess_idx, int session_id);
+http2_session_data_t      *get_session(int thrd_idx, int sess_idx, int session_id);
 void    save_session_info(httpc_ctx_t *httpc_ctx, int thrd_idx, int sess_idx, int session_id, char *ipaddr);
 int     find_least_conn_worker();
 void    print_list(conn_list_status_t conn_status[]);
@@ -180,9 +242,13 @@ void    gather_list(conn_list_status_t CONN_STATUS[]);
 void    prepare_order(int list_index);
 void    order_list();
 int     find_packet_index(char *host, int ls_mode);
+#ifdef OAUTH
+acc_token_list_t *get_token_list(int id, int used);
+void print_token_list_raw(acc_token_list_t token_list[]);
+#endif
 
 /* ------------------------- client.c --------------------------- */
-int     send_request(struct http2_session_data *session_data, int thrd_index, int ctx_id);
+int     send_request(http2_session_data_t *session_data, int thrd_index, int ctx_id);
 void    thrd_tick_callback(evutil_socket_t fd, short what, void *arg);
 void    chk_tmout_callback(evutil_socket_t fd, short what, void *arg);
 void    send_ping_callback(evutil_socket_t fd, short what, void *arg);

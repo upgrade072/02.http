@@ -4,7 +4,8 @@ CFLAG		= $(CFLAGS)
 
 BUILD_INC_PATH	= -I../build/include
 BUILD_LIBS_PATH	= ../build/lib
-BUILD_LIBS = $(BUILD_LIBS_PATH)/libssl.a \
+BUILD_LIBS = $(BUILD_LIBS_PATH)/libreq.a \
+			 $(BUILD_LIBS_PATH)/libssl.a \
 			 $(BUILD_LIBS_PATH)/libcrypto.a \
 			 $(BUILD_LIBS_PATH)/libevent.a \
 			 $(BUILD_LIBS_PATH)/libevent_openssl.a \
@@ -12,7 +13,8 @@ BUILD_LIBS = $(BUILD_LIBS_PATH)/libssl.a \
 			 $(BUILD_LIBS_PATH)/libnghttp2.a \
 			 $(BUILD_LIBS_PATH)/libconfig.a \
 			 $(BUILD_LIBS_PATH)/libhttp.a \
-			 $(BUILD_LIBS_PATH)/libs.a 
+			 $(BUILD_LIBS_PATH)/libs.a \
+			 $(BUILD_LIBS_PATH)/http_parser.a 
 
 SRCS		= main.c list.c config.c command.c
 

@@ -3,9 +3,8 @@
 #include "libs.h"
 
 /* httpc/s global */
-extern hdr_index_t HDR_INDEX[];
 
-void set_defined_header(char *name, char *val, AhifHttpCSMsgType *appData)
+void set_defined_header(hdr_index_t HDR_INDEX[], char *name, char *val, AhifHttpCSMsgType *appData)
 {
 	hdr_relay *vheader = appData->vheader;
 
@@ -35,7 +34,7 @@ void set_defined_header(char *name, char *val, AhifHttpCSMsgType *appData)
 	return;
 }
 
-int assign_more_headers(nghttp2_nv *hdrs, int size, int cur_len, AhifHttpCSMsgType *appData)
+int assign_more_headers(hdr_index_t HDR_INDEX[], nghttp2_nv *hdrs, int size, int cur_len, AhifHttpCSMsgType *appData)
 {
 	/* if contain Content-Encoding */
 	int hdrs_len = cur_len;
@@ -62,4 +61,24 @@ int assign_more_headers(nghttp2_nv *hdrs, int size, int cur_len, AhifHttpCSMsgTy
 	}
 
 	return hdrs_len;
+}
+
+void print_header(FILE *f, const uint8_t *name, size_t namelen, const uint8_t *value, size_t valuelen) 
+{
+#ifndef PERFORM
+    fwrite(name, 1, namelen, f);
+    fprintf(f, ": ");
+    fwrite(value, 1, valuelen, f);
+    fprintf(f, "\n");
+#endif
+}
+
+void print_headers(FILE *f, nghttp2_nv *nva, size_t nvlen) 
+{
+#ifndef PERFORM
+    size_t i;
+    for (i = 0; i < nvlen; ++i) {
+        print_header(f, nva[i].name, nva[i].namelen, nva[i].value, nva[i].valuelen);
+    }
+#endif
 }

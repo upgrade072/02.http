@@ -2,7 +2,7 @@ include ../MakeVars
 
 CFLAG       = $(CFLAGS)
 
-SRCS		= libshm.c libchk.c libvhdr.c
+SRCS		= libshm.c libchk.c libvhdr.c libhutil.c
 OBJS		= $(SRCS:.c=.o)
 
 AOUT		= libhttp.a

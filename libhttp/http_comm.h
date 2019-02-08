@@ -2,8 +2,8 @@
 #define __HTTP_COMMON_H__
 
 
-/* CAUTION TEST MACRO for PORTING!!!! */
-#define APPLOG(x, ...) fprintf(stderr, __VA_ARGS__)
+/* TODO!!!! REMOVE THIS!!! CAUTION TEST MACRO for PORTING!!!! */
+#define APPLOG(x, ...) fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n");
 
 #include <ahif_msgtypes.h>
 #include <arpa/inet.h>
@@ -26,6 +26,12 @@
 #define HTTPS_AHIF_SEND_SIZE	HTTPC_AHIF_SEND_SIZE
 #define AHIF_HTTPS_SEND_SIZE	AHIF_HTTPC_SEND_SIZE
 
+typedef enum http_encode_scheme {
+	HTTP_EN_RFC3986 = 0,
+	HTTP_EN_HTML5,
+	HTTP_EN_XWWW
+} http_encode_scheme_t;
+
 // for AHIF special purpose
 /* exception header : start with semi-colon */
 #define HDR_METHOD					":method"
@@ -35,6 +41,7 @@
 #define HDR_STATUS					":status"
 /* virtual header : non semi-colon start */
 #define HDR_CONTENT_ENCODING		"content-encoding"
+#define HDR_CONTENT_TYPE			"content-type"
 
 typedef struct HttpCSAhifTagType {
 	int thrd_index;
@@ -147,5 +154,10 @@ int     set_relay_vhdr(hdr_index_t hdr_index[], int array_size);
 int     print_relay_vhdr(hdr_index_t hdr_index[], int array_size);
 int     sort_relay_vhdr(hdr_index_t hdr_index[], int array_size);
 hdr_index_t     *search_vhdr(hdr_index_t hdr_index[], int array_size, char *vhdr_name);
+
+/* ------------------------- libhutil.c --------------------------- */
+int     parse_ipv4(char *temp_str, struct sockaddr_in *sa, int *port);
+int     parse_ipv6(char *temp_str, struct sockaddr_in6 *sa6, int *port);
+int     parse_http_addr(char *temp_str, struct sockaddr_in *sa, struct sockaddr_in6 *sa6, int *port);
 
 #endif /* __HTTP_COMMON_H__ */

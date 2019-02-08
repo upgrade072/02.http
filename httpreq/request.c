@@ -178,6 +178,7 @@ static int lib_on_data_chunk_recv_callback(nghttp2_session *session, uint8_t fla
 			return -1;
 		memcpy(rcvres->body + rcvres->body_len, data, len);
 		rcvres->body_len = rcvres->body_len + len;
+		//DumpHex(data, len);
 	}
 	return 0;
 }
