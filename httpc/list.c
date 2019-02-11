@@ -185,6 +185,12 @@ void gather_list(conn_list_status_t CONN_STATUS[]) {
 			CONN_STATUS[index].port = 0;
 			CONN_STATUS[index].act = 0;
 			CONN_STATUS[index].occupied = 1;
+#ifdef OAUTH
+			int token_id = CONN_LIST[i].token_id;
+			char *access_token = get_access_token(token_id);
+			CONN_STATUS[index].token_exist = (access_token == NULL ? 1 : 0);
+			sprintf(CONN_STATUS[index].access_token, "%s", access_token);
+#endif
 			index++;
 		}
 	}
@@ -208,6 +214,12 @@ void gather_list(conn_list_status_t CONN_STATUS[]) {
 						CONN_STATUS[index].sess_cnt ++;
 						if (CONN_LIST[k].conn == CN_CONNECTED) 
 							CONN_STATUS[index].conn_cnt ++;
+#ifdef OAUTH
+						int token_id = CONN_LIST[i].token_id;
+						char *access_token = get_access_token(token_id);
+						CONN_STATUS[index].token_exist = (access_token == NULL ? 1 : 0);
+						sprintf(CONN_STATUS[index].access_token, "%s", access_token);
+#endif
 					}
 				}
 			}

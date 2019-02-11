@@ -250,6 +250,7 @@ int config_load()
 			const char *type;
 			int port;
 			int cnt;
+			int token_id;
 			//int act_val;
 
 			group = config_setting_get_elem(setting, i);
@@ -292,6 +293,10 @@ int config_load()
 					continue;
 				if (config_setting_lookup_string (item, "act", &act) == CONFIG_FALSE)
 					continue;
+#ifdef OAUTH
+				if (config_setting_lookup_int (item, "token_id", &token_id) == CONFIG_FALSE)
+					continue;
+#endif
 				if (inet_pton(AF_INET, ip, &(sa.sin_addr)))  {
 				} else if (inet_pton(AF_INET6, ip, &(sa6.sin6_addr))) {
 				} else {
@@ -302,7 +307,7 @@ int config_load()
 				if (cnt <= 0 || cnt > HTTP_MAX_CONN) continue;
 				if (!strcmp(act, "ACT") && !strcmp(act, "DACT")) continue;
 
-				APPLOG(APPLOG_ERR, "%3d) %-46s %-6d (x %-3d) %-5s %-5s", j, ip, port, cnt, act, type);
+				APPLOG(APPLOG_ERR, "%3d) %-46s %-6d (x %-3d) %-5s %-5s %-5d", j, ip, port, cnt, act, type, token_id);
 
 				item_index = new_item(list_index, ip, port);
 
@@ -327,6 +332,11 @@ int config_load()
 					} else {
 						CONN_LIST[index].act = 0;
 					}
+#ifdef OAUTH
+						CONN_LIST[index].token_id = token_id;
+#else
+						CONN_LIST[index].token_id = 0;
+#endif
 				}
 			}
 		}

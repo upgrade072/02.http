@@ -189,7 +189,7 @@ int issue_access_token(access_token_req_t *auth_req, config_setting_t *conf, cha
 #define ACC_TOKEN_REPLY_BODY "{\
 \"access_token\":\"%s\",\
 \"token_type\":\"JWT\",\
-\"expires_in\":\"%s\"\
+\"expires_in\":%s\
 }"
 int on_request_recv_nrf(nghttp2_session *session,
 		http2_session_data *session_data,

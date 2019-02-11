@@ -66,12 +66,17 @@ typedef struct thrd_context {
     int hang_counter;
 } thrd_context_t ;
 
+
 typedef enum loadshare_mode {
 	LSMODE_RR = 0,		// round robin
 	LSMODE_LS			// least send
 } loadshare_mode_t;
 
 #ifdef OAUTH		/* OAuth define from here */
+typedef struct nrf_worker {
+	pthread_t thrd_id;
+	struct event_base *evbase;
+} nrf_worker_t;
 
 #define CONTENT_TYPE_OAUTH_REQ "application/x-www-form-urlencoded"
 
@@ -90,7 +95,6 @@ targetNfType=%s&\
 scope=%s&\
 targetNfInstanceId=%s"
 
-#define MAX_ACC_TOKEN_NUM		128
 typedef enum nrf_acc_type {
 	AT_SVC = 0,			// token for SVC
 	AT_INST				// token for specific {Instance}
@@ -106,6 +110,8 @@ typedef enum token_acuire_status {
 #define MAX_NRF_TYPE_LEN	24
 #define MAX_NRF_INST_LEN	24
 #define MAX_NRF_SCOPE_LEN	256
+//#define MAX_ACC_TOKEN_NUM	128
+//#define MAX_ACC_TOKEN_LEN	1024
 typedef struct acc_token_list {
 	/* used */
 	int occupied;
@@ -125,8 +131,17 @@ typedef struct acc_token_list {
 	struct sockaddr_in sa;
 	struct sockaddr_in6 sa6;
 	int port;
+
+	int token_pos;
+	char access_token[2][MAX_ACC_TOKEN_LEN];
 } acc_token_list_t;
 
+
+typedef struct access_token_res {
+	char *access_token;
+	char *token_type;
+	int expire_in;
+} access_token_res_t;
 #endif		/* OAuth define to here */
 
 #define MAX_COUNT_NUM	1024
@@ -153,6 +168,8 @@ typedef struct conn_list {
 	int thrd_index;
 	int session_index;
 	int session_id;
+
+	int token_id;
 } conn_list_t;
 
 typedef enum conn_status {
@@ -278,3 +295,12 @@ int     func_chg_http_server_act(IxpcQMsgType *rxIxpcMsg, int change_to_act);
 int     func_chg_http_server(IxpcQMsgType *rxIxpcMsg);
 int     func_del_http_svr_ip(IxpcQMsgType *rxIxpcMsg);
 int     func_del_http_server(IxpcQMsgType *rxIxpcMsg);
+
+/* ------------------------- nrf.c --------------------------- */
+void    print_oauth_response(access_token_res_t *response);
+void    parse_oauth_response(char *body, access_token_res_t *response);
+void    accuire_token(acc_token_list_t *token_list);
+void    chk_and_accuire_token(acc_token_list_t *token_list);
+void    nrf_get_token_cb(evutil_socket_t fd, short what, void *arg);
+void    *nrf_access_thread(void *arg);
+char    *get_access_token(int token_id);

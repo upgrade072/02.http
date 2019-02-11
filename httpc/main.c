@@ -34,6 +34,7 @@ hdr_index_t HDR_INDEX[MAX_HDR_RELAY_CNT];
 #ifdef OAUTH 
 /* NRF OAuth 2.0 */
 acc_token_list_t	ACC_TOKEN_LIST[MAX_ACC_TOKEN_NUM];
+nrf_worker_t		NRF_WORKER;
 #endif
 
 static http2_session_data_t *
@@ -970,6 +971,17 @@ void thrd_initialize()
 {
 	int i, res;
 
+#ifdef OAUTH
+	// create NRF access thread 
+	res = pthread_create(&NRF_WORKER.thrd_id, NULL, &nrf_access_thread, (void *)NULL);
+	if (res != 0) {
+		APPLOG(APPLOG_ERR, "%s) NRF Thread Create Fail", __func__);
+		exit(0);
+	} else {
+		pthread_detach(NRF_WORKER.thrd_id);
+	}
+#endif
+
 	for (i = 0; i < CLIENT_CONF.worker_num; i++) {
 		res = pthread_create(&THRD_WORKER[i].thrd_id, NULL, &workerThread, (void *)&THREAD_NO[i]);
 		if (res != 0) {
@@ -1315,6 +1327,7 @@ int initialize()
 	return 0;
 }
 
+#if 0
 void oauth_test()
 {
 	/* CAUTION BUFF SIZE!!!! */
@@ -1342,13 +1355,20 @@ void oauth_test()
 		fprintf(stderr, "result success\n");
 		fwrite(response.body, 1, response.body_len, stderr);
 		fprintf(stderr, "\n");
+
+		access_token_res_t access_token_res = {0,};
+		parse_oauth_response(response.body, &access_token_res);
+		print_oauth_response(&access_token_res);
+
 	}
 }
+#endif
 
 int main(int argc, char **argv) 
 {
 	struct sigaction act;
 
+#if 0
 	/* for test */
     if (init_cfg() < 0) {
         fprintf(stderr, "fail to init config\n");
@@ -1360,6 +1380,7 @@ int main(int argc, char **argv)
 	}
 	oauth_test();
 	exit(0);
+#endif
 
 	memset(&act, 0, sizeof(struct sigaction));
 	act.sa_handler = SIG_IGN;

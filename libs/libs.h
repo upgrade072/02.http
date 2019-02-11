@@ -51,6 +51,7 @@ unsigned        long create_unique_id(unsigned long u_id);
 int 	ishex(int x);
 void    encode(const char *s, char *enc, int scheme);
 int     decode(const char *s, char *dec);
+void	json_delimiter(char *string);
 char    *replaceAll(char *s, const char *olds, const char *news) ;
 
 /* ------------------------- libhdr.c --------------------------- */

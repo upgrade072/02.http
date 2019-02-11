@@ -105,6 +105,28 @@ int decode(const char *s, char *dec)
     return o - dec;
 }
 
+/* (no object-child) JSON parse in sigle for-loop */
+void json_delimiter(char *string)
+{
+    int len = strlen(string);
+    int pos = 0;
+    for (int i = 0; i < len; i++) {
+        if (string[i] == '{' || string[i] == '\"' || string[i] == ' '|| string[i] == '\n') {
+			/* skip char */
+            continue;
+        } else if (string[i] == ',') {
+			/* make space delimiter */
+            string[pos++] = ' ';
+        } else if (string[i] == '}') {
+			/* make null termination */
+            string[pos++] = '\0';
+        } else {
+			/* shift char */
+            string[pos++] = string[i];
+        }
+    }
+}
+
 /* must free return value (if not null) */
 char *replaceAll(char *s, const char *olds, const char *news) 
 {
