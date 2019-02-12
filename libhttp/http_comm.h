@@ -39,6 +39,7 @@ typedef enum http_encode_scheme {
 #define HDR_AUTHORITY				":authority"
 #define HDR_PATH					":path"
 #define HDR_STATUS					":status"
+#define HDR_AUTHORIZATION			":authorization"		// :authorization: Bearer token_raw
 /* virtual header : non semi-colon start */
 #define HDR_CONTENT_ENCODING		"content-encoding"
 #define HDR_CONTENT_TYPE			"content-type"
@@ -96,6 +97,10 @@ typedef struct index {
 /* for ping recv */
 #define MAX_PING_WAIT 5 // (sec)
 
+/* for OAuth 2.0 */
+#define MAX_ACC_TOKEN_NUM 128
+#define MAX_ACC_TOKEN_LEN 512
+
 /* connection status */
 typedef struct conn_list_status {
 	int list_index;
@@ -108,6 +113,10 @@ typedef struct conn_list_status {
 	int conn_cnt;
 	int act;
 	int occupied;
+
+	/* for OAuth 2.0 */
+	int token_exist;
+	char access_token[MAX_ACC_TOKEN_NUM];
 } conn_list_status_t;
 
 /* for statistics */

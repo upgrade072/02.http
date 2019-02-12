@@ -7,6 +7,7 @@
 #define CF_TIMEOUT_SEC      "server_cfg.timeout_sec"
 #define CF_CERT_FILE        "server_cfg.cert_file"
 #define CF_KEY_FILE         "server_cfg.key_file"
+#define CF_CREDENTIAL       "server_cfg.credential"
 #define CF_ALLOW_LIST		"allow_list"
 extern server_conf SERVER_CONF;
 extern allow_list_t  ALLOW_LIST[MAX_LIST_NUM];
@@ -183,6 +184,17 @@ int config_load()
         APPLOG(APPLOG_ERR, "key file name is  [%s]", SERVER_CONF.key_file);
     }
 
+#ifdef OAUTH
+	/* oauth 2.0 secret key */
+	if (config_lookup_string(&CFG, CF_CREDENTIAL, &str) == CONFIG_FALSE) {
+		APPLOG(APPLOG_ERR, "oauth2.0 credential not exist");
+		goto CF_LOAD_ERR;
+	} else {
+		sprintf(SERVER_CONF.credential, "%s", str);
+		APPLOG(APPLOG_ERR, "oauth2.0 credential is [%s]", SERVER_CONF.credential);
+	}
+#endif
+
 	/* allow list loading */
     if ((setting = config_lookup(&CFG, CF_ALLOW_LIST)) == NULL) {
 		APPLOG(APPLOG_ERR, "allow list cfg not exist");
@@ -202,6 +214,7 @@ int config_load()
             const char *type;
             int max;
             //int act_val;
+			int auth_act;
 
 			group = config_setting_get_elem(setting, i);
 			if (group == NULL)
@@ -232,6 +245,7 @@ int config_load()
 				ALLOW_LIST[index].act = 0;
                 ALLOW_LIST[index].max = 0;
                 ALLOW_LIST[index].curr = 0;
+				ALLOW_LIST[index].auth_act = 0;
                 continue;
             }
 
@@ -244,6 +258,10 @@ int config_load()
 					continue;
 				if (config_setting_lookup_string (item, "act", &act) == CONFIG_FALSE)
 					continue;
+#ifdef OAUTH
+				if (config_setting_lookup_int (item, "auth_act", &auth_act) == CONFIG_FALSE)
+					continue;
+#endif
                 if (inet_pton(AF_INET, ip, &(sa.sin_addr)))  {
                 } else if (inet_pton(AF_INET6, ip, &(sa6.sin6_addr))) {
                 } else {
@@ -275,6 +293,9 @@ int config_load()
 					ALLOW_LIST[index].act = 0;
 				}
                 ALLOW_LIST[index].max = max;
+#ifdef AUTH
+                ALLOW_LIST[index].auth_act = auth_act;
+#endif
                 ALLOW_LIST[index].curr = 0;
 			}
 		}

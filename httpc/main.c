@@ -242,6 +242,16 @@ static int submit_request(http2_session_data_t *session_data, httpc_ctx_t *httpc
 		MAKE_NV(HDR_PATH, request_path, strlen(request_path))};
 	int hdrs_len = 4; /* :method :scheme :authority :path */
 
+#ifdef OAUTH
+	if (httpc_ctx->access_token != NULL) {
+		char token_buffer[1024] = {0,};
+		sprintf(token_buffer, "Bearer %s", httpc_ctx->access_token);
+		nghttp2_nv auth_hdr[1] = { MAKE_NV(HDR_AUTHORIZATION, token_buffer, strlen(token_buffer)) };
+		memcpy(&hdrs[hdrs_len], &auth_hdr[0], sizeof(nghttp2_nv));
+		hdrs_len ++;
+	}
+#endif
+
 	hdrs_len = assign_more_headers(HDR_INDEX, &hdrs[0], MAX_HDR_RELAY_CNT + 5, hdrs_len, &httpc_ctx->user_ctx);
 
 #ifndef PERFORM
@@ -947,7 +957,7 @@ void *receiverThread(void *arg)
 			continue;
 		}
 		httpc_ctx->recv_time_index = THRD_WORKER[thrd_idx].time_index;
-		save_session_info(httpc_ctx, thrd_idx, sess_idx, session_id, CONN_LIST[list_index].ip); 
+		save_session_info(httpc_ctx, thrd_idx, sess_idx, session_id, &CONN_LIST[list_index]);
 		httpc_ctx->occupied = 1; /* after time set */
 
 		memcpy(&httpc_ctx->user_ctx.head, &ReqMsg->user_ctx.head, AHIF_HTTPCS_MSG_HEAD_LEN);

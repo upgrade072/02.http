@@ -226,6 +226,9 @@ static http2_session_data *create_http2_session_data(app_context *app_ctx,
 	sprintf(session_data->hostname, "%s", ALLOW_LIST[allowlist_index].host);
 	sprintf(session_data->type, "%s", ALLOW_LIST[allowlist_index].type);
 	session_data->list_index = ALLOW_LIST[allowlist_index].list_index;
+#ifdef OAUTH
+	session_data->auth_act = ALLOW_LIST[allowlist_index].auth_act;
+#endif
 
 	/* use when session DACT */
 	add_to_allowlist(allowlist_index, index, sess_idx, session_data->session_id);
@@ -403,6 +406,7 @@ static int send_response_by_ctx(nghttp2_session *session, int32_t stream_id,
 	return 0;
 }
 
+#if 0
 static const char ERROR_HTML[] = "<html><head><title>404</title></head>"
 "<body><h1>404 Not Found</h1></body></html>";
 
@@ -417,6 +421,25 @@ static int error_reply(nghttp2_session *session,
 	}
 	return 0;
 }
+#else
+/* CAUTION!!! : data_prd only ref pointer(not copyed), must use under static values */
+static const char ERROR_BADREQ[] = "{cause:\"bad request\"}";
+static const char ERROR_INTERNAL[] = "{cause:\"internal error\"}";
+static const char ERROR_AUTHORIZATION[] = "{cause:\"authorization error\"}";
+static int error_reply(nghttp2_session *session, http2_stream_data *stream_data,
+		int error_code, const char *error_body)
+{
+	char err_code_str[128] = {0,};
+	sprintf(err_code_str, "%d", error_code);
+
+	nghttp2_nv hdrs[] = { MAKE_NV(":status", err_code_str, strlen(err_code_str)) };
+	if (send_response(session, stream_data->stream_id, hdrs, ARRLEN(hdrs),
+				(void *)error_body) != 0) {
+		return (-1);
+	}
+	return 0;
+}
+#endif
 
 /* nghttp2_on_header_callback: Called when nghttp2 library emits
    single header name/value pair. */
@@ -482,6 +505,10 @@ static int on_header_callback(nghttp2_session *session,
 				sprintf(https_ctx->user_ctx.head.httpMethod, "%s", header_value);
 			} else if (!strcmp(header_name, HDR_CONTENT_ENCODING)) {
 				sprintf(https_ctx->user_ctx.head.contentEncoding, "%s", header_value);
+#ifdef OAUTH
+			} else if (!strcmp(header_name, HDR_AUTHORIZATION)) {
+				sprintf(https_ctx->access_token, "%s", header_value); // Bearer token_raw
+#endif
 			} else {
 				/* vHeader relay */
 				set_defined_header(HDR_INDEX, header_name, header_value, &https_ctx->user_ctx);
@@ -515,7 +542,7 @@ static int on_begin_headers_callback(nghttp2_session *session,
 
 	if (idx < 0) {
 		APPLOG(APPLOG_DEBUG, "%s) Assign Context fail thrd[%d]", __func__, session_data->thrd_index);
-		if (error_reply(session, stream_data) != 0) {
+		if (error_reply(session, stream_data, 500, ERROR_INTERNAL) != 0) {
 			return NGHTTP2_ERR_CALLBACK_FAILURE;
 		}
 	} else {
@@ -542,14 +569,44 @@ static int on_begin_headers_callback(nghttp2_session *session,
 	return 0;
 }
 
-#if 0 // schlee, under func always return true, and we don't need this
-/* Minimum check for directory traversal. Returns nonzero if it is
-   safe. */
-static int check_path(const char *path) {
-	/* We don't like '\' in url. */
-	return path[0] && path[0] == '/' && strchr(path, '\\') == NULL &&
-		strstr(path, "/../") == NULL && strstr(path, "/./") == NULL &&
-		!ends_with(path, "/..") && !ends_with(path, "/.");
+#ifdef OAUTH
+int check_access_token(char *token)
+{
+	jwt_t *jwt = NULL;
+	int ret = 0;
+
+	char *key = SERVER_CONF.credential;
+	int key_len = strlen(key);
+
+	ret = jwt_decode(&jwt, token, (const unsigned char *)key, key_len);
+
+	if (ret != 0 || jwt == NULL) {
+		fprintf(stderr, "dbg} jwt parse fail\n");
+		return (-1);
+	}
+
+	char *out = jwt_dump_str(jwt, 1);
+	fprintf(stderr, "dbg} recv token (pretty)\n%s\n", out);
+	free(out);
+
+	long double expiration = jwt_get_grant_int(jwt, "expiration");
+	time_t current = time(NULL);
+	if (expiration == 0 || expiration < current) {
+		fprintf(stderr, "dbg} wrong expiration\n");
+		return (-1);
+	}
+
+	const char *audience = jwt_get_grant(jwt, "audience");
+	if (audience == NULL || strcmp(audience, "1111-2222-3333-4444")) {
+		fprintf(stderr, "dbg} wrong audience\n");
+		return (-1);
+	}
+
+	// TODO!!! more check, subject / issuer / scope  ...
+
+	jwt_free(jwt);
+
+	return (0); // success
 }
 #endif
 
@@ -567,11 +624,32 @@ static int on_request_recv(nghttp2_session *session,
 	}
 
 	if (!https_ctx->user_ctx.head.rsrcUri[0]) {
-		if (error_reply(session, stream_data) != 0) {
+		if (error_reply(session, stream_data, 400, ERROR_BADREQ) != 0)
 			return NGHTTP2_ERR_CALLBACK_FAILURE;
-		}
 		return 0;
 	}
+
+#ifdef OAUTH
+	/* check OAuth 2.0 access token */
+	if (session_data->auth_act > 0) {
+		if (https_ctx->access_token == NULL) {
+			if (error_reply(session, stream_data, 400, ERROR_AUTHORIZATION) != 0) 
+				return NGHTTP2_ERR_CALLBACK_FAILURE;
+			return 0;
+		}
+		int token_len = strlen(https_ctx->access_token);
+		if (token_len <= 7 || strncmp(https_ctx->access_token, "Bearer ", 7)) {
+			if (error_reply(session, stream_data, 400, ERROR_AUTHORIZATION) != 0) 
+				return NGHTTP2_ERR_CALLBACK_FAILURE;
+			return 0;
+		}
+		if (check_access_token(https_ctx->access_token + 7) < 0) {
+			if (error_reply(session, stream_data, 400, ERROR_AUTHORIZATION) != 0) 
+				return NGHTTP2_ERR_CALLBACK_FAILURE;
+			return 0;
+		}
+	}
+#endif
 
 	// TODO!!! recheck this logic
 	for (rel_path = https_ctx->user_ctx.head.rsrcUri; *rel_path == '/'; ++rel_path)
@@ -581,7 +659,7 @@ static int on_request_recv(nghttp2_session *session,
 	if (shmqlib_putMsg(httpsTxQid, (char *)&https_ctx->user_ctx, 
 				HTTPS_AHIF_SEND_SIZE(https_ctx->user_ctx)) <= 0) {
 		APPLOG(APPLOG_DEBUG, "%s) shmq_put fail", __func__);
-		if (error_reply(session, stream_data) != 0) {
+		if (error_reply(session, stream_data, 500, ERROR_INTERNAL) != 0) {
 			APPLOG(APPLOG_DEBUG, "%s) send error_reply fail", __func__);
 		}
 	}

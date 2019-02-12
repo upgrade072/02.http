@@ -164,7 +164,8 @@ int issue_access_token(access_token_req_t *auth_req, config_setting_t *conf, cha
 	if (jwt_add_grant(jwt, "scope", auth_req->scope_raw) != 0)
 		return (-1);
 	/* expiration : token expire time (sec/int) */
-	if (jwt_add_grant(jwt, "expiration", NRF_TOKEN_EXPIRE) != 0)
+	time_t expire = time(NULL) + NRF_TOKEN_EXPIRE;
+	if (jwt_add_grant_int(jwt, "expiration", expire) != 0)
 		return (-1);
 
 // TEST PRINT 
@@ -189,7 +190,7 @@ int issue_access_token(access_token_req_t *auth_req, config_setting_t *conf, cha
 #define ACC_TOKEN_REPLY_BODY "{\
 \"access_token\":\"%s\",\
 \"token_type\":\"JWT\",\
-\"expires_in\":%s\
+\"expires_in\":%ld\
 }"
 int on_request_recv_nrf(nghttp2_session *session,
 		http2_session_data *session_data,
@@ -264,7 +265,7 @@ int on_request_recv_nrf(nghttp2_session *session,
 		/* ISSUE ACCESS TOKEN */
 		char token_buff[1024] = {0,};
 		if (issue_access_token(&auth_req, targetNfInstance, token_buff) > 0) {
-			sprintf(res_body, ACC_TOKEN_REPLY_BODY, token_buff, NRF_TOKEN_EXPIRE);
+			sprintf(res_body, ACC_TOKEN_REPLY_BODY, token_buff, time(NULL) + NRF_TOKEN_EXPIRE);
 			goto OAUTH_RETURN_200;
 		}
 
@@ -280,7 +281,7 @@ int on_request_recv_nrf(nghttp2_session *session,
 		/* ISSUE ACCESS TOKEN */
 		char token_buff[1024] = {0,};
 		if (issue_access_token(&auth_req, targetNfInstance, token_buff) > 0) {
-			sprintf(res_body, ACC_TOKEN_REPLY_BODY, token_buff, NRF_TOKEN_EXPIRE);
+			sprintf(res_body, ACC_TOKEN_REPLY_BODY, token_buff, time(NULL) + NRF_TOKEN_EXPIRE);
 			goto OAUTH_RETURN_200;
 		}
 

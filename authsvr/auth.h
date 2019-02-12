@@ -31,7 +31,7 @@
 /* -------------------------------------------------------------- */
 
 #define NRF_UUID "Nnrf-UUID-1234-ABCD"
-#define NRF_TOKEN_EXPIRE "3600" /* 1 hour */
+#define NRF_TOKEN_EXPIRE 3600 // 1hour
 
 #define MAX_SCOPE_NUM 24
 typedef struct access_token_req {

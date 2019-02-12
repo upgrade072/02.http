@@ -196,6 +196,9 @@ typedef struct httpc_ctx {
 	int	 recv_time_index;
 	http2_stream_data stream;
 
+#ifdef OAUTH
+	char access_token[MAX_ACC_TOKEN_LEN];
+#endif
 } httpc_ctx_t;
 
 typedef enum intl_req_mtype {
@@ -250,7 +253,7 @@ void    clear_send_ctx(httpc_ctx_t *httpc_ctx);
 void    clear_and_free_ctx(httpc_ctx_t *httpc_ctx);
 void    set_intl_req_msg(intl_req_t *intl_req, int thrd_idx, int ctx_idx, int sess_idx, int session_id, int stream_id, int msg_type);
 http2_session_data_t      *get_session(int thrd_idx, int sess_idx, int session_id);
-void    save_session_info(httpc_ctx_t *httpc_ctx, int thrd_idx, int sess_idx, int session_id, char *ipaddr);
+void    save_session_info(httpc_ctx_t *httpc_ctx, int thrd_idx, int sess_idx, int session_id, conn_list_t *conn_list);
 int     find_least_conn_worker();
 void    print_list(conn_list_status_t conn_status[]);
 void    print_raw_list();

@@ -66,12 +66,16 @@ http2_session_data_t *get_session(int thrd_idx, int sess_idx, int session_id)
 
 	return session_data;
 }
-void save_session_info(httpc_ctx_t *httpc_ctx, int thrd_idx, int sess_idx, int session_id, char *ipaddr)
+void save_session_info(httpc_ctx_t *httpc_ctx, int thrd_idx, int sess_idx, int session_id, conn_list_t *conn_list)
 {
 	httpc_ctx->thrd_idx = thrd_idx;
 	httpc_ctx->sess_idx = sess_idx;
 	httpc_ctx->session_id = session_id;
-	sprintf(httpc_ctx->user_ctx.head.destIp, "%s", ipaddr);
+	sprintf(httpc_ctx->user_ctx.head.destIp, "%s", conn_list->ip);
+#ifdef OAUTH
+	sprintf(httpc_ctx->access_token, "%s", 
+			conn_list->token_id > 0 ? get_access_token(conn_list->token_id) : NULL);
+#endif
 }
 
 int find_least_conn_worker()

@@ -4,7 +4,9 @@ CFLAG		= $(CFLAGS)
 
 BUILD_INC_PATH	= -I../build/include
 BUILD_LIBS_PATH	= ../build/lib
-BUILD_LIBS = $(BUILD_LIBS_PATH)/libssl.a \
+BUILD_LIBS = $(BUILD_LIBS_PATH)/libjwt.a \
+			 $(BUILD_LIBS_PATH)/libjansson.a \
+			 $(BUILD_LIBS_PATH)/libssl.a \
 			 $(BUILD_LIBS_PATH)/libcrypto.a \
 			 $(BUILD_LIBS_PATH)/libevent.a \
 			 $(BUILD_LIBS_PATH)/libevent_openssl.a \

@@ -39,6 +39,8 @@
 #include <sys/msg.h>
 #include <pthread.h>
 
+#include <jwt.h>
+
 #define OUTPUT_WOULDBLOCK_THRESHOLD (1 << 16)
 
 /* For LOG */
@@ -59,6 +61,7 @@ typedef struct server_conf {
 	int timeout_sec;
 	char cert_file[128];
 	char key_file[128];
+	char credential[MAX_ACC_TOKEN_LEN];
 } server_conf;
 
 typedef struct conn_client {
@@ -82,6 +85,10 @@ typedef struct allow_list {
 	int curr;
 
 	conn_client_t client[MAX_SVR_NUM];
+
+#ifdef OAUTH
+	int auth_act;
+#endif
 } allow_list_t;
 
 typedef enum conn_status {
@@ -132,6 +139,10 @@ typedef struct http2_session_data {
 
 	int connected;
 	int ping_snd;
+
+#ifdef OAUTH
+	int auth_act;
+#endif
 } http2_session_data;
 
 typedef struct https_ctx {
@@ -145,6 +156,10 @@ typedef struct https_ctx {
 
 	char occupied;
 	int  recv_time_index;
+
+#ifdef OAUTH
+	char access_token[MAX_ACC_TOKEN_LEN];
+#endif
 } https_ctx_t;
 
 typedef enum intl_req_mtype {

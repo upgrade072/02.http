@@ -80,9 +80,9 @@ void accuire_token(acc_token_list_t *token_list)
 		parse_oauth_response(response.body, &access_token_res);
 		print_oauth_response(&access_token_res); /* for DBG */
 
-		int pos = (token_list->token_pos + 1) % 2;
+		int pos = (token_list->token_pos + 1) % 2; // indicate [0] [1] [0] [1]
 		sprintf(token_list->access_token[pos], "%s", access_token_res.access_token);
-		token_list->due_date = time(NULL) + access_token_res.expire_in;
+		token_list->due_date = access_token_res.expire_in;
 
 		token_list->status = TA_ACCUIRED;
 	} else {
