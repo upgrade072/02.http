@@ -32,7 +32,6 @@ void assign_new_ctx_info(https_ctx_t *https_ctx, http2_session_data *session_dat
 	https_ctx->user_ctx.head.session_index = session_data->session_index;
 	https_ctx->user_ctx.head.session_id = session_data->session_id;
 	https_ctx->user_ctx.head.stream_id = stream_data->stream_id;
-	//sprintf(https_ctx->user_ctx.head.destHost, "%s", session_data->client_addr);
 	sprintf(https_ctx->user_ctx.head.destHost, "%s", session_data->hostname);
 	sprintf(https_ctx->user_ctx.head.destType, "%s", session_data->type);
 }
@@ -55,11 +54,7 @@ void clear_and_free_ctx(https_ctx_t *https_ctx)
 void set_intl_req_msg(intl_req_t *intl_req, int thrd_idx, int ctx_idx, int sess_idx, int session_id, int stream_id, int msg_type)
 {         
     memset(intl_req, 0x00, sizeof(intl_req_t));
-#if 0
-    intl_req->msgq_index = thrd_idx + 1;        /* thrd use 1~12 msgqid */
-#else
 	intl_req->msgq_index = 1;					/* worker use personal msg_id & type:0 */
-#endif
     intl_req->tag.thrd_index = thrd_idx;
     intl_req->tag.ctx_id = ctx_idx;
     intl_req->tag.session_index = sess_idx;
@@ -86,11 +81,12 @@ http2_session_data *get_session(int thrd_idx, int sess_idx, int session_id)
 
     return session_data;
 }
-void save_session_info(https_ctx_t *https_ctx, int thrd_idx, int sess_idx, int session_id)
+void save_session_info(https_ctx_t *https_ctx, int thrd_idx, int sess_idx, int session_id, char *ipaddr)
 {
     https_ctx->thrd_idx = thrd_idx;
     https_ctx->sess_idx = sess_idx;
     https_ctx->session_id = session_id;
+	sprintf(https_ctx->user_ctx.head.destIp, "%s", ipaddr);
 }
 
 // schlee, if ip-match == allow, else, disconnect

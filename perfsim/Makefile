@@ -1,10 +1,6 @@
-include ../../../MakeVars
+include ../MakeVars
 
-CFLAG		= $(CFLAGS) -g -DHAVE_INTTYPE_H
-#CFLAG		= $(CFLAGS) -pg -DHAVE_INTTYPES_H -DDEBUG -DLOCAL
-INC_PATH	= -I. -I../../../include -I../../../libsrc/COMM
-LIB_PATH	= -L../../../lib
-LIBS		= -lShmQueue -lcomm -lLog -lpthread -ldl -lrt -lm
+CFLAG		= $(CFLAGS) -Wno-unused-label
 
 BUILD_INC_PATH	= -I../build/include
 BUILD_LIBS_PATH	= ../build/lib

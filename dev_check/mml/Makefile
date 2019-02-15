@@ -1,4 +1,4 @@
-include ../../../../MakeVars
+include ../../MakeVars
 
 #CFLAG		= -g -DPERFORM
 CFLAG		= -g

@@ -2,11 +2,17 @@
 #include <libconfig.h>
 
 #include <http_comm.h>
+#include <http_vhdr.h>
+
 #include <shmQueue.h>
 #include <commlib.h>
 #include <ahif_msgtypes.h>
 #include <sfm_msgtypes.h>
+#ifdef LOG_LIB
+#include <loglib.h>
+#elif LOG_APP
 #include <appLog.h>
+#endif
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -35,6 +41,9 @@
 #include <sys/msg.h>
 #include <pthread.h>
 
+/* OAuth 2.0 / JWT */
+#include <jwt.h>
+
 #define OUTPUT_WOULDBLOCK_THRESHOLD (1 << 16)
 
 /* For LOG */
@@ -55,6 +64,7 @@ typedef struct server_conf {
 	int timeout_sec;
 	char cert_file[128];
 	char key_file[128];
+	char credential[MAX_ACC_TOKEN_LEN];
 } server_conf;
 
 typedef struct conn_client {
@@ -78,6 +88,10 @@ typedef struct allow_list {
 	int curr;
 
 	conn_client_t client[MAX_SVR_NUM];
+
+#ifdef OAUTH
+	int auth_act;
+#endif
 } allow_list_t;
 
 typedef enum conn_status {
@@ -128,6 +142,10 @@ typedef struct http2_session_data {
 
 	int connected;
 	int ping_snd;
+
+#ifdef OAUTH
+	int auth_act;
+#endif
 } http2_session_data;
 
 typedef struct https_ctx {
@@ -141,6 +159,10 @@ typedef struct https_ctx {
 
 	char occupied;
 	int  recv_time_index;
+
+#ifdef OAUTH
+	char access_token[MAX_ACC_TOKEN_LEN];
+#endif
 } https_ctx_t;
 
 typedef enum intl_req_mtype {
@@ -178,7 +200,7 @@ void    assign_rcv_ctx_info(https_ctx_t *https_ctx, AhifHttpCSMsgType *ResMsg);
 void    clear_and_free_ctx(https_ctx_t *https_ctx);
 void    set_intl_req_msg(intl_req_t *intl_req, int thrd_idx, int ctx_idx, int sess_idx, int session_id, int stream_id, int msg_type);
 http2_session_data      *get_session(int thrd_idx, int sess_idx, int session_id);
-void    save_session_info(https_ctx_t *https_ctx, int thrd_idx, int sess_idx, int session_id);
+void    save_session_info(https_ctx_t *https_ctx, int thrd_idx, int sess_idx, int session_id, char *ipaddr);
 int     check_allow(char *ip);
 int     add_to_allowlist(int list_idx, int thrd_idx, int sess_idx, int session_id);
 int     del_from_allowlist(int list_idx, int thrd_idx, int sess_idx);
@@ -214,3 +236,4 @@ int     func_chg_http_client_act(IxpcQMsgType *rxIxpcMsg, int change_to_act);
 int     func_chg_http_client(IxpcQMsgType *rxIxpcMsg);
 int     func_del_http_cli_ip(IxpcQMsgType *rxIxpcMsg);
 int     func_del_http_client(IxpcQMsgType *rxIxpcMsg);
+

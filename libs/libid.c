@@ -8,9 +8,10 @@
 #define NEXTID(idx,size)  (((idx)+1)%(size))
 #define FREED     0
 #define ALLOCATED 1
+
 static int  CTX_START_ID[MAX_THRD_NUM];		/* start and end Id of each Process */
-static int  CTX_SIZEID[MAX_THRD_NUM];			/* start and end Id of each Process */
-int 	CTX_NUM_FREEIDS[MAX_THRD_NUM];
+static int  CTX_SIZEID[MAX_THRD_NUM];		/* start and end Id of each Process */
+int			CTX_NUM_FREEIDS[MAX_THRD_NUM];
 static int 	CTX_NEXT_FREEID[MAX_THRD_NUM];
 static char	CTX_USED_TAG[MAX_THRD_NUM][MAXMSG+1];
 

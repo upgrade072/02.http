@@ -1,6 +1,7 @@
 #include "libhttp.h"
 
-void chk_list(conn_list_status_t conn_status[]) {
+void chk_list(conn_list_status_t conn_status[]) 
+{
     int i, j;
 
     fprintf(stderr, "\n  ID HOSTNAME   TYPE       IP_ADDR                                         PORT CONN(max/curr)   ACT STATUS\n");

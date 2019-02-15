@@ -1,6 +1,5 @@
 /* omp status and statistic related */
 
-#include <appLog.h>
 #include "libs.h"
            
 /* for status */
@@ -215,9 +214,9 @@ HTTP_STATUS_SEND_FAIL:
 void print_stat(STM_CommonStatMsgType *commStatMsg, STM_CommonStatMsg *commStatItem, char (*str)[128], int size)
 {
 	//APPLOG(APPLOG_ERR, "CommStatMsg num now [%d]\n", commStatMsg->num);
-	APPLOG(APPLOG_ERR, "Item Write [%-15s]  ", commStatItem->strkey1);
+	//APPLOG(APPLOG_ERR, "Item Write [%-15s]  ", commStatItem->strkey1);
 	for (int i = 0; i < size; i++) {
-		APPLOG(APPLOG_ERR, "%-15s: %-7d ", str[i], commStatItem->ldata[i]);
+		APPLOG(APPLOG_ERR, "%-15s: %-7ld ", str[i], commStatItem->ldata[i]);
 	}
 	APPLOG(APPLOG_ERR, "\n");
 }

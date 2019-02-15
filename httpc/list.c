@@ -4,7 +4,10 @@ extern client_conf_t CLIENT_CONF;
 extern httpc_ctx_t *HttpcCtx[MAX_THRD_NUM];
 extern conn_list_t CONN_LIST[MAX_SVR_NUM];
 extern thrd_context_t THRD_WORKER[MAX_THRD_NUM];
-extern http2_session_data SESS[MAX_THRD_NUM][MAX_SVR_NUM];
+extern http2_session_data_t SESS[MAX_THRD_NUM][MAX_SVR_NUM];
+#ifdef OAUTH 
+extern acc_token_list_t ACC_TOKEN_LIST[MAX_ACC_TOKEN_NUM];
+#endif
 
 httpc_ctx_t *get_context(int thrd_idx, int ctx_idx, int used)
 {
@@ -37,11 +40,7 @@ void clear_and_free_ctx(httpc_ctx_t *httpc_ctx)
 void set_intl_req_msg(intl_req_t *intl_req, int thrd_idx, int ctx_idx, int sess_idx, int session_id, int stream_id, int msg_type)
 {
 	memset(intl_req, 0x00, sizeof(intl_req_t));
-#if 0
-	intl_req->msgq_index = thrd_idx + 1;		/* thrd use 1~12 msgqid */
-#else
 	intl_req->msgq_index = 1;					/* worker use personal msgq_id & type:0 */
-#endif
 	intl_req->tag.thrd_index = thrd_idx;
 	intl_req->tag.ctx_id = ctx_idx;
 	intl_req->tag.session_index = sess_idx;
@@ -49,9 +48,9 @@ void set_intl_req_msg(intl_req_t *intl_req, int thrd_idx, int ctx_idx, int sess_
 	intl_req->tag.stream_id = stream_id;
 	intl_req->intl_msg_type = msg_type;
 }
-http2_session_data *get_session(int thrd_idx, int sess_idx, int session_id)
+http2_session_data_t *get_session(int thrd_idx, int sess_idx, int session_id)
 {
-	struct http2_session_data *session_data = NULL;
+	http2_session_data_t *session_data = NULL;
 
 	if (thrd_idx < 0 || thrd_idx >= MAX_THRD_NUM)
 		return NULL;
@@ -67,11 +66,23 @@ http2_session_data *get_session(int thrd_idx, int sess_idx, int session_id)
 
 	return session_data;
 }
-void save_session_info(httpc_ctx_t *httpc_ctx, int thrd_idx, int sess_idx, int session_id)
+void save_session_info(httpc_ctx_t *httpc_ctx, int thrd_idx, int sess_idx, int session_id, conn_list_t *conn_list)
 {
 	httpc_ctx->thrd_idx = thrd_idx;
 	httpc_ctx->sess_idx = sess_idx;
 	httpc_ctx->session_id = session_id;
+	sprintf(httpc_ctx->user_ctx.head.destIp, "%s", conn_list->ip);
+#ifdef OAUTH
+	char *token = NULL;
+	if (conn_list->token_id > 0) 
+		token = get_access_token(conn_list->token_id);
+
+	fprintf(stderr, "{{{dbg}}} conn list (list index: %d) (token id : %d)\n", 
+			conn_list->list_index, conn_list->token_id);
+	fprintf(stderr, "{{{dbg}}} token [%s]\n", token != NULL ? token : "");
+
+	sprintf(httpc_ctx->access_token, "%s", token != NULL ? token : "");
+#endif
 }
 
 int find_least_conn_worker()
@@ -185,6 +196,12 @@ void gather_list(conn_list_status_t CONN_STATUS[]) {
 			CONN_STATUS[index].port = 0;
 			CONN_STATUS[index].act = 0;
 			CONN_STATUS[index].occupied = 1;
+#ifdef OAUTH
+			int token_id = CONN_LIST[i].token_id;
+			char *access_token = get_access_token(token_id);
+			CONN_STATUS[index].token_exist = (access_token == NULL ? 1 : 0);
+			sprintf(CONN_STATUS[index].access_token, "%s", access_token);
+#endif
 			index++;
 		}
 	}
@@ -208,6 +225,12 @@ void gather_list(conn_list_status_t CONN_STATUS[]) {
 						CONN_STATUS[index].sess_cnt ++;
 						if (CONN_LIST[k].conn == CN_CONNECTED) 
 							CONN_STATUS[index].conn_cnt ++;
+#ifdef OAUTH
+						int token_id = CONN_LIST[i].token_id;
+						char *access_token = get_access_token(token_id);
+						CONN_STATUS[index].token_exist = (access_token == NULL ? 1 : 0);
+						sprintf(CONN_STATUS[index].access_token, "%s", access_token == NULL ? "" : access_token);
+#endif
 					}
 				}
 			}
@@ -348,3 +371,48 @@ int find_packet_index(char *host, int ls_mode) {
     APPLOG(APPLOG_DEBUG, "fail to send");
     return (-1);
 }
+
+#ifdef OAUTH
+acc_token_list_t *get_token_list(int id, int used)
+{
+	if (id < 1 || id >= MAX_ACC_TOKEN_NUM) /* 1 ~ 127 */
+		return NULL;
+	if (used) {
+		if (ACC_TOKEN_LIST[id].occupied != 1)
+			return NULL;
+		else
+			return &ACC_TOKEN_LIST[id];
+	} else {
+		if (ACC_TOKEN_LIST[id].occupied == 1) {
+			return NULL;
+		} else {
+			ACC_TOKEN_LIST[id].occupied = 1;
+			return &ACC_TOKEN_LIST[id];
+		}
+	}
+}
+
+void print_token_list_raw(acc_token_list_t input_token_list[])
+{
+	APPLOG(APPLOG_ERR, "Access Token List Status");
+	APPLOG(APPLOG_ERR, "================================================================================");
+	for (int i = 0; i < MAX_ACC_TOKEN_NUM; i++) {
+		acc_token_list_t *token_list = &input_token_list[i];
+		if (token_list->occupied != 1)
+			continue;
+		APPLOG(APPLOG_ERR, "%3d] %3d %-24s %-5s %-5s %-20s %-30s %10s %.19s",
+			i,
+			token_list->token_id,
+			token_list->nrf_addr,
+			(token_list->acc_type == AT_SVC) ? "SVC" : "INST",
+			token_list->nf_type,
+			token_list->nf_instance_id,
+			token_list->scope,
+			(token_list->status == TA_INIT) ? "INIT" :
+			(token_list->status == TA_FAILED) ? "FAILED" :
+			(token_list->status == TA_TRYING) ? "TRYING" : "ACCUIRED",
+			ctime(&token_list->due_date));
+	}
+	APPLOG(APPLOG_ERR, "================================================================================");
+}
+#endif

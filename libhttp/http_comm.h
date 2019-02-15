@@ -17,10 +17,28 @@
 #define HTTPS_INTL_MSG_KEY_BASE		0x00620200 // ~ 0x00620211
 #endif
 
-#define AHIF_HTTPC_SEND_SIZE(a) AHIF_HTTPCS_MSG_HEAD_LEN + a.head.bodyLen
-#define HTTPC_AHIF_SEND_SIZE(a) AHIF_HTTPCS_MSG_HEAD_LEN + a.head.bodyLen
+#define AHIF_HTTPC_SEND_SIZE(a) AHIF_HTTPCS_MSG_HEAD_LEN + AHIF_VHDR_LEN + a.head.bodyLen
+#define HTTPC_AHIF_SEND_SIZE(a) AHIF_HTTPCS_MSG_HEAD_LEN + AHIF_VHDR_LEN + a.head.bodyLen
 #define HTTPS_AHIF_SEND_SIZE	HTTPC_AHIF_SEND_SIZE
 #define AHIF_HTTPS_SEND_SIZE	AHIF_HTTPC_SEND_SIZE
+
+typedef enum http_encode_scheme {
+	HTTP_EN_RFC3986 = 0,
+	HTTP_EN_HTML5,
+	HTTP_EN_XWWW
+} http_encode_scheme_t;
+
+// for AHIF special purpose
+/* exception header : start with semi-colon */
+#define HDR_METHOD					":method"
+#define HDR_SCHEME					":scheme"
+#define HDR_AUTHORITY				":authority"
+#define HDR_PATH					":path"
+#define HDR_STATUS					":status"
+/* virtual header : non semi-colon start */
+#define HDR_AUTHORIZATION			"authorization"		// authorization: Bearer token_raw
+#define HDR_CONTENT_ENCODING		"content-encoding"
+#define HDR_CONTENT_TYPE			"content-type"
 
 typedef struct HttpCSAhifTagType {
 	int thrd_index;
@@ -45,6 +63,11 @@ typedef struct HttpCSAhifTagType {
         NGHTTP2_NV_FLAG_NONE                                                   \
   }
 
+#define MAKE_NV_STR(NAME, VALUE)                                                  \
+  {                                                                            \
+    (uint8_t *)NAME, (uint8_t *)VALUE, strlen(NAME), strlen(VALUE),            \
+        NGHTTP2_NV_FLAG_NONE                                                   \
+  }
 
 #define HTTP_MAX_HOST		128
 #define HTTP_MAX_ADDR		4
@@ -75,6 +98,10 @@ typedef struct index {
 /* for ping recv */
 #define MAX_PING_WAIT 5 // (sec)
 
+/* for OAuth 2.0 */
+#define MAX_ACC_TOKEN_NUM 128
+#define MAX_ACC_TOKEN_LEN 512
+
 /* connection status */
 typedef struct conn_list_status {
 	int list_index;
@@ -87,6 +114,10 @@ typedef struct conn_list_status {
 	int conn_cnt;
 	int act;
 	int occupied;
+
+	/* for OAuth 2.0 */
+	int token_exist;
+	char access_token[MAX_ACC_TOKEN_NUM];
 } conn_list_status_t;
 
 /* for statistics */
@@ -123,6 +154,20 @@ typedef struct shm_http {
 #define SHM_HTTP_SIZE sizeof(shm_http_t)
 
 /* function proto type */
+
+/* ------------------------- libshm.c --------------------------- */
 int     get_http_shm(void);
 void    set_httpc_status(conn_list_status_t conn_status[]);
+
+/* ------------------------- libvhdr.c --------------------------- */
+int     set_relay_vhdr(hdr_index_t hdr_index[], int array_size);
+int     print_relay_vhdr(hdr_index_t hdr_index[], int array_size);
+int     sort_relay_vhdr(hdr_index_t hdr_index[], int array_size);
+hdr_index_t     *search_vhdr(hdr_index_t hdr_index[], int array_size, char *vhdr_name);
+
+/* ------------------------- libhutil.c --------------------------- */
+int     parse_ipv4(char *temp_str, struct sockaddr_in *sa, int *port);
+int     parse_ipv6(char *temp_str, struct sockaddr_in6 *sa6, int *port);
+int     parse_http_addr(char *temp_str, struct sockaddr_in *sa, struct sockaddr_in6 *sa6, int *port);
+
 #endif /* __HTTP_COMMON_H__ */

@@ -22,7 +22,8 @@ patch -p2 < ../diff.patch
 	--prefix=${ROOTDIR}/../build \
 	--enable-static \
 	--disable-shared \
-	LDFLAGS=-L${ROOTDIR}/../build/lib
+	LDFLAGS=-L${ROOTDIR}/../build/lib \
+	PKG_CONFIG_PATH=${ROOTDIR}/../build/lib/pkgconfig
 
 make
 make install
