@@ -15,7 +15,7 @@ void set_defined_header(hdr_index_t HDR_INDEX[], char *name, char *val, AhifHttp
 	/* get empty slot */
 	int index = 0;
 	for (; index < MAX_HDR_RELAY_CNT; index++) {
-		if (vheader[index].vheader_id != 0)
+		if (vheader[index].vheader_id == 0)
 			break;
 	}
 
@@ -53,8 +53,8 @@ int assign_more_headers(hdr_index_t HDR_INDEX[], nghttp2_nv *hdrs, int size, int
 		if (vheader[i].vheader_id > VH_START && vheader[i].vheader_id < VH_END) {
 			int header_enum = vheader[i].vheader_id;
 			char *header_name = HDR_INDEX[header_enum].vheader_name;
-			int value_len = strlen(vheader[i].vheader_body);
-			nghttp2_nv hd_add[] = { MAKE_NV(header_name, vheader[i].vheader_body, value_len) };
+
+			nghttp2_nv hd_add[] = { MAKE_NV_STR(header_name, vheader[i].vheader_body) };
 			memcpy(&hdrs[hdrs_len], &hd_add, sizeof(nghttp2_nv));
 			hdrs_len ++;
 		}

@@ -1,8 +1,5 @@
 /* omp status and statistic related */
 
-#ifndef EPCF
-#include <appLog.h>
-#endif
 #include "libs.h"
            
 /* for status */

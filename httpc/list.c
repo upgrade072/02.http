@@ -73,8 +73,15 @@ void save_session_info(httpc_ctx_t *httpc_ctx, int thrd_idx, int sess_idx, int s
 	httpc_ctx->session_id = session_id;
 	sprintf(httpc_ctx->user_ctx.head.destIp, "%s", conn_list->ip);
 #ifdef OAUTH
-	sprintf(httpc_ctx->access_token, "%s", 
-			conn_list->token_id > 0 ? get_access_token(conn_list->token_id) : NULL);
+	char *token = NULL;
+	if (conn_list->token_id > 0) 
+		token = get_access_token(conn_list->token_id);
+
+	fprintf(stderr, "{{{dbg}}} conn list (list index: %d) (token id : %d)\n", 
+			conn_list->list_index, conn_list->token_id);
+	fprintf(stderr, "{{{dbg}}} token [%s]\n", token != NULL ? token : "");
+
+	sprintf(httpc_ctx->access_token, "%s", token != NULL ? token : "");
 #endif
 }
 
@@ -222,7 +229,7 @@ void gather_list(conn_list_status_t CONN_STATUS[]) {
 						int token_id = CONN_LIST[i].token_id;
 						char *access_token = get_access_token(token_id);
 						CONN_STATUS[index].token_exist = (access_token == NULL ? 1 : 0);
-						sprintf(CONN_STATUS[index].access_token, "%s", access_token);
+						sprintf(CONN_STATUS[index].access_token, "%s", access_token == NULL ? "" : access_token);
 #endif
 					}
 				}
@@ -371,30 +378,30 @@ acc_token_list_t *get_token_list(int id, int used)
 	if (id < 1 || id >= MAX_ACC_TOKEN_NUM) /* 1 ~ 127 */
 		return NULL;
 	if (used) {
-		/* return specific list */
 		if (ACC_TOKEN_LIST[id].occupied != 1)
 			return NULL;
 		else
 			return &ACC_TOKEN_LIST[id];
 	} else {
-		/* return empty list */
-		for (int i = 0; i < MAX_ACC_TOKEN_NUM; i++) {
-			if (ACC_TOKEN_LIST[i].occupied != 1) {
-				ACC_TOKEN_LIST[i].occupied = 1;
-				return &ACC_TOKEN_LIST[i];
-			}
+		if (ACC_TOKEN_LIST[id].occupied == 1) {
+			return NULL;
+		} else {
+			ACC_TOKEN_LIST[id].occupied = 1;
+			return &ACC_TOKEN_LIST[id];
 		}
 	}
-	return NULL;
 }
 
 void print_token_list_raw(acc_token_list_t input_token_list[])
 {
+	APPLOG(APPLOG_ERR, "Access Token List Status");
+	APPLOG(APPLOG_ERR, "================================================================================");
 	for (int i = 0; i < MAX_ACC_TOKEN_NUM; i++) {
 		acc_token_list_t *token_list = &input_token_list[i];
 		if (token_list->occupied != 1)
 			continue;
-		fprintf(stderr, "%3d) %-24s %-5s %-5s %-20s %-30s %10s %19s",
+		APPLOG(APPLOG_ERR, "%3d] %3d %-24s %-5s %-5s %-20s %-30s %10s %.19s",
+			i,
 			token_list->token_id,
 			token_list->nrf_addr,
 			(token_list->acc_type == AT_SVC) ? "SVC" : "INST",
@@ -406,5 +413,6 @@ void print_token_list_raw(acc_token_list_t input_token_list[])
 			(token_list->status == TA_TRYING) ? "TRYING" : "ACCUIRED",
 			ctime(&token_list->due_date));
 	}
+	APPLOG(APPLOG_ERR, "================================================================================");
 }
 #endif

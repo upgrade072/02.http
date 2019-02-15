@@ -6,13 +6,14 @@
 int set_relay_vhdr(hdr_index_t hdr_index[], int array_size)
 {
 	if (array_size < VH_START || array_size > VH_END) {
-		fprintf(stderr, "dbg] array size too long with [%d~%d]\n", VH_START, VH_END);
+		fprintf(stderr, "\ndbg} array size too long with [%d~%d]\n", VH_START, VH_END);
 		return (-1);
 	}
 
 	char *line = strtok(strdup(HTTP_VHEADER), "\n");
 	for (int i = 0, copy_index = 0; i < VH_END; i++) {
-		sprintf(hdr_index[copy_index].vheader_name, "%s", line);
+		int len = sprintf(hdr_index[copy_index].vheader_name, "%s", line);
+		hdr_index[copy_index].vheader_name[len] = '\0';
 		hdr_index[copy_index].vheader_id = i;
 		copy_index++;
 
@@ -25,11 +26,11 @@ int set_relay_vhdr(hdr_index_t hdr_index[], int array_size)
 int print_relay_vhdr(hdr_index_t hdr_index[], int array_size)
 {
 	if (array_size < VH_START || array_size > VH_END) {
-		fprintf(stderr, "dbg] array size too long with [%d~%d]\n", VH_START, VH_END);
+		fprintf(stderr, "dbg} array size too long with [%d~%d]\n", VH_START, VH_END);
 		return (-1);
 	}
 
-	fprintf(stderr, "dbg] check virtual-header enum:str list.. \n");
+	fprintf(stderr, "\ndbg} check virtual-header enum:str list.. \n");
 	for (int i = 0; i < VH_END; i++) {
 		fprintf(stderr, "relay vhdr [%s][%d]\n", 
 				hdr_index[i].vheader_name, hdr_index[i].vheader_id);
@@ -49,7 +50,7 @@ static int cmpstring(const void *ptr1, const void *ptr2)
 int sort_relay_vhdr(hdr_index_t hdr_index[], int array_size)
 {
 	if (array_size < VH_START || array_size > VH_END) {
-		fprintf(stderr, "dbg] array size too long with [%d~%d]\n", VH_START, VH_END);
+		fprintf(stderr, "dbg} array size too long with [%d~%d]\n", VH_START, VH_END);
 		return (-1);
 	}
 
@@ -71,12 +72,12 @@ hdr_index_t *search_vhdr(hdr_index_t hdr_index[], int array_size, char *vhdr_nam
 	hdr_index_t *result = NULL;
 
 	if (array_size < VH_START || array_size > VH_END) {
-		fprintf(stderr, "dbg] array size too long with [%d~%d]\n", VH_START, VH_END);
+		fprintf(stderr, "dbg} array size too long with [%d~%d]\n", VH_START, VH_END);
 		return NULL;
 	}
 
 	if (strlen(vhdr_name) >= MAX_HDR_NAME_LEN) {
-		fprintf(stderr, "dbg] search name is too long with [%d]\n", MAX_HDR_NAME_LEN);
+		fprintf(stderr, "dbg} search name is too long with [%d]\n", MAX_HDR_NAME_LEN);
 		return NULL;
 	}
 

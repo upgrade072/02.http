@@ -39,6 +39,7 @@ typedef struct access_token_req {
     char *nfInstanceId;
     char *nfType;
     char *targetNfType;
+	char scope_req[1024];
 	char scope_raw[1024];
     char *scope[MAX_SCOPE_NUM];
     char *targetNfInstanceId;

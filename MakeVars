@@ -1,5 +1,5 @@
 
-### TARGET : epcf, udmr, ausf, perf, test
+### TARGET : epcf, udmr, ausf, perf, epcf_test, test
 TARGET      = epcf
 
 ## HOLDSESS : do not close session in no more read/write exist
@@ -8,19 +8,23 @@ INC_PATH    = -I. -I../../../include -I../../../libsrc/COMM
 LIB_PATH    = -L../../../lib
 
 ifeq ($(TARGET),epcf)
-CFLAGS		+= -DEPCF -DOAUTH
+CFLAGS		+= -DEPCF -DLOG_LIB -DOAUTH
+else ifeq ($(TARGET),epcf_test)
+CFLAGS		+= -DEPCF -DLOG_PRINT -DOAUTH -DTEST
 else ifeq ($(TARGET),udmr)
-CFLAGS		+= -DUDMR
+CFLAGS		+= -DUDMR -DLOG_APP
 else ifeq ($(TARGET),ausf)
-CFLAGS		+= -DAUSF
+CFLAGS		+= -DAUSF -DLOG_APP
 else ifeq ($(TARGET),perf)
-CFLAGS		+= -DPERFORM
+CFLAGS		+= -DPERFORM -DLOG_PRINT
 else ifeq ($(TARGET),test)
-CFLAGS		+= -pg -DTEST
+CFLAGS		+= -pg -DTEST -DLOG_PRINT
 endif
 
 ifeq ($(TARGET),epcf)
-LIBS        = -lcomm -lpthread -ldl -lrt
+LIBS        = -lcomm -lm -lpthread -ldl -lrt
+else ifeq ($(TARGET),epcf_test)
+LIBS        = -lcomm -lm -lpthread -ldl -lrt
 else
 LIBS        = -lShmQueue -lcomm -lLog -lpthread -ldl -lrt
 endif

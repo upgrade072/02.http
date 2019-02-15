@@ -59,6 +59,7 @@ CF_INIT_ERR:
     return (-1);
 }
 
+#ifdef LOG_APP
 int config_load_just_log()
 {
     int log_level;
@@ -67,13 +68,11 @@ int config_load_just_log()
         fprintf(stderr, "config log_level not exist\n");
         goto CF_LOGLEVEL_LOAD_ERR;
     } else {
-#ifndef EPCF
         if (log_level < APPLOG_NONE || log_level > APPLOG_DEBUG) {
             fprintf(stderr, "config log_level value invalid[%d] (%d~%d)\n",
                     log_level, APPLOG_NONE, APPLOG_DEBUG);
             goto CF_LOGLEVEL_LOAD_ERR;
         }
-#endif
         SERVER_CONF.log_level = log_level;
         fprintf(stderr, "log_level is [%d]\n", log_level);
     }
@@ -87,6 +86,7 @@ CF_LOGLEVEL_LOAD_ERR:
     config_destroy(&CFG);
     return (-1);
 }
+#endif
 
 int config_load()
 {
@@ -293,7 +293,7 @@ int config_load()
 					ALLOW_LIST[index].act = 0;
 				}
                 ALLOW_LIST[index].max = max;
-#ifdef AUTH
+#ifdef OAUTH
                 ALLOW_LIST[index].auth_act = auth_act;
 #endif
                 ALLOW_LIST[index].curr = 0;

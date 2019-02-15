@@ -6,30 +6,18 @@
 // VH_START 와 VH_END 는 유지
 typedef enum {
 	VH_START,
-	VH_TEST_2,
-	VH_TEST_1,
-	VH_TEST_3,
-	VH_TEST_4,
-	VH_TEST_5,
-	VH_TEST_9,
-	VH_TEST_6,
-	VH_TEST_7,
-	VH_TEST_8,
+	VH_HELLO_WORLD,
+	VH_ARIEL_NETS,
+	VH_CACHE_CONTROLS,
+	VH_WRONG_HEADER,
 	VH_END
 } http_vheader;
-
-// schlee, now testing
 #define HTTP_VHEADER "\
 VH_START\n\
-VH_TEST_2\n\
-VH_TEST_1\n\
-VH_TEST_3\n\
-VH_TEST_4\n\
-VH_TEST_5\n\
-VH_TEST_9\n\
-VH_TEST_6\n\
-VH_TEST_7\n\
-VH_TEST_8\n\
+hdr-hello-world\n\
+hdr-ariel-nets\n\
+cache-controls\n\
+:wrong_header\n\
 VH_END\n\n"
 
 #define MAX_HDR_RELAY_CNT 12

@@ -24,7 +24,7 @@ export PKG_CONFIG_PATH=$(PKG_CONFIG_PATH):${ROOTDIR}/../build/lib/pkgconfig
 	--disable-shared \
 	CFLAGS="$(CFLAGS) -I${ROOTDIR}/../build/include" \
 	LDFLAGS="$(LDFLAGS) -L${ROOTDIR}/../build/lib" \
-	LIBS="$(LIBS) -L${ROOTDIR}/../build/lib -ldl"
+	LIBS="$(LIBS) -L${ROOTDIR}/../build/lib -ldl -lpthread"
 
 make
 make install

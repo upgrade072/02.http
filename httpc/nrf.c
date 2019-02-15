@@ -3,13 +3,18 @@
 
 extern acc_token_list_t	ACC_TOKEN_LIST[MAX_ACC_TOKEN_NUM];
 extern nrf_worker_t		NRF_WORKER;
+extern char 			mySysType[COMM_MAX_VALUE_LEN];
+extern char 			mySvrId[COMM_MAX_VALUE_LEN];
 
 void print_oauth_response(access_token_res_t *response)
 {
-	fprintf(stderr, "\n{dbg} recv oauth 2.0 response ...\n");
-	fprintf(stderr, "  {access_token : %s\n", response->access_token);
-	fprintf(stderr, "  {token_type : %s\n", response->token_type);
-	fprintf(stderr, "  {expire_in : %d\n", response->expire_in);
+	time_t due_time = response->expire_in;
+
+	APPLOG(APPLOG_ERR, "");
+	APPLOG(APPLOG_ERR, "{dbg} recv oauth 2.0 response ...");
+	APPLOG(APPLOG_ERR, "  {access_token : %s", response->access_token);
+	APPLOG(APPLOG_ERR, "  {token_type : %s", response->token_type);
+	APPLOG(APPLOG_ERR, "  {expire_in : %d (%.19s)", response->expire_in, ctime(&due_time));
 }
 
 void parse_oauth_response(char *body, access_token_res_t *response)
@@ -23,7 +28,7 @@ void parse_oauth_response(char *body, access_token_res_t *response)
 	{
 		char *delimiter = NULL;
 
-		fprintf(stderr, "dbg} %s\n", ptr);
+		//APPLOG(APPLOG_ERR, "dbg} %s", ptr);
 
 		if (!strncmp(ptr, "access_token", strlen("access_token"))) {
 			if ((delimiter = strchr(ptr, ':')) != NULL) 
@@ -49,14 +54,14 @@ void accuire_token(acc_token_list_t *token_list)
 
 	if (token_list->acc_type == AT_SVC)
 		sprintf(request_body, HBODY_ACCESS_TOKEN_REQ_FOR_TYPE,
-				"1111-2222-3333-4444",		/* TODO : sysconf) MY NF INSTANCE ID  */
-				"PCF",						/* TODO : sysconf) MY NF TYPE */
+				mySvrId,
+				mySysType,
 				token_list->nf_type,
 				token_list->scope);
 	else
 		sprintf(request_body, HBODY_ACCESS_TOKEN_REQ_FOR_INSTANCE,
-				"1111-2222-3333-4444",		/* TODO : sysconf) MY NF INSTANCE ID  */
-				"PCF",						/* TODO : sysconf) MY NF TYPE */
+				mySvrId,
+				mySysType,
 				token_list->nf_type,
 				token_list->scope,
 				token_list->nf_instance_id);
@@ -82,9 +87,15 @@ void accuire_token(acc_token_list_t *token_list)
 
 		int pos = (token_list->token_pos + 1) % 2; // indicate [0] [1] [0] [1]
 		sprintf(token_list->access_token[pos], "%s", access_token_res.access_token);
+fprintf(stderr, "{{{dbg}}} pos [%d] token [%s]\n", pos, token_list->access_token[pos]);
 		token_list->due_date = access_token_res.expire_in;
+		token_list->last_request_time = time(NULL);
 
+		/* update pos & status */
+		token_list->token_pos = pos;
 		token_list->status = TA_ACCUIRED;
+
+		print_token_list_raw(ACC_TOKEN_LIST);
 	} else {
 		token_list->status = TA_FAILED;
 	}
@@ -93,7 +104,8 @@ void accuire_token(acc_token_list_t *token_list)
 void chk_and_accuire_token(acc_token_list_t *token_list)
 {
 	time_t current = time(NULL);
-	if (token_list->due_date - current < 600) { // 10 minute 
+	if (token_list->due_date - current < 600 ||
+			current - token_list->last_request_time > 60 ) {
 		accuire_token(token_list);
 	}
 }

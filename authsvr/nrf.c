@@ -27,8 +27,10 @@ void parse_oauth_request(char *body, access_token_req_t *request)
 				request->targetNfType = delimiter + 1;
 
 		} else if (!strncmp(ptr, "scope", strlen("scope"))) {
-			if ((delimiter = strchr(ptr, '=')) != NULL) 
+			if ((delimiter = strchr(ptr, '=')) != NULL)  {
+				sprintf(request->scope_req, "%s", delimiter + 1);
 				sprintf(request->scope_raw, "%s", delimiter + 1);
+			}
 
 		} else if (!strncmp(ptr, "targetNfInstanceId", strlen("targetNfInstanceId"))) {
 			if ((delimiter = strchr(ptr, '=')) != NULL) 
@@ -58,7 +60,7 @@ void print_oauth_request(access_token_req_t *request)
 	fprintf(stderr, "  {nfInstanceId : %s\n", request->nfInstanceId);
 	fprintf(stderr, "  {nfType : %s\n", request->nfType);
 	fprintf(stderr, "  {targetNfType : %s\n", request->targetNfType);
-	fprintf(stderr, "  {((scope raw)) : %s\n", request->scope_raw);
+	fprintf(stderr, "  {((scope req)) : %s\n", request->scope_req);
 	for (int i = 0; (i < MAX_SCOPE_NUM) && (request->scope[i] != NULL); i++)
 		fprintf(stderr, "  {scope(%2d) : %s\n", i, request->scope[i]);
 	fprintf(stderr, "  {targetNfInstanceId : %s\n", request->targetNfInstanceId);
@@ -161,7 +163,7 @@ int issue_access_token(access_token_req_t *auth_req, config_setting_t *conf, cha
 	if (jwt_add_grant(jwt, "audience", nfProducerId) != 0)
 		return (-1);
 	/* scope : access token allow scope, can use wildcard */
-	if (jwt_add_grant(jwt, "scope", auth_req->scope_raw) != 0)
+	if (jwt_add_grant(jwt, "scope", auth_req->scope_req) != 0)
 		return (-1);
 	/* expiration : token expire time (sec/int) */
 	time_t expire = time(NULL) + NRF_TOKEN_EXPIRE;
@@ -235,6 +237,9 @@ int on_request_recv_nrf(nghttp2_session *session,
 
 // REQUEST VIA TARGET_NF_INSTANCE_ID
 	if (auth_req.targetNfInstanceId != NULL) {
+
+		//fprintf(stderr, "{{{dbg}}} target Instance Not Null, find via Instance\n");
+
 		/* targetNfInstance = { NRF registered instance only } */
 		config_setting_t *targetNfInstance = search_nf_by_value("nfInstanceId", auth_req.targetNfInstanceId);
 		if (targetNfInstance == NULL) {
@@ -272,7 +277,11 @@ int on_request_recv_nrf(nghttp2_session *session,
 		goto OAUTH_RETURN_400;
 	} else {
 // REQUEST VIA TARGET NF SERVICE
+
+		//fprintf(stderr, "{{{dbg}}} target Instance Null, find via SVC_TYPE\n");
+
 		config_setting_t *targetNfInstance = search_nf_by_auth_info(&auth_req);
+
 		if (targetNfInstance == NULL) {
 			sprintf(res_body, ACC_TOKEN_ERR_BODY, "unauthorized_client", "target NF Instance Not exist");
 			goto OAUTH_RETURN_400;

@@ -1,10 +1,10 @@
 
 SUBDIRS := openssl libevent nghttp2 \
 		   libconfig libhttp libs \
-		   httpreq https httpc \
+		   libjansson libjwt \
+		   httpreq httpc https \
 		   json-c jslint \
 		   perfsim \
-		   libjansson libjwt \
 		   authsvr
 
 subdirs: $(SUBDIRS)

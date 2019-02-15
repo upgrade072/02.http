@@ -54,6 +54,8 @@ config_setting_t *search_nf_by_auth_info(access_token_req_t *auth_req)
 {
 	char *targetNfType = auth_req->targetNfType;
 
+	//fprintf(stderr, "{{{dbg}}} we find target NFType (%s)\n", targetNfType);
+
 	config_setting_t *setting = config_lookup(&CFG, "nf_list");
 	if (setting == NULL) {
 		fprintf(stderr, "err] config nf_list is NULL\n");
@@ -70,6 +72,7 @@ config_setting_t *search_nf_by_auth_info(access_token_req_t *auth_req)
 				strcmp(targetNfType, value)) {
 			continue;
 		}
+		//fprintf(stderr, "{{{{dbg}}} nfType %s match\n", value);
 
 		/* check scope match */
 		config_setting_t *scope = NULL;

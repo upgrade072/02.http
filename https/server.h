@@ -8,7 +8,9 @@
 #include <commlib.h>
 #include <ahif_msgtypes.h>
 #include <sfm_msgtypes.h>
-#ifndef EPCF
+#ifdef LOG_LIB
+#include <loglib.h>
+#elif LOG_APP
 #include <appLog.h>
 #endif
 
@@ -39,6 +41,7 @@
 #include <sys/msg.h>
 #include <pthread.h>
 
+/* OAuth 2.0 / JWT */
 #include <jwt.h>
 
 #define OUTPUT_WOULDBLOCK_THRESHOLD (1 << 16)

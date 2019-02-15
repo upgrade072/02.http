@@ -15,8 +15,7 @@ char CONFIG_PATH[256] = {0,};
 
 index_t INDEX[MAX_LIST_NUM];
 
-#ifdef OAUTH 
-/* NRF OAuth 2.0 */
+#ifdef OAUTH  /* NRF OAuth 2.0 */
 #define CF_ACCTOKEN_LIST	"access_token_info.list"
 extern acc_token_list_t ACC_TOKEN_LIST[MAX_ACC_TOKEN_NUM];
 #endif
@@ -64,13 +63,7 @@ CF_INIT_ERR:
     return (-1);
 }
 
-#if 0 /* someday use it */
-int destroy_cfg()
-{
-    config_destroy(&CFG);
-}
-#endif
-
+#ifdef LOG_APP
 int config_load_just_log()
 {
     //config_setting_t *setting;
@@ -80,13 +73,11 @@ int config_load_just_log()
         fprintf(stderr, "config log_level not exist\n");
         goto CF_LOGLEVEL_LOAD_ERR;
     } else {
-#ifndef EPCF
         if (log_level < APPLOG_NONE || log_level > APPLOG_DEBUG) {
             fprintf(stderr, "config log_level value invalid[%d] (%d~%d)\n", 
 					log_level, APPLOG_NONE, APPLOG_DEBUG);
 			goto CF_LOGLEVEL_LOAD_ERR;
         }
-#endif
         CLIENT_CONF.log_level = log_level;
         fprintf(stderr, "log_level is [%d]\n", log_level);
     }
@@ -100,6 +91,7 @@ CF_LOGLEVEL_LOAD_ERR:
     config_destroy(&CFG);
     return (-1);
 }
+#endif
 
 int config_load()
 {

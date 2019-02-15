@@ -8,7 +8,10 @@
 #include <commlib.h>
 #include <ahif_msgtypes.h>
 #include <sfm_msgtypes.h>
-#ifndef EPCF
+
+#ifdef LOG_LIB
+#include <loglib.h>
+#elif LOG_APP
 #include <appLog.h>
 #endif
 
@@ -134,6 +137,7 @@ typedef struct acc_token_list {
 
 	int token_pos;
 	char access_token[2][MAX_ACC_TOKEN_LEN];
+	time_t last_request_time;
 } acc_token_list_t;
 
 

@@ -2,7 +2,10 @@
 
 char mySysName[COMM_MAX_NAME_LEN];
 char myProcName[COMM_MAX_NAME_LEN];
-#ifndef EPCF
+char mySysType[COMM_MAX_VALUE_LEN];
+char mySvrId[COMM_MAX_VALUE_LEN];
+
+#ifdef LOG_APP
 int logLevel = APPLOG_DEBUG;
 int *lOG_FLAG = &logLevel;
 #endif
@@ -22,7 +25,7 @@ https_ctx_t *HttpsCtx[MAX_THRD_NUM];
 allow_list_t ALLOW_LIST[MAX_LIST_NUM];
 http_stat_t HTTP_STAT;
 
-hdr_index_t HDR_INDEX[MAX_HDR_RELAY_CNT];
+hdr_index_t VHDR_INDEX[2][MAX_HDR_RELAY_CNT];
 
 static unsigned char next_proto_list[256];
 static size_t next_proto_list_len;
@@ -188,12 +191,12 @@ static http2_session_data *create_http2_session_data(app_context *app_ctx,
 
 	if ((rv = getnameinfo(addr, (socklen_t)addrlen, host, sizeof(host), NULL, 0, 
 					NI_NUMERICHOST)) != 0) {
-        APPLOG(APPLOG_DEBUG, "%s)%d) (%s) getnameinfo fail\n", __func__, __LINE__, host);
+        APPLOG(APPLOG_DEBUG, "%s)%d) (%s) getnameinfo fail", __func__, __LINE__, host);
 		return NULL;
     }
 
 	if ((allowlist_index = check_allow(host)) < 0) {
-        APPLOG(APPLOG_DEBUG, "%s)%d) (%s) allow list find fail\n", __func__, __LINE__, host);
+        APPLOG(APPLOG_DEBUG, "%s)%d) (%s) allow list find fail", __func__, __LINE__, host);
 		return NULL;
     }
 
@@ -234,7 +237,7 @@ static http2_session_data *create_http2_session_data(app_context *app_ctx,
 	add_to_allowlist(allowlist_index, index, sess_idx, session_data->session_id);
 
 	ssl = create_ssl(app_ctx->ssl_ctx);
-	APPLOG(APPLOG_ERR, "%s) thread [%d], accept new client, session id (%d)\n", __func__, index, session_data->session_id);
+	APPLOG(APPLOG_ERR, "%s) thread [%d], accept new client, session id (%d)", __func__, index, session_data->session_id);
 
 	setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (char *)&val, sizeof(val));
 	session_data->thrd_index = index;
@@ -261,7 +264,7 @@ static void delete_http2_session_data(http2_session_data *session_data) {
 	/* stat HTTP_DISCONN */
 	http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_DISCONN);
 
-	APPLOG(APPLOG_ERR, "%s) peer %s disconnected\n", __func__, session_data->client_addr);
+	APPLOG(APPLOG_ERR, "%s) peer %s disconnected", __func__, session_data->client_addr);
 	THRD_WORKER[session_data->thrd_index].client_num --;
 	ALLOW_LIST[session_data->allowlist_index].curr --;
 	del_from_allowlist(session_data->allowlist_index, session_data->thrd_index, session_data->session_index);
@@ -406,22 +409,6 @@ static int send_response_by_ctx(nghttp2_session *session, int32_t stream_id,
 	return 0;
 }
 
-#if 0
-static const char ERROR_HTML[] = "<html><head><title>404</title></head>"
-"<body><h1>404 Not Found</h1></body></html>";
-
-static int error_reply(nghttp2_session *session,
-		http2_stream_data *stream_data) {
-
-	nghttp2_nv hdrs[] = {MAKE_NV2(":status", "404")};
-
-	if (send_response(session, stream_data->stream_id, hdrs, ARRLEN(hdrs),
-				(void *)ERROR_HTML) != 0) {
-		return (-1);
-	}
-	return 0;
-}
-#else
 /* CAUTION!!! : data_prd only ref pointer(not copyed), must use under static values */
 static const char ERROR_BADREQ[] = "{cause:\"bad request\"}";
 static const char ERROR_INTERNAL[] = "{cause:\"internal error\"}";
@@ -439,7 +426,6 @@ static int error_reply(nghttp2_session *session, http2_stream_data *stream_data,
 	}
 	return 0;
 }
-#endif
 
 /* nghttp2_on_header_callback: Called when nghttp2 library emits
    single header name/value pair. */
@@ -457,6 +443,8 @@ static int on_header_callback(nghttp2_session *session,
 	// schlee, nghttp gurantee null ternimation in this function
 	char *header_name = (char *)name;
 	char *header_value = (char *)value;
+
+	//fprintf(stderr, "{{{dbg}}}} header %s value %s\n", name, value);
 
 	switch (frame->hd.type) {
 		case NGHTTP2_HEADERS:
@@ -511,7 +499,8 @@ static int on_header_callback(nghttp2_session *session,
 #endif
 			} else {
 				/* vHeader relay */
-				set_defined_header(HDR_INDEX, header_name, header_value, &https_ctx->user_ctx);
+				//fprintf(stderr, "{{{dbg}}} recv header %s %s\n", header_name, header_value);
+				set_defined_header(VHDR_INDEX[1], header_name, header_value, &https_ctx->user_ctx);
 			}
 			break;
 	}
@@ -593,12 +582,14 @@ int check_access_token(char *token)
 	time_t current = time(NULL);
 	if (expiration == 0 || expiration < current) {
 		fprintf(stderr, "dbg} wrong expiration\n");
+		jwt_free(jwt);
 		return (-1);
 	}
 
 	const char *audience = jwt_get_grant(jwt, "audience");
-	if (audience == NULL || strcmp(audience, "1111-2222-3333-4444")) {
+	if (audience == NULL || strcmp(audience, mySvrId)) {
 		fprintf(stderr, "dbg} wrong audience\n");
+		jwt_free(jwt);
 		return (-1);
 	}
 
@@ -864,7 +855,7 @@ static void eventcb(struct bufferevent *bev, short events, void *ptr) {
 		SSL *ssl;
 		(void)bev;
 
-		APPLOG(APPLOG_ERR, "%s) %s:%d Connected\n", __func__, session_data->client_addr, session_data->client_port);
+		APPLOG(APPLOG_ERR, "%s) %s:%d Connected", __func__, session_data->client_addr, session_data->client_port);
 
 		ssl = bufferevent_openssl_get_ssl(session_data->bev);
 
@@ -876,7 +867,7 @@ static void eventcb(struct bufferevent *bev, short events, void *ptr) {
 #endif // OPENSSL_VERSION_NUMBER >= 0x10002000L
 
 		if (alpn == NULL || alpnlen != 2 || memcmp("h2", alpn, 2) != 0) {
-			APPLOG(APPLOG_ERR, "%s) %s h2 is not negotiated\n", __func__, session_data->client_addr);
+			APPLOG(APPLOG_ERR, "%s) %s h2 is not negotiated", __func__, session_data->client_addr);
 			delete_http2_session_data(session_data);
 			return;
 		}
@@ -1040,7 +1031,7 @@ void monitor_worker()
         sprintf(buff + strlen(buff), "WORKER[%2d] used[%5d] free[%5d] tmout[%5d]\n",
                 index, used_num, free_num, tmout_num);
     }
-    APPLOG(APPLOG_ERR, "\n%s\n", buff);
+    APPLOG(APPLOG_ERR, "\n\n%s\n", buff);
 }
 
 void main_tick_callback(evutil_socket_t fd, short what, void *arg)
@@ -1075,7 +1066,7 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 		res = msgrcv(THRD_WORKER[read_index].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0, IPC_NOWAIT | MSG_NOERROR); 
 		if (res < 0) {
 			if (errno != ENOMSG) {
-				APPLOG(APPLOG_ERR,"[%s] >>> msgrcv fail; err=%d(%s)\n", __func__, errno, strerror(errno));
+				APPLOG(APPLOG_ERR,"[%s] >>> msgrcv fail; err=%d(%s)", __func__, errno, strerror(errno));
 			}
 			return;
 		} else {
@@ -1108,7 +1099,7 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 				nghttp2_nv hdrs[MAX_HDR_RELAY_CNT + 2] = { MAKE_NV(":status", result_code, strlen(result_code))};
 				int hdrs_len = 1; /* :status */
 
-				hdrs_len = assign_more_headers(HDR_INDEX, &hdrs[0], MAX_HDR_RELAY_CNT + 2, hdrs_len, &https_ctx->user_ctx);
+				hdrs_len = assign_more_headers(VHDR_INDEX[0], &hdrs[0], MAX_HDR_RELAY_CNT + 2, hdrs_len, &https_ctx->user_ctx);
 				if (send_response_by_ctx(session_data->session, stream_id, hdrs, hdrs_len, https_ctx) == 0) {
 					/* submit success */
 					if (session_send(session_data) != 0) {
@@ -1414,18 +1405,16 @@ int initialize()
         fprintf(stderr, "fail to init config\n");
         return (-1);
     }
+#ifdef LOG_LIB
+	char log_path[1024] = {0,};
+	sprintf(log_path, "%s/log/ERR_LOG/%s", getenv(IV_HOME), myProcName);
+	initlog_for_loglib(myProcName, log_path);
+#elif LOG_APP
     if (config_load_just_log() < 0) {
         fprintf(stderr, "fail to read config file (log)\n");
         return (-1);
     }
-    /* log initialize */
-#ifndef TEST
     sprintf(fname, "%s/log", getenv(IV_HOME));
-#else
-    sprintf(fname, "./log");
-#endif
-
-#ifndef EPCF
     LogInit(myProcName, fname);
     *lOG_FLAG = SERVER_CONF.log_level;
 #endif
@@ -1462,6 +1451,18 @@ int initialize()
 		return (-1);
 	if ((httpsTxQid = shmqlib_getQid (fname, "APP_TO_AHIF_SHMQ", myProcName, SHMQLIB_MODE_PUTTER)) < 0)
 		return (-1);
+
+#ifdef OAUTH
+    sprintf(fname,"%s/%s", env, SYSCONF_FILE);
+    if (conflib_getNthTokenInFileSection (fname, "GENERAL", "SYSTEM_TYPE", 1, mySysType) < 0) {
+        APPLOG(APPLOG_ERR, "cant find SYSTEM_TYPE in (%s)", fname);
+        return -1;
+    }
+    if (conflib_getNthTokenInFileSection (fname, "GENERAL", "SERVER_ID", 1, mySvrId) < 0) {
+        APPLOG(APPLOG_ERR, "cant find SERVER_ID in (%s)", fname);
+        return -1;
+    }
+#endif
 
 	/* create recv-mq */
 #ifndef TEST
@@ -1506,15 +1507,19 @@ int initialize()
 
 
     /* create header enum:string list for bsearch and relay */
-    if (set_relay_vhdr(HDR_INDEX, VH_END) < 0)
+    if (set_relay_vhdr(VHDR_INDEX[0], VH_END) < 0) {
+		APPLOG(APPLOG_ERR, "relay vhdr set fail");
         return -1;
-    else
-        print_relay_vhdr(HDR_INDEX, VH_END);
+	} else {
+        print_relay_vhdr(VHDR_INDEX[0], VH_END);
+	}
+	memcpy(VHDR_INDEX[1], VHDR_INDEX[0], sizeof(hdr_index_t) * MAX_HDR_RELAY_CNT);
 
-    if (sort_relay_vhdr(HDR_INDEX, VH_END) < 0)
+
+    if (sort_relay_vhdr(VHDR_INDEX[1], VH_END) < 0)
         return -1;
     else
-        print_relay_vhdr(HDR_INDEX, VH_END);
+        print_relay_vhdr(VHDR_INDEX[1], VH_END);
 
 	/* process start run */
 #ifndef TEST

@@ -1,10 +1,6 @@
 #ifndef __HTTP_COMMON_H__
 #define __HTTP_COMMON_H__
 
-
-/* TODO!!!! REMOVE THIS!!! CAUTION TEST MACRO for PORTING!!!! */
-#define APPLOG(x, ...) fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n");
-
 #include <ahif_msgtypes.h>
 #include <arpa/inet.h>
 
@@ -21,8 +17,8 @@
 #define HTTPS_INTL_MSG_KEY_BASE		0x00620200 // ~ 0x00620211
 #endif
 
-#define AHIF_HTTPC_SEND_SIZE(a) AHIF_HTTPCS_MSG_HEAD_LEN + a.head.bodyLen
-#define HTTPC_AHIF_SEND_SIZE(a) AHIF_HTTPCS_MSG_HEAD_LEN + a.head.bodyLen
+#define AHIF_HTTPC_SEND_SIZE(a) AHIF_HTTPCS_MSG_HEAD_LEN + AHIF_VHDR_LEN + a.head.bodyLen
+#define HTTPC_AHIF_SEND_SIZE(a) AHIF_HTTPCS_MSG_HEAD_LEN + AHIF_VHDR_LEN + a.head.bodyLen
 #define HTTPS_AHIF_SEND_SIZE	HTTPC_AHIF_SEND_SIZE
 #define AHIF_HTTPS_SEND_SIZE	AHIF_HTTPC_SEND_SIZE
 
@@ -39,8 +35,8 @@ typedef enum http_encode_scheme {
 #define HDR_AUTHORITY				":authority"
 #define HDR_PATH					":path"
 #define HDR_STATUS					":status"
-#define HDR_AUTHORIZATION			":authorization"		// :authorization: Bearer token_raw
 /* virtual header : non semi-colon start */
+#define HDR_AUTHORIZATION			"authorization"		// authorization: Bearer token_raw
 #define HDR_CONTENT_ENCODING		"content-encoding"
 #define HDR_CONTENT_TYPE			"content-type"
 
@@ -67,6 +63,11 @@ typedef struct HttpCSAhifTagType {
         NGHTTP2_NV_FLAG_NONE                                                   \
   }
 
+#define MAKE_NV_STR(NAME, VALUE)                                                  \
+  {                                                                            \
+    (uint8_t *)NAME, (uint8_t *)VALUE, strlen(NAME), strlen(VALUE),            \
+        NGHTTP2_NV_FLAG_NONE                                                   \
+  }
 
 #define HTTP_MAX_HOST		128
 #define HTTP_MAX_ADDR		4

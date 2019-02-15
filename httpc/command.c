@@ -42,11 +42,9 @@ void message_handle(evutil_socket_t fd, short what, void *arg)
 			case MTYPE_MMC_REQUEST:
 				mml_function((IxpcQMsgType *)msg->body);
 				continue;
-#ifndef TEST
 			case MTYPE_STATISTICS_REQUEST:
 				stat_function((IxpcQMsgType *)msg->body, CLIENT_CONF.worker_num, 1, 0, MSGID_HTTPC_STATISTICS_REPORT);
 				continue;
-#endif
 			default:
 				APPLOG(APPLOG_ERR, "not yet ready (mtype:%ld)", (long)msg->mtype); // fuck! genq_mtype_t, it just long
 				continue;
@@ -55,6 +53,7 @@ void message_handle(evutil_socket_t fd, short what, void *arg)
 	if (errno != ENOMSG) {
 		APPLOG(APPLOG_ERR,"[%s] >>> msgrcv fail; err=%d(%s)", __func__, errno, strerror(errno));
 	}
+
 	return;
 }
 

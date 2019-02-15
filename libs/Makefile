@@ -2,7 +2,7 @@ include ../MakeVars
 
 CFLAG		= $(CFLAGS) -Wno-char-subscripts # option for util.c
 
-SRCS		= libid.c libutil.c libmml.c liblist.c libomp.c libhdr.c
+SRCS		= libid.c libutil.c libmml.c liblist.c libomp.c libhdr.c liblog.c
 OBJS		= $(SRCS:.c=.o)
 
 AOUT		= libs.a

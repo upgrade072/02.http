@@ -23,15 +23,16 @@ int httpsRxQid, httpsTxQid;
 
 int initialize()
 {
-    char myAppName[COMM_MAX_NAME_LEN] = { "HTTPS" };
     char fname[64] = { 0, }; 
     char TEMP_CONF_FILE[128] = { "../temp.conf" };
     
     sprintf(fname, "%s", TEMP_CONF_FILE);
-    if ((httpsRxQid = shmqlib_getQid (fname, "AHIF_TO_APP_SHMQ", myAppName, SHMQLIB_MODE_PUTTER)) < 0)
+    if ((httpsRxQid = shmqlib_getQid (fname, "AHIF_TO_APP_SHMQ", "HTTPS", SHMQLIB_MODE_PUTTER)) < 0)
         return -1;
-    if ((httpsTxQid = shmqlib_getQid (fname, "APP_TO_AHIF_SHMQ", myAppName, SHMQLIB_MODE_GETTER)) < 0)
+    if ((httpsTxQid = shmqlib_getQid (fname, "APP_TO_AHIF_SHMQ", "HTTPS", SHMQLIB_MODE_GETTER)) < 0)
         return -1;
+
+	return 0;
 }
 
 int main() {
@@ -65,20 +66,20 @@ int main() {
 		receive_cnt ++;
 
 #ifndef PERFORM
-		fprintf(stderr, "RECEIVE RAW[ MSGLEN:%d (HEADER:%d) (RES_T:%d) ]\n", msgSize, 
+		fprintf(stderr, "RECEIVE RAW[ MSGLEN:%d (HEADER:%zu) (RES_T:%zu) ]\n", msgSize, 
 				AHIF_HTTPCS_MSG_HEAD_LEN, sizeof(AhifHttpCSMsgType));
-		//DumpHex(ReqMsg, AHIF_HTTPCS_MSG_HEAD_LEN + ReqMsg->head.bodyLen);
+		DumpHex(ReqMsg, AHIF_HTTPCS_MSG_HEAD_LEN + ReqMsg->head.bodyLen);
 		fprintf(stderr, "request_method: %s\n", ReqMsg->head.httpMethod);
 		fprintf(stderr, "request_path  : %s\n", ReqMsg->head.rsrcUri);
 		fprintf(stderr, "request_body_len : %d\n", ReqMsg->head.bodyLen);
-		//fprintf(stderr, "request_body  :\n%s", ReqMsg->body);
+		fprintf(stderr, "request_body  :\n%s", ReqMsg->body);
 		fprintf(stderr, "=====================================================================\n\n");
 #endif
 		//DumpHex(ReqMsg, AHIF_HTTPCS_MSG_HEAD_LEN + ReqMsg->head.bodyLen);
-#if 0
+#if 1
 		fprintf(stderr, "request_path  : %s\n", ReqMsg->head.rsrcUri);
-		fprintf(stderr, "test %s\n", ReqMsg->head.httpMethod);
-		fprintf(stderr, "test %s\n", ReqMsg->head.contentEncoding);
+		fprintf(stderr, "test %d %s\n", ReqMsg->vheader[0].vheader_id, ReqMsg->vheader[0].vheader_body);
+		fprintf(stderr, "test %d %s\n", ReqMsg->vheader[1].vheader_id, ReqMsg->vheader[1].vheader_body);
 #endif
 
 		res.head.thrd_index = ReqMsg->head.thrd_index;

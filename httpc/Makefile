@@ -33,7 +33,6 @@ all:: clean $(AOUT) install
 .c.o:
 	$(CC) $(CFLAG) $(BUILD_INC_PATH) $(INC_PATH) -c $<
 
-
 $(AOUT): $(OBJS) 
 	$(CC) $(CFLAG) -o $(AOUT) $(OBJS) $(BUILD_LIBS) $(LIB_PATH) $(LIBS) 
 
@@ -43,4 +42,4 @@ install:
 clean:
 	\rm -f $(OBJS) $(AOUT) core.* 
 	\rm -rf log
-	\rm -rf cscope.out tceetree.out tceetree.out.png
+	rm -rf cscope.out tceetree.out tceetree.out.png
