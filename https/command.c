@@ -44,11 +44,9 @@ void message_handle(evutil_socket_t fd, short what, void *arg)
             case MTYPE_MMC_REQUEST:
                 mml_function((IxpcQMsgType *)msg->body);
                 continue;
-#ifndef TEST
 			case MTYPE_STATISTICS_REQUEST:
 				stat_function((IxpcQMsgType *)msg->body, SERVER_CONF.worker_num, 0, 1, MSGID_HTTPS_STATISTICS_REPORT);
 				continue;
-#endif
             default:
                 APPLOG(APPLOG_ERR, "not yet ready");
                 continue;

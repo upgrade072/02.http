@@ -203,12 +203,12 @@ void calc_and_print_sndrcv()
             resp_tm = resp_tm / ncount;
             send_byte = send_byte / ncount;
             recv_byte = recv_byte / ncount;
-            fprintf(stderr, "AVG ] TM %10llf(double) SND_BYTE %10d RCV_BYTE %10d\n", resp_tm, send_byte, recv_byte);
+            fprintf(stderr, "AVG ] TM %10Lf(double) SND_BYTE %10d RCV_BYTE %10d\n", resp_tm, send_byte, recv_byte);
         }
 
         LOGWRITE_AVG++;
         if (LOGWRITE_AVG >= 20) {
-            APPLOG(APPLOG_ERR, "AVG] TM %10llf(double) SND_BYTE %10d RCV_BYTE %10d", resp_tm, send_byte, recv_byte);
+            APPLOG(APPLOG_ERR, "AVG] TM %10Lf(double) SND_BYTE %10d RCV_BYTE %10d", resp_tm, send_byte, recv_byte);
             LOGWRITE_AVG = 0;
         }
         sem_post(MY_SEM);

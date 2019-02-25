@@ -5,15 +5,20 @@
 #define CF_MAX_WORKER_NUM	"client_cfg.worker_num"
 #define CF_TIMEOUT_SEC	    "client_cfg.timeout_sec"
 #define CF_CONNECT_LIST		"connect_list"
+
 extern client_conf_t CLIENT_CONF;
 extern conn_list_t CONN_LIST[MAX_SVR_NUM];
-//extern int MSG_ID;
 thrd_context_t THRD_WORKER[MAX_THRD_NUM];
 
 config_t CFG;
 char CONFIG_PATH[256] = {0,};
 
 index_t INDEX[MAX_LIST_NUM];
+
+#ifdef OAUTH  /* NRF OAuth 2.0 */
+#define CF_ACCTOKEN_LIST	"access_token_info.list"
+extern acc_token_list_t ACC_TOKEN_LIST[MAX_ACC_TOKEN_NUM];
+#endif
 
 int init_cfg()
 {
@@ -58,16 +63,10 @@ CF_INIT_ERR:
     return (-1);
 }
 
-#if 0 /* someday use it */
-int destroy_cfg()
-{
-    config_destroy(&CFG);
-}
-#endif
-
+#ifdef LOG_APP
 int config_load_just_log()
 {
-    config_setting_t *setting;
+    //config_setting_t *setting;
 	int log_level;
 
     if (config_lookup_int(&CFG, CF_LOG_LEVEL, &log_level) == CONFIG_FALSE) {
@@ -92,11 +91,11 @@ CF_LOGLEVEL_LOAD_ERR:
     config_destroy(&CFG);
     return (-1);
 }
+#endif
 
 int config_load()
 {
     config_setting_t *setting;
-    const char *str;
 	int list_index, item_index;
 
     /* worker num cfg loading */
@@ -128,6 +127,95 @@ int config_load()
         APPLOG(APPLOG_ERR, "timeout sec is [%d]", CLIENT_CONF.timeout_sec);
     }
 
+#ifdef OAUTH
+	/* access token list loading */
+	if ((setting = config_lookup(&CFG, CF_ACCTOKEN_LIST)) == NULL) {
+		APPLOG(APPLOG_ERR, "access token list not exist");
+		goto CF_LOAD_ERR;
+	} else {
+		int count = config_setting_length(setting);
+
+		APPLOG(APPLOG_ERR, "\naccess token lists are ... (%d)", count);
+		for (int i = 0; i < count; i++) {
+			config_setting_t *list = config_setting_get_elem(setting, i);
+
+			int id = 0;
+			const char *nrf_addr;
+			const char *acc_type;
+			const char *nf_type;
+			const char *nf_instance_id;
+			const char *scope;
+			struct sockaddr_in sa = {0,};
+			struct sockaddr_in6 sa6 = {0,};
+
+			if (config_setting_lookup_int (list, "id", &id) == CONFIG_FALSE) {
+				APPLOG(APPLOG_ERR, "acc token list, index(%2d) id NULL", i);
+				continue;
+			} else if (id < 1 || id >= MAX_ACC_TOKEN_NUM) {
+				APPLOG(APPLOG_ERR, "acc token list, index(%2d) id(%d) invalid", i, id);
+				continue;
+			}
+			if (config_setting_lookup_string (list, "nrf_addr", &nrf_addr) == CONFIG_FALSE) {
+				APPLOG(APPLOG_ERR, "acc token list, index(%2d) nrf_addr NULL", i);
+				continue;
+			}
+			if (config_setting_lookup_string (list, "acc_type", &acc_type) == CONFIG_FALSE) {
+				APPLOG(APPLOG_ERR, "acc token list, index(%2d) acc_type NULL", i);
+				continue;
+			} else if (strcmp(acc_type, "SVC") && strcmp(acc_type, "INST")) {
+				APPLOG(APPLOG_ERR, "acc token list, index(%2d) acc_type(%s) invalid", i, acc_type);
+				continue;
+			}
+			if (config_setting_lookup_string (list, "nf_type", &nf_type) == CONFIG_FALSE) {
+				APPLOG(APPLOG_ERR, "acc token list, index(%2d) nf_type NULL", i);
+				continue;
+			}
+			if (config_setting_lookup_string (list, "nf_instance_id", &nf_instance_id) == CONFIG_FALSE) {
+				APPLOG(APPLOG_ERR, "acc token list, index(%2d) nf_instance_id NULL", i);
+				continue;
+			}
+			if (config_setting_lookup_string (list, "scope", &scope) == CONFIG_FALSE) {
+				APPLOG(APPLOG_ERR, "acc token list, index(%2d) scope NULL", i);
+				continue;
+			}
+			/*
+			APPLOG(APPLOG_ERR, " %d)%-24s %-5s %-5s %-20s %-30s",
+					id, nrf_addr, acc_type, nf_type, nf_instance_id, scope); */
+
+			char temp_str[INET6_ADDRSTRLEN + 12] = {0,};
+			int port = 0;
+			int inet_type = 0;
+			sprintf(temp_str, nrf_addr);
+
+			if((inet_type = parse_http_addr(temp_str, &sa, &sa6, &port)) < 0) {
+				APPLOG(APPLOG_ERR, "acc token list, index(%2d) nrf_addr(%s) invalid", i, nrf_addr);
+				continue;
+			}
+			
+			acc_token_list_t *token_list = NULL;
+			if ((token_list = get_token_list(id, 0)) == NULL) {
+				APPLOG(APPLOG_ERR, "acc token list, fail to get empty index");
+				continue;
+			}
+
+			token_list->token_id = id;
+			sprintf(token_list->nrf_addr, "%s", nrf_addr);
+			token_list->acc_type = !strcmp(acc_type, "SVC") ? AT_SVC : AT_INST;
+			sprintf(token_list->nf_type, "%s", nf_type);
+			sprintf(token_list->nf_instance_id, "%s", nf_instance_id);
+			sprintf(token_list->scope, "%s", scope);
+			token_list->status = TA_INIT;
+			memset(&(token_list->due_date), 0x00, sizeof(time_t));
+			token_list->inet_type = inet_type;
+			memcpy(&(token_list->sa), &sa, sizeof(struct sockaddr_in));
+			memcpy(&(token_list->sa6), &sa6, sizeof(struct sockaddr_in6));
+			token_list->port = port;
+		}
+	}
+	/* check token_list result */
+	print_token_list_raw(ACC_TOKEN_LIST);
+#endif
+
     /* connect list loading */
     if ((setting = config_lookup(&CFG, CF_CONNECT_LIST)) == NULL) {
         APPLOG(APPLOG_ERR, "connect list cfg not exist");
@@ -138,11 +226,11 @@ int config_load()
 		struct sockaddr_in sa;
 		struct sockaddr_in6 sa6;
 
-		APPLOG(APPLOG_ERR, "connect lists are ... (%d)", count);
+		APPLOG(APPLOG_ERR, "\nconnect lists are ... (%d)", count);
 		for (i = 0; i < count; i++) {
 			config_setting_t *list = config_setting_get_elem(setting, i);
 
-			APPLOG(APPLOG_ERR, " %d)%-12s", i, list->name);
+			APPLOG(APPLOG_ERR, "%3d) %-12s", i, list->name);
 		}
 		APPLOG(APPLOG_ERR, "\n");
 
@@ -154,7 +242,8 @@ int config_load()
 			const char *type;
 			int port;
 			int cnt;
-			int act_val;
+			int token_id;
+			//int act_val;
 
 			group = config_setting_get_elem(setting, i);
 			if (group == NULL)
@@ -196,6 +285,10 @@ int config_load()
 					continue;
 				if (config_setting_lookup_string (item, "act", &act) == CONFIG_FALSE)
 					continue;
+#ifdef OAUTH
+				if (config_setting_lookup_int (item, "token_id", &token_id) == CONFIG_FALSE)
+					continue;
+#endif
 				if (inet_pton(AF_INET, ip, &(sa.sin_addr)))  {
 				} else if (inet_pton(AF_INET6, ip, &(sa6.sin6_addr))) {
 				} else {
@@ -206,7 +299,7 @@ int config_load()
 				if (cnt <= 0 || cnt > HTTP_MAX_CONN) continue;
 				if (!strcmp(act, "ACT") && !strcmp(act, "DACT")) continue;
 
-				APPLOG(APPLOG_ERR, "%3d) %-46s %-6d (x %-3d) %-5s %-5s", j, ip, port, cnt, act, type);
+				APPLOG(APPLOG_ERR, "%3d) %-46s %-6d (x %-3d) %-5s %-5s %-5d", j, ip, port, cnt, act, type, token_id);
 
 				item_index = new_item(list_index, ip, port);
 
@@ -231,6 +324,11 @@ int config_load()
 					} else {
 						CONN_LIST[index].act = 0;
 					}
+#ifdef OAUTH
+						CONN_LIST[index].token_id = token_id;
+#else
+						CONN_LIST[index].token_id = 0;
+#endif
 				}
 			}
 		}
@@ -262,7 +360,6 @@ CF_LOAD_ERR:
 int addcfg_server_hostname(char *hostname, char *type)
 {
     config_setting_t *setting;
-    const char *str;
 	int i, found = 0;
 
     if ((setting = config_lookup(&CFG, CF_CONNECT_LIST)) == NULL) {
@@ -313,7 +410,6 @@ CF_ADD_SVR_HOSTNAME_ERR:
 int addcfg_server_ipaddr(int id, char *ipaddr, int port, int conn_cnt)
 {
     config_setting_t *setting;
-    const char *str;
 
     if ((setting = config_lookup(&CFG, CF_CONNECT_LIST)) == NULL) {
         APPLOG(APPLOG_ERR, "connect list cfg not exist");
@@ -405,7 +501,6 @@ CF_ADD_SVR_IPADDR_ERR:
 int actcfg_http_server(int id, int ip_exist, char *ipaddr, int port, int change_to_act)
 { 
     config_setting_t *setting;
-    const char *str;
 
     if ((setting = config_lookup(&CFG, CF_CONNECT_LIST)) == NULL) {
         APPLOG(APPLOG_ERR, "connect list cfg not exist");
@@ -413,7 +508,7 @@ int actcfg_http_server(int id, int ip_exist, char *ipaddr, int port, int change_
     } else {
         config_setting_t *group;
         config_setting_t *list;
-        int list_count, list_index, item_index, i, cnt = 0;
+        int list_count, list_index, item_index, i;
 		int found = 0;
 
 		/* if id param receive, but not exist */
@@ -492,19 +587,12 @@ int actcfg_http_server(int id, int ip_exist, char *ipaddr, int port, int change_
 
 				set_intl_req_msg(&intl_req, CONN_LIST[i].thrd_index, 0, 
 						CONN_LIST[i].session_index, CONN_LIST[i].session_id, 0,  HTTP_INTL_SESSION_DEL);
-#if 0
-				if (-1 == msgsnd(MSG_ID, &intl_req, sizeof(intl_req) - sizeof(long), 0)) {
-					APPLOG(APPLOG_ERR, "some err in %s msgq_idx %ld thrd_idx %d session_idx %d",
-							__func__, intl_req.msgq_index, intl_req.tag.thrd_index, intl_req.tag.session_index);
-					continue;
-				}
-#else
+
 				if (-1 == msgsnd(THRD_WORKER[thrd_idx].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0)) {
 					APPLOG(APPLOG_ERR, "some err in %s msgq_idx %ld thrd_idx %d session_idx %d",
 							__func__, intl_req.msgq_index, intl_req.tag.thrd_index, intl_req.tag.session_index);
 					continue;
 				}
-#endif
 			}
 		}
 	}
@@ -521,7 +609,6 @@ CF_ACT_SERVER_ERR:
 int chgcfg_server_conn_cnt(int id, char *ipaddr, int port, int conn_cnt)
 {
     config_setting_t *setting;
-    const char *str;
 
     if ((setting = config_lookup(&CFG, CF_CONNECT_LIST)) == NULL) {
         APPLOG(APPLOG_ERR, "connect list cfg not exist");
@@ -531,7 +618,7 @@ int chgcfg_server_conn_cnt(int id, char *ipaddr, int port, int conn_cnt)
 		const char *type;
         config_setting_t *list;
         config_setting_t *item_cnt;
-        int list_count, i, list_index, item_index, cnt = 0, gap = 0;
+        int list_count, i, list_index, item_index, cnt = 0;
 		int found = 0;
 		const char *cf_ip;
 		int cf_port;
@@ -636,7 +723,6 @@ CF_CHG_SERVER_CONN_ERR:
 int delcfg_server_ipaddr(int id, char *ipaddr, int port)
 {
     config_setting_t *setting;
-    const char *str;
 
     if ((setting = config_lookup(&CFG, CF_CONNECT_LIST)) == NULL) {
         APPLOG(APPLOG_ERR, "connect list cfg not exist");
@@ -644,7 +730,7 @@ int delcfg_server_ipaddr(int id, char *ipaddr, int port)
     } else {
         config_setting_t *group;
         config_setting_t *list;
-        config_setting_t *item_cnt;
+        //config_setting_t *item_cnt;
         int i, list_count, list_index, item_index, idx;
 		int found = 0;
 		const char *cf_ip, *cf_act;
@@ -739,8 +825,6 @@ CF_DEL_SVR_IPADDR_ERR:
 int delcfg_server_hostname(int id)
 {
     config_setting_t *setting;
-    const char *str;
-	int i, found;
 
     if ((setting = config_lookup(&CFG, CF_CONNECT_LIST)) == NULL) {
         APPLOG(APPLOG_ERR, "connect list cfg not exist");
@@ -748,7 +832,7 @@ int delcfg_server_hostname(int id)
 	} else {
 		config_setting_t *group;
 		config_setting_t *list;
-		int list_count, list_index, item_index, i, cnt = 0;
+		int list_count, list_index, i;
 
         if (get_list_name(id) == NULL) {
             goto CF_DEL_SVR_HOSTNAME_ERR;

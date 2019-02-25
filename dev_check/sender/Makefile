@@ -1,6 +1,5 @@
-include ../../../../MakeVars
+include ../../MakeVars
 
-#CFLAG		= $(CFLAGS) -g -DPERFORM
 CFLAG		= $(CFLAGS) -g
 INC_PATH	= -I. -I../../../../include -I../../../../libsrc/COMM
 LIB_PATH	= -L../../../../lib

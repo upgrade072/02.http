@@ -1,4 +1,5 @@
 #include "header.h"
+#include <ctype.h>
 
 /* global */
 float BULK_SND;
@@ -29,8 +30,10 @@ extern stat_t STAT;
 extern sndrcv_t SNDRCV;
 
 /* log */
+#ifndef EPCF
 int logLevel = APPLOG_DEBUG;
 int *lOG_FLAG = &logLevel;
+#endif
 
 app_ctx_t *get_ctx(int thrd_idx, int ctx_idx)
 {
@@ -92,7 +95,9 @@ int initialize()
 
     /* log initialize */
     sprintf(fname, "%s/log", getenv(IV_HOME));
+#ifndef EPCF
     LogInit(my_name, fname);
+#endif
     APPLOG(APPLOG_ERR, "\n\n\n\n\n[Welcome Process Started]");
 
     /* shmq initialize */
@@ -122,7 +127,7 @@ int initialize()
         Init_CtxId(index);
     }
 
-#ifndef LOCAL
+#ifndef TEST
     if (keepalivelib_init(my_name) < 0) {
         fprintf(stderr, "keepalive init fail");
         return (-1);
@@ -148,7 +153,7 @@ int set_scenario_at_thread(int thrd_idx, thrd_ctx_t *thrd_ctx)
         /* set interval time */
         thrd_ctx->interval_milisec[index].tv_sec = PERF_CONF.scenario.step[index].interval / 1000;
         thrd_ctx->interval_milisec[index].tv_usec = (PERF_CONF.scenario.step[index].interval % 1000) * 1000;
-        fprintf(stderr, "\tinterval set sec(%d) usec(%ld)\n", 
+        fprintf(stderr, "\tinterval set sec(%ld) usec(%ld)\n", 
                 thrd_ctx->interval_milisec[index].tv_sec,
                 thrd_ctx->interval_milisec[index].tv_usec);
 
@@ -175,7 +180,7 @@ int set_scenario_at_thread(int thrd_idx, thrd_ctx_t *thrd_ctx)
         } else {
             thrd_ctx->step_exist[index] = 1;
             fprintf(stderr, "\tsender thrd[%2d] step(%2d) sendfile(%s) initialed\n", thrd_idx, index, step->filename);
-#ifdef DEBUG
+#ifdef TEST
             char tmp_file[256] = {0,};
 
             sprintf(tmp_file, "./temp.json");
@@ -185,6 +190,8 @@ int set_scenario_at_thread(int thrd_idx, thrd_ctx_t *thrd_ctx)
 #endif
         }
     }
+
+	return 0;
 }
 
 int create_thread()
@@ -231,6 +238,8 @@ int create_thread()
         pthread_detach(modify_thrd_id);
     }
 #endif
+
+	return 0;
 }
 
 void *receiverThread(void *arg)
@@ -283,6 +292,8 @@ void *senderThread(void *arg)
 
     /* never reach here */
     event_base_free(evbase);
+
+	return NULL;
 }
 
 void *manageThread(void *arg)
@@ -297,6 +308,8 @@ void *manageThread(void *arg)
 
     /* never reach here */
     event_base_free(evbase);
+
+	return NULL;
 }
 
 void send_action(evutil_socket_t fd, short what, void *arg)
@@ -392,7 +405,6 @@ void recv_action(int recv_thrd_idx, AhifAppMsgType *recvMsg)
 {
     int thrd_idx = 0, ctx_idx = 0;
     int cid = recvMsg->head.appCid;
-    int respCode = recvMsg->head.respCode;
     app_ctx_t *ctx = NULL;
     thrd_ctx_t *thrd_ctx = NULL;
     json_object *resp_obj = NULL;
@@ -455,7 +467,7 @@ PARSE_JSON_FROM_MSG:
 
     /* make json obj from resp */
     if ((resp_obj = json_tokener_parse(recvMsg->body)) == NULL) {
-#ifdef DEBUG
+#ifdef TEST
         fprintf(stderr, "resp but json parse fail (cid:%d)\n", ctx->cid);
 #endif
         /* some message response have no body */
@@ -487,7 +499,7 @@ PARSE_JSON_FROM_MSG:
 
     /* check result from resp */
     if (check_result(resp_obj, ctx) < 0) {
-#ifdef DEBUG
+#ifdef TEST
         fprintf(stderr, "resp but result fail (cid:%d)\n", ctx->cid);
 #endif
         /* this call fail */
@@ -501,7 +513,7 @@ DONT_CHECK_RESULT:
     /* check next step exist, if last it count success */
     if (ctx->curr_step >= MAX_PF_STEP_NUM ||
            thrd_ctx->step_exist[ctx->curr_step + 1] != 1) {
-#ifdef DEBUG
+#ifdef TEST
         fprintf(stderr, "resp reach to step-end (cid:%d)\n", ctx->cid);
 #endif
         /* this call succ */
@@ -596,7 +608,7 @@ void main_tick_callback(evutil_socket_t fd, short what, void *arg)
 
 int check_result(json_object *resp_obj, app_ctx_t *ctx)
 {
-#ifdef DEBUG
+#ifdef TEST
     fprintf(stderr, "response!\n%s\n", json_object_to_json_string(resp_obj));
     fprintf(stderr, "ctx curr step is [%d]\n", ctx->curr_step);
 #endif
@@ -610,7 +622,7 @@ int check_result(json_object *resp_obj, app_ctx_t *ctx)
     parse.result[0].state = JS_INIT;
     sprintf(parse.result[0].name, "%s", PERF_CONF.scenario.success[ctx->curr_step].name);
     recurse_obj(resp_obj, &parse, JS_WANT_FIND);
-#ifdef DEBUG
+#ifdef TEST
     fprintf(stderr, "recv res ]\n");
     print_parse_result(&parse);
 #endif
@@ -636,7 +648,7 @@ void check_fwd_field(json_object *resp_obj, app_ctx_t *ctx)
                 PERF_CONF.scenario.forward[ctx->curr_step].obj[i].obj_name);
     }
     recurse_obj(resp_obj, parse, JS_WANT_FIND);
-#ifdef DEBUG
+#ifdef TEST
     fprintf(stderr, "we found fwd ]\n");
     print_parse_result(parse);
 #endif
@@ -674,7 +686,7 @@ int make_ahif_header(app_ctx_t *ctx, int current_step, AhifAppMsgType *txMsg, js
     sprintf(txMsg->head.destType, "%s", step->type);
     txMsg->head.opTimer = 3;
 
-#ifdef DEBUG
+#ifdef TEST
     fprintf(stderr, "DBG AH [%s] [%s] [%s] setting done\n",
             step->rsrc, step->method, step->type);
     fprintf(stderr, "DBG will push obj]\n%s\n", json_object_to_json_string(curr_obj));
@@ -696,7 +708,7 @@ void save_call_end_info(send_recv_statistic_t *arg, double start_tm, double end_
 
 void ctx_timeout(evutil_socket_t fd, short what, void *arg)
 {
-#ifdef DEBUG
+#ifdef TEST
     fprintf(stderr, "timeout occured\n");
 #endif
     cb_tmout_arg_t *param = arg;
@@ -731,7 +743,7 @@ void ctx_timeout(evutil_socket_t fd, short what, void *arg)
             free_ctx(ctx);
         } else {
             /* do not anything, already responsed or free-ed */
-#ifdef DEBUG
+#ifdef TEST
             fprintf(stderr, "it's already free-ed object, OK case\n");
 #endif
         }
@@ -759,7 +771,7 @@ void set_key_val(app_ctx_t *ctx)
                 scen_config->key[i].pfx,
                 KEY_NUMBER,
                 scen_config->key[i].epfx);
-#ifdef DEBUG
+#ifdef TEST
         fprintf(stderr, "DBG key %s : %s\n",
                 ctx->key_value.result[index].name,
                 ctx->key_value.result[index].buf);
@@ -829,7 +841,7 @@ void restore_term()
 void gather_remain_stat()
 {
     for (int i = 0; i < (MAX_PF_STEP_NUM + 5); i++) { // max step
-#ifndef LOCAL
+#ifndef TEST
         keepalivelib_increase();
 #endif
         event_base_once(MNG_THREAD.evbase, -1, EV_TIMEOUT, main_tick_callback, NULL, NULL);
@@ -870,7 +882,7 @@ int main()
     while (RUNNING) {
         /* 1 call per 1 sec */
         if (PERF_CONF.validate_mode) {
-#ifndef LOCAL
+#ifndef TEST
             keepalivelib_increase();
 #endif
             if (snd_count < PERF_CONF.validate_mode) {
@@ -894,7 +906,7 @@ int main()
             }
             /* sec move */
             if (snd_count >= 100) { 
-#ifndef LOCAL
+#ifndef TEST
                 keepalivelib_increase();
 #endif
                 snd_count = 0;
