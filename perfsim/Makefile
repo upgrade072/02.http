@@ -7,7 +7,7 @@ BUILD_LIBS_PATH	= ../build/lib
 BUILD_LIBS = $(BUILD_LIBS_PATH)/libevent.a \
 			 $(BUILD_LIBS_PATH)/libevent_pthreads.a \
 			 $(BUILD_LIBS_PATH)/libconfig.a \
-			 $(BUILD_LIBS_PATH)/libjson.a \
+			 $(BUILD_LIBS_PATH)/libjson-c.a \
 			 $(BUILD_LIBS_PATH)/libs.a
 
 SRCS		= json.c config.c stat.c main.c

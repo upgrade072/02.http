@@ -174,7 +174,7 @@ int set_scenario_at_thread(int thrd_idx, thrd_ctx_t *thrd_ctx)
         }
         thrd_ctx->base_obj[index] = json_object_get(base_obj);
 
-        if (base_obj == (struct json_object*)error_ptr(-1)) {
+        if (base_obj == NULL) {
             fprintf(stderr, "fail to get json from file (%s)\n", step->filename);
             return(-1);
         } else {
@@ -316,7 +316,7 @@ void send_action(evutil_socket_t fd, short what, void *arg)
 {
     cbarg_t *param = arg;
     parse_res_t *fwd = &param->fwd_value;
-    struct event_base *evbase = NULL;
+    //struct event_base *evbase = NULL;
     thrd_ctx_t *thrd_ctx = NULL;
     app_ctx_t *ctx = NULL;
     json_object *curr_obj;
@@ -331,7 +331,7 @@ void send_action(evutil_socket_t fd, short what, void *arg)
         return ;
     } else {
         thrd_ctx = &SND_THREAD[param->thrd_idx];
-        evbase = thrd_ctx->evbase;
+        //evbase = thrd_ctx->evbase;
         current_step = ctx->curr_step;
     }
 

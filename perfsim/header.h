@@ -13,8 +13,8 @@ try this with json-c (https://github.com/jehiah/json-c)
 #include <event.h>
 #include <event2/event.h>
 #include <event2/thread.h>
-#include <json/json.h>
-#include <json/json_inttypes.h>
+#include <json-c/json.h>
+#include <json-c/json_inttypes.h>
 #include <term.h>
 #include <termios.h>
 #include <semaphore.h>

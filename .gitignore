@@ -1,6 +1,7 @@
 *.zip
 *.tar
 *.gz
+*.xz
 *.o
 *.swp
 *.a

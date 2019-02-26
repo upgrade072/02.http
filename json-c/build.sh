@@ -1,7 +1,7 @@
 #!/bin/bash
 
 export ROOTDIR="${PWD}"
-if [  -f ${ROOTDIR}/../build/lib/libjson.a ]; then
+if [  -f ${ROOTDIR}/../build/lib/libjson-c.a ]; then
     echo "lib exist"
     exit
 fi
