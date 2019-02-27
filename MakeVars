@@ -1,6 +1,6 @@
 
 ### TARGET : epcf, udmr, ausf, perf, epcf_test, test
-TARGET      = ausf
+TARGET      = test
 
 ## HOLDSESS : do not close session in no more read/write exist
 CFLAGS      = -std=gnu99 -g -m64 -Wall -DHOLDSESS

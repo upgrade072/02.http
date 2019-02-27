@@ -20,13 +20,11 @@ index_t INDEX[MAX_LIST_NUM];
 
 int init_cfg()
 {   
-    char *env;
-    
     config_init(&CFG);
     
     /* config path */
 #ifndef TEST 
-    if ((env = getenv(IV_HOME)) == NULL) {
+    if ((char *env = getenv(IV_HOME)) == NULL) {
         sprintf(CONFIG_PATH, "./%s",  CF_SERVER_CONF);
     } else {
         sprintf(CONFIG_PATH, "%s/data/%s", env, CF_SERVER_CONF);
@@ -213,9 +211,6 @@ int config_load()
             const char *ip, *act;
             const char *type;
             int max;
-            //int act_val;
-			int auth_act;
-
 			group = config_setting_get_elem(setting, i);
 			if (group == NULL)
 				continue;
@@ -259,6 +254,7 @@ int config_load()
 				if (config_setting_lookup_string (item, "act", &act) == CONFIG_FALSE)
 					continue;
 #ifdef OAUTH
+				int auth_act = 0;
 				if (config_setting_lookup_int (item, "auth_act", &auth_act) == CONFIG_FALSE)
 					continue;
 #endif

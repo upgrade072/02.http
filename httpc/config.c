@@ -4,6 +4,7 @@
 #define CF_LOG_LEVEL		"client_cfg.log_level"
 #define CF_MAX_WORKER_NUM	"client_cfg.worker_num"
 #define CF_TIMEOUT_SEC	    "client_cfg.timeout_sec"
+#define CF_LB_CONFIG		"client_cfg.lb_config"
 #define CF_CONNECT_LIST		"connect_list"
 
 extern client_conf_t CLIENT_CONF;
@@ -22,15 +23,13 @@ extern acc_token_list_t ACC_TOKEN_LIST[MAX_ACC_TOKEN_NUM];
 
 int init_cfg()
 {
-    char *env;
-
 	memset(INDEX, 0x00, sizeof(INDEX));
 
     config_init(&CFG);
 
     /* config path */
 #ifndef TEST
-    if ((env = getenv(IV_HOME)) == NULL) {
+    if ((char *env = getenv(IV_HOME)) == NULL) {
         sprintf(CONFIG_PATH, "./%s",  CF_CLIENT_CONF);
     } else {
         sprintf(CONFIG_PATH, "%s/data/%s", env, CF_CLIENT_CONF);
@@ -126,6 +125,15 @@ int config_load()
         CLIENT_CONF.timeout_sec = timeout_sec;
         APPLOG(APPLOG_ERR, "timeout sec is [%d]", CLIENT_CONF.timeout_sec);
     }
+
+	/* lb config load */
+	if ((setting = config_lookup(&CFG, CF_LB_CONFIG)) == NULL) {
+		APPLOG(APPLOG_ERR, "lb config loading fail (nok)");
+		goto CF_LOAD_ERR;
+	} else {
+		CLIENT_CONF.lb_config = setting;
+		APPLOG(APPLOG_ERR, "lb config loading success (ok)");
+	}
 
 #ifdef OAUTH
 	/* access token list loading */
@@ -242,8 +250,6 @@ int config_load()
 			const char *type;
 			int port;
 			int cnt;
-			int token_id;
-			//int act_val;
 
 			group = config_setting_get_elem(setting, i);
 			if (group == NULL)
@@ -286,6 +292,7 @@ int config_load()
 				if (config_setting_lookup_string (item, "act", &act) == CONFIG_FALSE)
 					continue;
 #ifdef OAUTH
+				int token_id = 0;
 				if (config_setting_lookup_int (item, "token_id", &token_id) == CONFIG_FALSE)
 					continue;
 #endif
@@ -299,7 +306,11 @@ int config_load()
 				if (cnt <= 0 || cnt > HTTP_MAX_CONN) continue;
 				if (!strcmp(act, "ACT") && !strcmp(act, "DACT")) continue;
 
+#ifdef OAUTH
 				APPLOG(APPLOG_ERR, "%3d) %-46s %-6d (x %-3d) %-5s %-5s %-5d", j, ip, port, cnt, act, type, token_id);
+#else
+				APPLOG(APPLOG_ERR, "%3d) %-46s %-6d (x %-3d) %-5s %-5s", j, ip, port, cnt, act, type);
+#endif
 
 				item_index = new_item(list_index, ip, port);
 

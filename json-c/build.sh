@@ -16,6 +16,9 @@ unzip ${VERSION}.zip
 
 cd json-c-${VERSION}
 
+export PATH=${HOME}/ac_install/bin:$PATH
+export PKG_CONFIG_PATH=${ROOTDIR}/../build/lib/pkgconfig:$PKG_CONFIG_PATH
+
 ./autogen.sh
 ./configure \
 	--prefix=${ROOTDIR}/../build \

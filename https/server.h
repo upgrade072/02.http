@@ -89,9 +89,7 @@ typedef struct allow_list {
 
 	conn_client_t client[MAX_SVR_NUM];
 
-#ifdef OAUTH
 	int auth_act;
-#endif
 } allow_list_t;
 
 typedef enum conn_status {

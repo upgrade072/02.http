@@ -4,7 +4,6 @@ try this with json-c (https://github.com/jehiah/json-c)
 */
 
 #include <libs.h>
-
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
@@ -22,10 +21,11 @@ try this with json-c (https://github.com/jehiah/json-c)
 #include <errno.h>
 #include <time.h>
 
-#ifndef EPCF
+#ifdef LOG_LIB
+#include <loglib.h>
+#elif LOG_APP
 #include <appLog.h>
 #endif
-#include <shmQueue.h>
 
 #include <commlib.h>
 #include <ahif_msgtypes.h>

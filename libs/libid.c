@@ -29,12 +29,6 @@ int	Get_CtxId(int thrd_idx)
 {
 	int i, idx;
 
-#if 0
-	/* no available Id */
-	if (CTX_NUM_FREEIDS[thrd_idx] <= 0)
-		return -1;
-#endif
-
 	/* find freed Id */
 	for (i=0, idx=CTX_NEXT_FREEID[thrd_idx]; i<CTX_SIZEID[thrd_idx]; i++) {
 		if (CTX_USED_TAG[thrd_idx][idx] == FREED)
@@ -53,15 +47,10 @@ int	Free_CtxId(int thrd_idx, uint id)
 	if((id<CTX_START_ID[thrd_idx]) || (id>=(CTX_START_ID[thrd_idx]+CTX_SIZEID[thrd_idx])))
 		return(-1);
 
-#if 0
-	(CTX_NUM_FREEIDS[thrd_idx])++;
-	CTX_USED_TAG[thrd_idx][id-CTX_START_ID[thrd_idx]] = FREED;
-#else
 	if (CTX_USED_TAG[thrd_idx][id-CTX_START_ID[thrd_idx]] != FREED) {
 		(CTX_NUM_FREEIDS[thrd_idx])++;
 		CTX_USED_TAG[thrd_idx][id-CTX_START_ID[thrd_idx]] = FREED;
 	}
-#endif
 
 	return(0);
 }
