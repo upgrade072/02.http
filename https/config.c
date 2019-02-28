@@ -223,7 +223,6 @@ int config_load()
             const char *ip, *act;
             const char *type;
             int max;
-            //int act_val;
 
 			group = config_setting_get_elem(setting, i);
 			if (group == NULL)

@@ -207,7 +207,6 @@ typedef struct httpc_ctx {
 #ifdef OAUTH
 	char access_token[MAX_ACC_TOKEN_LEN];
 #endif
-	// TODO !!! TCP wait state ???
 	char resp_client_ip[46]; // TODO, it can extract from user_ctx.head.destIp
 	iovec_item_t push_req;
 } httpc_ctx_t;
