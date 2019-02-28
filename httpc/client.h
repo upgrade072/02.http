@@ -37,9 +37,10 @@
 #include <sys/types.h>
 #include <sys/ipc.h>
 #include <sys/msg.h>
-
 /* for single request */
 #include <libreq.h>
+/* for lb */
+#include <lbengine.h>
 
 #define TM_INTERVAL		20000   // every 20 ms check, 
 #if 0
@@ -55,6 +56,8 @@ typedef struct client_conf {
 	int log_level;
     int worker_num;
     int timeout_sec;
+
+	config_setting_t *lb_config;
 } client_conf_t;
 
 typedef struct thrd_context {
@@ -194,6 +197,7 @@ typedef struct httpc_ctx {
 	int thrd_idx;
 	int sess_idx;
 	int session_id;
+	int ctx_idx;
 	int inflight_ref_cnt;
 
 	char occupied;
@@ -203,6 +207,9 @@ typedef struct httpc_ctx {
 #ifdef OAUTH
 	char access_token[MAX_ACC_TOKEN_LEN];
 #endif
+	// TODO !!! TCP wait state ???
+	char resp_client_ip[46]; // TODO, it can extract from user_ctx.head.destIp
+	iovec_item_t push_req;
 } httpc_ctx_t;
 
 typedef enum intl_req_mtype {
@@ -239,6 +246,15 @@ typedef struct http2_session_data {
 	int ping_snd;
 } http2_session_data_t;
 
+typedef struct lb_global {
+    int rxonly_port;
+    int txonly_port;
+    int bundle_bytes;
+    int bundle_count;
+	int flush_tmval;
+    config_setting_t *peer_list;
+} lb_global_t;
+
 /* ------------------------- config.c --------------------------- */
 int     init_cfg();
 int     destroy_cfg();
@@ -257,15 +273,15 @@ void    clear_send_ctx(httpc_ctx_t *httpc_ctx);
 void    clear_and_free_ctx(httpc_ctx_t *httpc_ctx);
 void    set_intl_req_msg(intl_req_t *intl_req, int thrd_idx, int ctx_idx, int sess_idx, int session_id, int stream_id, int msg_type);
 http2_session_data_t      *get_session(int thrd_idx, int sess_idx, int session_id);
-void    save_session_info(httpc_ctx_t *httpc_ctx, int thrd_idx, int sess_idx, int session_id, conn_list_t *conn_list);
-int     find_least_conn_worker();
+void    save_session_info(httpc_ctx_t *httpc_ctx, int thrd_idx, int sess_idx, int session_id, int ctx_idx, conn_list_t *conn_list);
+int		find_least_conn_worker();
 void    print_list(conn_list_status_t conn_status[]);
 void    print_raw_list();
 void    write_list(conn_list_status_t CONN_STATUS[], char *buff);
 void    gather_list(conn_list_status_t CONN_STATUS[]);
 void    prepare_order(int list_index);
 void    order_list();
-int     find_packet_index(char *host, int ls_mode);
+conn_list_t *find_packet_index(char *host, int ls_mode);
 #ifdef OAUTH
 acc_token_list_t *get_token_list(int id, int used);
 void print_token_list_raw(acc_token_list_t token_list[]);
@@ -281,7 +297,7 @@ void    send_status_to_omp(evutil_socket_t fd, short what, void *arg);
 void    recv_msgq_callback(evutil_socket_t fd, short what, void *arg);
 void    *workerThread(void *arg);
 void    *receiverThread(void *arg);
-void    thrd_initialize();
+void    create_httpc_worker();
 void    conn_func(evutil_socket_t fd, short what, void *arg);
 void    check_thread();
 void    monitor_worker();
@@ -304,6 +320,7 @@ int     func_del_http_svr_ip(IxpcQMsgType *rxIxpcMsg);
 int     func_del_http_server(IxpcQMsgType *rxIxpcMsg);
 
 /* ------------------------- nrf.c --------------------------- */
+#ifdef OAUTH
 void    print_oauth_response(access_token_res_t *response);
 void    parse_oauth_response(char *body, access_token_res_t *response);
 void    accuire_token(acc_token_list_t *token_list);
@@ -311,3 +328,23 @@ void    chk_and_accuire_token(acc_token_list_t *token_list);
 void    nrf_get_token_cb(evutil_socket_t fd, short what, void *arg);
 void    *nrf_access_thread(void *arg);
 char    *get_access_token(int token_id);
+#endif
+
+/* ------------------------- lb.c --------------------------- */
+httpc_ctx_t     *get_null_recv_ctx();
+httpc_ctx_t     *get_assembled_ctx(char *ptr);
+void    send_to_worker(conn_list_t *httpc_conn, httpc_ctx_t *recv_ctx, char *client_ip);
+void    set_iovec(tcp_ctx_t *dest_tcp_ctx, httpc_ctx_t *recv_ctx, const char *dest_ip, iovec_item_t *push_req, void (*cbfunc)(), void *cbarg);
+void    push_callback(evutil_socket_t fd, short what, void *arg);
+void    iovec_push_req(tcp_ctx_t *dest_tcp_ctx, iovec_item_t *push_req);
+void    stp_err_to_fep(sock_ctx_t *sock_ctx, tcp_ctx_t *fep_tcp_ctx, httpc_ctx_t *recv_ctx);
+void    stp_snd_to_peer(const char *peer_addr, tcp_ctx_t *peer_tcp_ctx, httpc_ctx_t *recv_ctx);
+void    free_ctx_with_httpc_ctx(httpc_ctx_t *httpc_ctx);
+void    send_response_to_fep(httpc_ctx_t *httpc_ctx);
+void    send_to_peerlb(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx);
+void    packet_process_res(sock_ctx_t *sock_ctx, char *process_ptr, size_t processed_len);
+void    check_and_send(sock_ctx_t *sock_ctx);
+void    httpc_lb_buff_readcb(struct bufferevent *bev, void *arg);
+void    load_lb_config(client_conf_t *cli_conf, lb_global_t *lb_conf);
+void    attach_lb_thread(lb_global_t *lb_conf, main_ctx_t *main_ctx);
+int     create_lb_thread();

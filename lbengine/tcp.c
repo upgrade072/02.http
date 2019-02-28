@@ -1,4 +1,4 @@
-#include <lbengine.h>
+#include "lbengine.h"
 
 GNode *new_node_conn(sock_ctx_t *sock_ctx)
 {
@@ -16,6 +16,7 @@ GNode *add_node_conn(GNode *parent, GNode *child, GNode *looser_brother)
 
 void remove_node_conn(GNode *node)
 {
+	free(node->data);
     return g_node_destroy(node);
 }
 
@@ -88,10 +89,13 @@ void release_conncb(sock_ctx_t *sock_ctx)
 
     struct bufferevent *bev = sock_ctx->bev;
 
-    // remove event, close sock
-    bufferevent_free(bev);
+	// CHECK event first? bev first?
     if (sock_ctx->event)
         event_del(sock_ctx->event);
+
+    // remove event, close sock
+	if (sock_ctx->bev)
+		bufferevent_free(bev);
 
     // remove whole push item, unset caller ctx
     unset_pushed_item(&sock_ctx->push_items, sock_ctx->push_items.item_bytes);
@@ -113,6 +117,7 @@ void svr_sock_eventcb(struct bufferevent *bev, short events, void *user_data)
         if (util_set_linger(fd, 1, 0) != 0) 
             fprintf(stderr, "fail to set SO_LINGER (ABORT) to fd\n");
 
+		sock_ctx->connected = 1;
         return;
     }
 
@@ -123,6 +128,14 @@ void svr_sock_eventcb(struct bufferevent *bev, short events, void *user_data)
     }
 
     release_conncb(sock_ctx);
+}
+
+void packet_process_res(sock_ctx_t *sock_ctx, char *process_ptr, size_t processed_len)
+{
+    // if sock recv 10, process 3 ==> move remain 7 byte to front
+    memmove(sock_ctx->buff, process_ptr, sock_ctx->rcv_len - (sock_ctx->rcv_len - processed_len));
+    sock_ctx->rcv_len = sock_ctx->rcv_len - processed_len;
+    return;
 }
 
 sock_ctx_t *assign_sock_ctx(tcp_ctx_t *tcp_ctx, evutil_socket_t fd, struct sockaddr *sa)
@@ -145,6 +158,25 @@ sock_ctx_t *assign_sock_ctx(tcp_ctx_t *tcp_ctx, evutil_socket_t fd, struct socka
     }
 }
 
+void sock_flush_callback(evutil_socket_t fd, short what, void *arg)
+{
+    sock_ctx_t *sock_ctx = (sock_ctx_t *)arg;
+    write_list_t *write_list = &sock_ctx->push_items;
+
+    /* push all remain item */
+    ssize_t nwritten = push_write_item(sock_ctx->client_fd, write_list, 1024, 1024*1024);
+    if (nwritten > 0)
+        unset_pushed_item(write_list, nwritten);
+}
+
+int sock_add_flushcb(tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx)
+{
+    struct timeval tm_interval  = {0, tcp_ctx->flush_tmval};
+    sock_ctx->event = event_new(tcp_ctx->evbase, -1, EV_PERSIST, sock_flush_callback, sock_ctx);
+
+    return event_add(sock_ctx->event, &tm_interval);
+}
+
 void lb_listener_cb(struct evconnlistener *listener, evutil_socket_t fd,
         struct sockaddr *sa, int socklen, void *user_data)
 {
@@ -158,7 +190,11 @@ void lb_listener_cb(struct evconnlistener *listener, evutil_socket_t fd,
     }
 
     /* only single thread approach to FD, cause we don't need BEV_OPT_THREADSAFE option */
+#if 0
     struct bufferevent *bev = sock_ctx->bev = bufferevent_socket_new(evbase, fd, BEV_OPT_CLOSE_ON_FREE);
+#else
+    struct bufferevent *bev = sock_ctx->bev = bufferevent_socket_new(evbase, fd, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
+#endif
     if (!bev) {
         fprintf(stderr, "Error constructing bufferevent!");
         event_base_loopbreak(evbase);
@@ -263,6 +299,7 @@ void cli_sock_eventcb(struct bufferevent *bev, short events, void *user_data)
     release_conncb(sock_ctx);
 }
 
+static struct timeval TM_SYN_TIMEOUT = {3, 0};
 sock_ctx_t *create_new_peer_sock(tcp_ctx_t *tcp_ctx, const char *peer_addr)
 {
     struct sockaddr_in sin = {0,};
@@ -272,6 +309,11 @@ sock_ctx_t *create_new_peer_sock(tcp_ctx_t *tcp_ctx, const char *peer_addr)
     sin.sin_port = htons(tcp_ctx->peer_listen_port);
 
     int fd = socket(AF_INET, SOCK_STREAM, 0);
+	if (evutil_make_socket_nonblocking(fd) == -1) {
+		fprintf(stderr, "peer sock set nonblock failed\n");
+	} else {
+		fprintf(stderr, "peer sock set nonblock success\n");
+	}
 
     sock_ctx_t *sock_ctx = assign_sock_ctx(tcp_ctx, fd, (struct sockaddr *)&sin);
     if (sock_ctx == NULL) {
@@ -280,7 +322,13 @@ sock_ctx_t *create_new_peer_sock(tcp_ctx_t *tcp_ctx, const char *peer_addr)
     }
 
     struct event_base *evbase = tcp_ctx->evbase;
+#if 0
     struct bufferevent *bev = sock_ctx->bev = bufferevent_socket_new(evbase, fd, BEV_OPT_CLOSE_ON_FREE);
+#else
+	// TODO!!! check BEB_OPV_THREADSAFE
+    struct bufferevent *bev = sock_ctx->bev = bufferevent_socket_new(evbase, fd, 
+			BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
+#endif
     if (!bev) {
         fprintf(stderr, "Error constructing bufferevent!");
         event_base_loopbreak(evbase);
@@ -289,14 +337,16 @@ sock_ctx_t *create_new_peer_sock(tcp_ctx_t *tcp_ctx, const char *peer_addr)
 
     int res = sock_add_flushcb(tcp_ctx, sock_ctx); // TODO res < 0 ???
 	if (res < 0) {
-		// TODO
+		fprintf(stderr, "fail to add flush cb in (%s)\n", __func__);
+		release_conncb(sock_ctx);
+		return NULL;
 	}
     bufferevent_enable(bev, EV_READ);
     bufferevent_setcb(bev, unexpect_readcb, NULL, cli_sock_eventcb, sock_ctx);
+    bufferevent_set_timeouts(bev, &TM_SYN_TIMEOUT, &TM_SYN_TIMEOUT);
 
     if(bufferevent_socket_connect(bev, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
-        // TODO!!! something else
-        bufferevent_free(bev);
+		release_conncb(sock_ctx);
         return NULL;
     }
 
@@ -317,7 +367,7 @@ void check_peer_conn(evutil_socket_t fd, short what, void *arg)
             sock_ctx = create_new_peer_sock(tcp_ctx, peer_addr);
             fprintf(stderr, "dbg} peer %s not exist create new one ... %s\n", 
                     peer_addr, sock_ctx == NULL ?  "failed" : "success");
-        }
+		}
     }
 
     // sock --> config check --> remove one

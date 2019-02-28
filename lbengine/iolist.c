@@ -1,4 +1,4 @@
-#include <lbengine.h>
+#include "lbengine.h"
 
 static void add_write_item(write_list_t *write_list, write_item_t *write_item)
 {
@@ -123,7 +123,12 @@ void unset_pushed_item(write_list_t *write_list, ssize_t nwritten)
             iovec_item->iov_cnt = 0;
             iovec_item->next_start_pos = 0;
             iovec_item->remain_bytes = 0;
-            *iovec_item->ctx_unset_ptr = 0;
+
+			/* unset ctx */
+			if (iovec_item->ctx_unset_ptr != NULL)
+				*iovec_item->ctx_unset_ptr = 0;
+			if (iovec_item->unset_cb_func != NULL) 
+				iovec_item->unset_cb_func(iovec_item->unset_cb_arg);
 
             /* remove from list */
             delete_write_item(write_list, write_item);

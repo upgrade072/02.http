@@ -1,12 +1,13 @@
 
-#ifndef HTTP_LIBS_INVOKED
-#define HTTP_LIBS_INVOKED
+#ifndef __HTTP_LIBS_INVOKED__
+#define __HTTP_LIBS_INVOKED__
 
 // system header wierd
 #include "uninclude.h"
 
 #include <http_comm.h>
 #include <commlib.h>
+#include <nghttp2/nghttp2.h>
 
 #ifdef EPCF
 #include <sfm_msgtypes.h>
@@ -29,8 +30,6 @@
 #define APPLOG(level, fmt, ...) fprintf(stderr, fmt "\n", ##__VA_ARGS__)
 #endif
 
-
-#include <nghttp2/nghttp2.h>
 
 /* ------------------------- libmml.c --------------------------- */
 int     get_mml_para_int (MMLReqMsgType *msg, char *paraName);

@@ -10,7 +10,7 @@ int logLevel = APPLOG_DEBUG;
 int *lOG_FLAG = &logLevel;
 #endif
 
-int httpsQid, httpsTxQid, httpsRxQid, ixpcQid;
+int httpsQid, ixpcQid;
 
 int THREAD_NO[MAX_THRD_NUM] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
 int SESSION_ID;
@@ -18,7 +18,6 @@ int SESS_IDX;
 server_conf SERVER_CONF;
 
 thrd_context THRD_WORKER[MAX_THRD_NUM];
-thrd_context THRD_RECEIVER;
 http2_session_data SESS[MAX_THRD_NUM][MAX_SVR_NUM];
 pthread_mutex_t PUTQUE_WRITE_LOCK = PTHREAD_MUTEX_INITIALIZER;
 https_ctx_t *HttpsCtx[MAX_THRD_NUM];
@@ -646,15 +645,12 @@ static int on_request_recv(nghttp2_session *session,
 	for (rel_path = https_ctx->user_ctx.head.rsrcUri; *rel_path == '/'; ++rel_path)
 		;
 
-	pthread_mutex_lock(&PUTQUE_WRITE_LOCK);
-	if (shmqlib_putMsg(httpsTxQid, (char *)&https_ctx->user_ctx, 
-				HTTPS_AHIF_SEND_SIZE(https_ctx->user_ctx)) <= 0) {
-		APPLOG(APPLOG_DEBUG, "%s) shmq_put fail", __func__);
+	if (send_request_to_fep(https_ctx) < 0) {
+		// all context will release in stream close state
 		if (error_reply(session, stream_data, 500, ERROR_INTERNAL) != 0) {
 			APPLOG(APPLOG_DEBUG, "%s) send error_reply fail", __func__);
-		}
+		} 
 	}
-	pthread_mutex_unlock(&PUTQUE_WRITE_LOCK);
 	memset(https_ctx->user_ctx.head.contentEncoding, 0x00, sizeof(https_ctx->user_ctx.head.contentEncoding));
 
 	return 0;
@@ -971,7 +967,7 @@ static void initialize_app_context(app_context *app_ctx, SSL_CTX *ssl_ctx,
 #define MAX_THRD_WAIT_NUM 5
 void check_thread()
 {
-    int index, res;
+    int index = 0;
 
     /* check worker thread hang */
     for (index = 0; index < SERVER_CONF.worker_num; index++) {
@@ -985,26 +981,6 @@ void check_thread()
             APPLOG(APPLOG_ERR, "WORKER[%2d] hang detected, restart program", index);
             fprintf(stderr, "WORKER[%2d] hang detected, restart program\n", index);
             exit(0);
-        }
-    }
-
-    /* check receiver thread hang */
-    if (1) {
-        if (THRD_RECEIVER.running_index == THRD_RECEIVER.checked_index) {
-            THRD_RECEIVER.hang_counter ++;
-        } else {
-            THRD_RECEIVER.checked_index = THRD_RECEIVER.running_index;
-            THRD_RECEIVER.hang_counter = 0;
-        }
-        if (THRD_RECEIVER.hang_counter >= MAX_THRD_WAIT_NUM) {
-            APPLOG(APPLOG_ERR, "Receiver Thread hang detected, restart thread\n");
-            res = pthread_cancel(THRD_RECEIVER.thrd_id); // cancel early created thread
-            if ((res = pthread_create(&THRD_RECEIVER.thrd_id, NULL, &receiverThread, NULL)) != 0) {
-                APPLOG(APPLOG_ERR, "%s) Thread Create Fail (Receiver)", __func__);
-                exit(0);
-            } else {
-                pthread_detach(THRD_RECEIVER.thrd_id);
-            }
         }
     }
 }
@@ -1297,61 +1273,7 @@ void *workerThread(void *arg)
 	return NULL;
 }
 
-void *receiverThread(void *arg)
-{
-	char rxMsg[sizeof(AhifHttpCSMsgType) + 1024];
-	AhifHttpCSMsgType *ResMsg = (AhifHttpCSMsgType *)&rxMsg;
-
-	intl_req_t intl_req;
-	int sleep_cnt = 0;
-	int thrd_index, session_index, session_id, stream_id, ctx_id, msgSize;
-	https_ctx_t *https_ctx = NULL;
-	http2_session_data *session_data = NULL;
-
-	while (1)
-	{
-        THRD_RECEIVER.running_index ++;
-		if((msgSize = shmqlib_getMsg (httpsRxQid, rxMsg)) <= 0 ) {
-			sleep_cnt ++;
-			if (sleep_cnt >= 1000) {
-				usleep(10);
-				sleep_cnt = 0;
-			}
-			continue;
-		} else {
-			rxMsg[msgSize] = '\0';
-			sleep_cnt = 0;
-		}
-		//DumpHex(rxMsg, msgSize);
-
-		thrd_index = ResMsg->head.thrd_index;
-		session_index = ResMsg->head.session_index;
-		session_id =  ResMsg->head.session_id;
-		stream_id = ResMsg->head.stream_id;
-		ctx_id = ResMsg->head.ctx_id;
-
-		if ((https_ctx = get_context(thrd_index, ctx_id, 1)) == NULL) {
-			/* stat HTTP_STRM_N_FOUND */
-			if ((session_data = get_session(thrd_index, session_index, session_id)) == NULL) {
-				http_stat_inc(0, 0, HTTP_STRM_N_FOUND);
-			} else {
-				http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_STRM_N_FOUND);
-			}
-			continue;
-		}
-
-		set_intl_req_msg(&intl_req,
-				thrd_index, ctx_id, session_index, session_id, stream_id, HTTP_INTL_SND_REQ);
-
-		assign_rcv_ctx_info(https_ctx, ResMsg);
-
-		if (-1 == msgsnd(THRD_WORKER[thrd_index].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0)) {
-			APPLOG(APPLOG_DEBUG, "%s) msgsnd fail", __func__);
-		}
-	}
-}
-
-int thrd_initialize()
+void create_https_worker()
 {
 	int i, res;
 
@@ -1364,16 +1286,6 @@ int thrd_initialize()
 			pthread_detach(THRD_WORKER[i].thrd_id);
 		}
 	}
-
-	// recv queue thread to here !!!
-	if ((res = pthread_create(&THRD_RECEIVER.thrd_id, NULL, &receiverThread, NULL)) != 0) {
-		APPLOG(APPLOG_ERR, "%s) Thread Create Fail (Receiver)", __func__);
-		exit(0);
-	} else {
-		pthread_detach(THRD_RECEIVER.thrd_id);
-	}
-
-	return (0); // never reach here
 }
 
 int initialize()
@@ -1439,18 +1351,6 @@ int initialize()
 			exit( 1);
 		}
 	}
-
-	/* create shmq */
-#ifndef TEST
-	sprintf(fname, "%s/%s", getenv(IV_HOME), AHIF_CONF_FILE);
-#else
-	sprintf(fname, "%s", "../dev_check/temp.conf");
-#endif
-
-	if ((httpsRxQid = shmqlib_getQid (fname, "AHIF_TO_APP_SHMQ", myProcName, SHMQLIB_MODE_GETTER)) < 0)
-		return (-1);
-	if ((httpsTxQid = shmqlib_getQid (fname, "APP_TO_AHIF_SHMQ", myProcName, SHMQLIB_MODE_PUTTER)) < 0)
-		return (-1);
 
 #ifdef OAUTH
     sprintf(fname,"%s/%s", env, SYSCONF_FILE);
@@ -1604,7 +1504,9 @@ int main(int argc, char **argv) {
 	SSL_load_error_strings();
 	SSL_library_init();
 
-	thrd_initialize();
+	create_https_worker();
+	create_lb_thread();
+
 	sleep(3);
 
 	main_loop(SERVER_CONF.key_file, SERVER_CONF.cert_file);

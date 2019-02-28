@@ -30,7 +30,7 @@ extern stat_t STAT;
 extern sndrcv_t SNDRCV;
 
 /* log */
-#ifndef EPCF
+#ifdef LOG_APP
 int logLevel = APPLOG_DEBUG;
 int *lOG_FLAG = &logLevel;
 #endif
@@ -95,7 +95,7 @@ int initialize()
 
     /* log initialize */
     sprintf(fname, "%s/log", getenv(IV_HOME));
-#ifndef EPCF
+#ifdef LOG_APP
     LogInit(my_name, fname);
 #endif
     APPLOG(APPLOG_ERR, "\n\n\n\n\n[Welcome Process Started]");

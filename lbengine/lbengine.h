@@ -37,7 +37,9 @@ typedef struct iovec_item {
     int next_start_pos;                     /* if retry after partial sended */
     int remain_bytes;                       /* info remain byte to send */
 
-    int *ctx_unset_ptr;                     /* if all item sended, unset this value (ctx free) */
+    char *ctx_unset_ptr;                     /* if all item sended, unset this value (ctx free) */
+	void (*unset_cb_func)();                /* if need, unset func() */
+	void *unset_cb_arg;                     /* if need, unset func(arg) */
 } iovec_item_t;
 
 typedef struct write_item {
@@ -64,6 +66,7 @@ typedef struct sock_ctx {
     char client_ip[46];
     int client_port;
     int client_fd;
+	int connected;
 
     char buff[MAX_RCV_BUFF_LEN];
     int rcv_len;
@@ -91,6 +94,11 @@ typedef struct tcp_ctx {
     config_setting_t *peer_list;
     int peer_listen_port;
 
+	int flush_tmval;
+
+	/* use by HTTPS for RR request */
+	int round_robin_index;
+
     void *main_ctx;
     GNode *root_conn;
 } tcp_ctx_t;
@@ -106,8 +114,8 @@ typedef struct main_ctx {
 /******* caller must implement this function !!! ***************/
 /* ------------------------- from another.c ------------------ */
 void    lb_buff_readcb(struct bufferevent *bev, void *arg);
-int     sock_add_flushcb(tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx);
 /***************************************************************/
+
 
 /* ------------------------- iolist.c --------------------------- */
 write_item_t    *create_write_item(write_list_t *write_list, iovec_item_t *iovec_item);
@@ -126,7 +134,10 @@ int     check_conf_via_sock(tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx);
 void    unexpect_readcb(struct bufferevent *bev, void *arg);
 void    release_conncb(sock_ctx_t *sock_ctx);
 void    svr_sock_eventcb(struct bufferevent *bev, short events, void *user_data);
+void    packet_process_res(sock_ctx_t *sock_ctx, char *process_ptr, size_t processed_len);
 sock_ctx_t      *assign_sock_ctx(tcp_ctx_t *tcp_ctx, evutil_socket_t fd, struct sockaddr *sa);
+void    sock_flush_callback(evutil_socket_t fd, short what, void *arg);
+int     sock_add_flushcb(tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx);
 void    *fep_conn_thread(void *arg);
 void    cli_sock_eventcb(struct bufferevent *bev, short events, void *user_data);
 sock_ctx_t      *create_new_peer_sock(tcp_ctx_t *tcp_ctx, const char *peer_addr);
