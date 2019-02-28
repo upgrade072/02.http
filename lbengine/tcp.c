@@ -208,7 +208,7 @@ void lb_listener_cb(struct evconnlistener *listener, evutil_socket_t fd,
         case TT_RX_ONLY:
             fprintf(stderr, "{dbg} rx only connected!\n");
             bufferevent_enable(bev, EV_READ);
-            bufferevent_setcb(bev, httpc_lb_buff_readcb, NULL, svr_sock_eventcb, sock_ctx);
+            bufferevent_setcb(bev, lb_buff_readcb, NULL, svr_sock_eventcb, sock_ctx);
             break;
         case TT_TX_ONLY:
             fprintf(stderr, "{dbg} tx only connected!\n");
