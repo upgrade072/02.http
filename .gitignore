@@ -10,3 +10,9 @@ tags
 trash
 test
 add.sh
+authsvr/authsvr
+build/
+httpc/httpc
+https/https
+libhttp/sample
+perfsim/perfsim
