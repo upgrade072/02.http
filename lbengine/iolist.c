@@ -75,11 +75,13 @@ void print_write_item(write_list_t *write_list)
 
 ssize_t push_write_item(int fd, write_list_t *write_list, int bundle_cnt, int bundle_bytes)
 {
+	if (fd < 0) 
+		return -1;
+
     if (write_list->item_cnt <= 0 || write_list->item_bytes <= 0)
         return -1; 
 
-    //struct iovec iov[MAX_IOV_PUSH] = {0,};
-    struct iovec iov[MAX_IOV_PUSH];
+    struct iovec iov[MAX_IOV_PUSH] = {0,};
     int slot_cnt = 0;
     write_item_t *write_item = write_list->root;
 

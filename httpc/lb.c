@@ -134,7 +134,7 @@ void push_callback(evutil_socket_t fd, short what, void *arg)
     tcp_ctx_t *tcp_ctx = (tcp_ctx_t *)push_item->sender_tcp_ctx;
     sock_ctx_t *sock_ctx = search_node_by_ip(tcp_ctx, push_item->dest_ip);
 
-    fprintf(stderr, "((%s)) called dest %s (mypid(%jd))\n", __func__, push_item->dest_ip, (intmax_t)util_gettid());
+    //fprintf(stderr, "((%s)) called dest %s (mypid(%jd))\n", __func__, push_item->dest_ip, (intmax_t)util_gettid());
 
     if (sock_ctx == NULL) {
         fprintf(stderr, "((%s)) dest (%s) not exist, unset item\n", __func__, push_item->dest_ip);
@@ -142,7 +142,6 @@ void push_callback(evutil_socket_t fd, short what, void *arg)
         return;
     } else {
         create_write_item(&sock_ctx->push_items, push_item);
-        fprintf(stderr, "item pushed\n");
     }
 
     write_list_t *write_list = &sock_ctx->push_items;
@@ -152,6 +151,8 @@ void push_callback(evutil_socket_t fd, short what, void *arg)
         ssize_t nwritten = push_write_item(sock_ctx->client_fd, write_list, LB_CONF.bundle_count, LB_CONF.bundle_bytes);
         if (nwritten > 0)
             unset_pushed_item(write_list, nwritten);
+		else if (errno != EINTR && errno != EAGAIN)
+			fprintf(stderr, "there error! %d : %s\n", errno, strerror(errno));
     }
 }
 
@@ -231,6 +232,18 @@ void send_to_peerlb(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx)
 	return stp_snd_to_peer(peer_addr, peer_tcp_ctx, recv_ctx); /* send relay to peer */
 }
 
+void send_to_remote(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx)
+{
+	conn_list_t *HTTPC_CONN = 0;
+
+	if ((HTTPC_CONN = find_packet_index(recv_ctx->user_ctx.head.destHost, LSMODE_LS)) == NULL) {
+		// TODO can't process (peer send or send err response)
+		send_to_peerlb(sock_ctx, recv_ctx);
+	} else {
+		send_to_worker(HTTPC_CONN, recv_ctx, sock_ctx->client_ip);
+	}
+}
+
 void check_and_send(sock_ctx_t *sock_ctx)
 {
 	httpc_ctx_t *recv_ctx = NULL;
@@ -258,13 +271,8 @@ KEEP_PROCESS:
 	process_ptr += AHIF_TCP_MSG_LEN(head);
 	processed_len += AHIF_TCP_MSG_LEN(head);
 
-	conn_list_t *HTTPC_CONN = 0;
-	if ((HTTPC_CONN = find_packet_index(recv_ctx->user_ctx.head.destHost, LSMODE_LS)) == NULL) {
-		// TODO can't process (peer send or send err response)
-		send_to_peerlb(sock_ctx, recv_ctx);
-	} else {
-		send_to_worker(HTTPC_CONN, recv_ctx, sock_ctx->client_ip);
-	}
+	send_to_remote(sock_ctx, recv_ctx);
+
 	goto KEEP_PROCESS;
 }
 

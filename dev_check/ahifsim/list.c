@@ -52,11 +52,14 @@ static void delete_write_item(write_list_t *write_list, write_item_t *write_item
 
 ssize_t push_write_item(int fd, write_list_t *write_list, int bundle_cnt, int bundle_bytes)
 {   
+	//fprintf(stderr, "{dbg} %s called\n", __func__);
+	if (fd < 0)
+		return -1;
+
     if (write_list->item_cnt <= 0 || write_list->item_bytes <= 0)
         return -1;
     
-    //struct iovec iov[MAX_IOV_PUSH] = {0,};
-    struct iovec iov[MAX_IOV_PUSH];
+    struct iovec iov[MAX_IOV_PUSH] = {0,};
     int slot_cnt = 0;
     write_item_t *write_item = write_list->root;
     
@@ -80,6 +83,12 @@ ssize_t push_write_item(int fd, write_list_t *write_list, int bundle_cnt, int bu
     }
 
 PUSH_SEND: 
+#if 0
+	fprintf(stderr, "{dbg} %s slot cnt %d\n", __func__, slot_cnt);
+	for (int i = 0; i < slot_cnt; i++) {
+		util_dumphex(iov[i].iov_base, iov[i].iov_len);
+	}
+#endif
     return writev(fd, iov, slot_cnt);
 }
 

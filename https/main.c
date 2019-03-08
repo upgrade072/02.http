@@ -534,6 +534,7 @@ static int on_begin_headers_callback(nghttp2_session *session,
 			return NGHTTP2_ERR_CALLBACK_FAILURE;
 		}
 	} else {
+		//fprintf(stderr, "{{{DBG}}} ASSIGN NEW CTX TH %d CTX %d\n", session_data->thrd_index, idx);
 		if ((https_ctx = get_context(session_data->thrd_index, idx, 0)) == NULL) {
 			APPLOG(APPLOG_DEBUG, "%s) get_context fail", __func__);
 			return NGHTTP2_ERR_CALLBACK_FAILURE;
@@ -1066,7 +1067,8 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 					continue;
 				}
 				if (https_ctx == NULL) {
-					APPLOG(APPLOG_DEBUG, "%s)%d) get_context fail", __func__, __LINE__);
+					APPLOG(APPLOG_DEBUG, "%s)%d) get_context fail TH %d CTX %d", __func__, __LINE__, 
+							thrd_index, ctx_id);
 					continue;
 				}
 

@@ -88,6 +88,23 @@ int util_set_linger(int fd, int onoff, int linger)
 	return res;
 }
 
+
+int util_set_rcvbuffsize(int fd, int byte)
+{
+	int opt = byte;
+	int res = setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &opt, sizeof(opt));
+
+	return res;
+}
+
+int util_set_sndbuffsize(int fd, int byte)
+{
+	int opt = byte;
+	int res = setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &opt, sizeof(opt));
+
+	return res;
+}
+
 int crt_new_conn(thrd_ctx_t *thrd_ctx, bufferevent_data_cb readcb, bufferevent_data_cb writecb, bufferevent_event_cb eventcb)
 {
     struct sockaddr_in sin = {0,};
@@ -99,11 +116,18 @@ int crt_new_conn(thrd_ctx_t *thrd_ctx, bufferevent_data_cb readcb, bufferevent_d
     thrd_ctx->fd = socket(AF_INET, SOCK_STREAM, 0); 
 	if (evutil_make_socket_nonblocking(thrd_ctx->fd) == -1)
 		fprintf(stderr, "sock set nonblock failed\n");
+
+	if (util_set_linger(thrd_ctx->fd, 1, 0) != 0)
+		fprintf(stderr, "Fail to set SO_LINGER (ABORT) to fd\n");
+	if (util_set_rcvbuffsize(thrd_ctx->fd, 1024 * 1024 * 1024 /*1MB*/) != 0)
+		fprintf(stderr, "fail to set SO_RCVBUF (size 1MB) to fd\n");
+	if (util_set_sndbuffsize(thrd_ctx->fd, 1024 * 1024 * 1024 /*1MB*/) != 0)
+		fprintf(stderr, "fail to set SO_SNDBUF (size 1MB) to fd\n");
     
 	thrd_ctx->evbase = event_base_new();
 
     thrd_ctx->bev = bufferevent_socket_new(thrd_ctx->evbase, thrd_ctx->fd,
-            BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
+            BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);
 
     if (!thrd_ctx->bev) {
         fprintf(stderr, "Error constructing bufferevent!");
@@ -111,9 +135,9 @@ int crt_new_conn(thrd_ctx_t *thrd_ctx, bufferevent_data_cb readcb, bufferevent_d
         return (-1);
     }
 
-    bufferevent_enable(thrd_ctx->bev, EV_READ);
     bufferevent_setcb(thrd_ctx->bev, readcb, writecb, sock_eventcb, thrd_ctx);
-    bufferevent_set_timeouts(thrd_ctx->bev, &TM_SYN_TIMEOUT, &TM_SYN_TIMEOUT);
+    bufferevent_enable(thrd_ctx->bev, EV_READ);
+    //bufferevent_set_timeouts(thrd_ctx->bev, &TM_SYN_TIMEOUT, &TM_SYN_TIMEOUT);
 
     if(bufferevent_socket_connect(thrd_ctx->bev, (struct sockaddr *)&sin, sizeof(sin)) < 0)
 		return (-1);
@@ -194,6 +218,70 @@ void end_perf()
 	RUNNING = 0;
 }
 
+#define GIB 1073741824
+#define MIB 1048576
+#define KIB 1024
+#define BYTE 1
+typedef enum measure_print {
+	M_GIB = 0,
+	M_MIB,
+	M_KIB,
+	M_BYTE,
+	M_MAX
+} measure_print_t;
+
+char measure_str[][1024] = {
+	"GB",
+	"MB",
+	"KB",
+	"BYTE",
+	"MAX"
+};
+
+static char stat_print_ret_str[1024];
+char *stat_print(int bytes)
+{
+	int measure = bytes > GIB ? M_GIB :
+		bytes > MIB ? M_MIB :
+		bytes > KIB ? M_KIB : M_BYTE;
+	int val = bytes > GIB ? (bytes / GIB) :
+		bytes > MIB ? (bytes / MIB) :
+		bytes > KIB ? (bytes / KIB) : bytes;
+
+	sprintf(stat_print_ret_str, "%d %s", val, measure_str[measure]);
+
+	return stat_print_ret_str;
+}
+
+void stat(main_ctx_t *MAIN_CTX)
+{
+	int used = 0;
+	int not_used = 0;
+	for (int i = 0; i < MAX_TEST_CTX_NUM; i++) {
+		ahif_ctx_t *ahif_ctx = &MAIN_CTX->ahif_ctx[i];
+		if (ahif_ctx->occupied == 0)
+			not_used ++;
+		else
+			used++;
+	}
+	fprintf(stderr, "1sec [%5d] sended [%5d] received ____ used [%5d] not [%5d]\n", 
+			MAIN_CTX->httpc_send_cnt,
+			MAIN_CTX->https_recv_cnt,
+			used, not_used);
+	MAIN_CTX->httpc_send_cnt = 0;
+	MAIN_CTX->https_recv_cnt = 0;
+
+	fprintf(stderr, "httpc tx send [%s]\n", stat_print(MAIN_CTX->httpc_tx_ctx.send_bytes));
+	fprintf(stderr, "httpc rx recv [%s]\n", stat_print(MAIN_CTX->httpc_rx_ctx.recv_bytes));
+	fprintf(stderr, "https tx send [%s]\n", stat_print(MAIN_CTX->https_tx_ctx.send_bytes));
+	fprintf(stderr, "https rx recv [%s]\n", stat_print(MAIN_CTX->https_rx_ctx.recv_bytes));
+
+	MAIN_CTX->httpc_tx_ctx.send_bytes = 0;
+	MAIN_CTX->httpc_rx_ctx.recv_bytes = 0;
+	MAIN_CTX->https_tx_ctx.send_bytes = 0;
+	MAIN_CTX->https_rx_ctx.recv_bytes = 0;
+}
+
 void perf_gen(main_ctx_t *MAIN_CTX)
 {
 	config_setting_t *setting = NULL;
@@ -245,6 +333,7 @@ void perf_gen(main_ctx_t *MAIN_CTX)
 			}
 			if (snd_count >= 100) {
 				snd_count = 0;
+				stat(MAIN_CTX);
 			}
 		}
 	}
@@ -254,6 +343,7 @@ void perf_gen(main_ctx_t *MAIN_CTX)
 int main()
 {
 	main_ctx_t MAIN_CTX = { .dest_hosts_pos = 0, .vheader_cnts_pos = 0, .body_lens_pos = 0 };
+	MAIN_CTX.ahif_ctx = calloc(MAX_TEST_CTX_NUM, sizeof(ahif_ctx_t));
 
 	evthread_use_pthreads();
 
@@ -275,6 +365,7 @@ int main()
 		sleep(1);
 	}
 
+	RUNNING = 1; // start
 	perf_gen(&MAIN_CTX);
 
 	return 0;

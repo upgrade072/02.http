@@ -10,7 +10,7 @@ BUILD_LIBS = $(BUILD_LIBS_PATH)/libevent.a \
 			 $(BUILD_LIBS_PATH)/libs.a
 LIB_PATH = -L../../../../lib
 
-SRCS		= main.c cb.c pkt.c list.c
+SRCS		= main.c cb.c pkt.c list.c util.c
 
 OBJS		= $(SRCS:.c=.o)
 

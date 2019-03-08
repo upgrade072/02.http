@@ -148,6 +148,8 @@ void    *fep_peer_thread(void *arg);
 char    *util_get_ip_from_sa(struct sockaddr *sa);
 int     util_get_port_from_sa(struct sockaddr *sa);
 int     util_set_linger(int fd, int onoff, int linger);
+int     util_set_rcvbuffsize(int fd, int byte);
+int     util_set_sndbuffsize(int fd, int byte);
 int     util_set_keepalive(int fd, int keepalive, int cnt, int idle, int intvl);
 pid_t   util_gettid(void);
 void    util_dumphex(const void* data, size_t size);

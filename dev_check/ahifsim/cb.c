@@ -17,8 +17,16 @@ void sock_eventcb(struct bufferevent *bev, short events, void *user_data)
         int fd = bufferevent_getfd(bev);
         fprintf(stderr, "(%s) Connected fd is (get:%d set:%d)\n", conn_name[thrd_ctx->my_conn_type], fd, thrd_ctx->fd);
 
+#if 0
         if (util_set_linger(thrd_ctx->fd, 1, 0) != 0)
             fprintf(stderr, "Fail to set SO_LINGER (ABORT) to fd\n");
+		if (util_set_rcvbuffsize(thrd_ctx->fd, 10240) != 0)
+			fprintf(stderr, "fail to set SO_RCVBUF (size 10240) to fd\n");
+		if (util_set_sndbuffsize(thrd_ctx->fd, 10240) != 0)
+			fprintf(stderr, "fail to set SO_SNDBUF (size 10240) to fd\n");
+#else
+		// move to before connect
+#endif
 
 		thrd_ctx->connected = 1;
         return;
@@ -45,10 +53,10 @@ void packet_process_res(thrd_ctx_t *thrd_ctx, char *process_ptr, size_t processe
 	return;
 } 
 
-ahif_ctx_t *get_sended_ctx(main_ctx_t *MAIN_CTX, char *ctxIdStr)
+ahif_ctx_t *get_sended_ctx(main_ctx_t *MAIN_CTX, char *test_uri_with_ctx)
 {
-	int ctxId = atoi(ctxIdStr);
-	if (ctxId < 0 || ctxId > AHIF_MAX_APP_VERSION_LEN) {
+	int ctxId = atoi(test_uri_with_ctx + strlen(TEST_URI));
+	if (ctxId < 0 || ctxId > MAX_TEST_CTX_NUM) {
 		fprintf(stderr, "{dbg} we recv wrong ctxId (%d)\n", ctxId);
 		return NULL;
 	}
@@ -75,12 +83,18 @@ ahif_ctx_t *get_assembled_ctx(main_ctx_t *MAIN_CTX, char *ptr)
     int bodyLen = head->bodyLen;
     
 	/* CAUTION we use appVer as ctxId */
-    if((recv_ctx = get_sended_ctx(MAIN_CTX, head->appVer)) == NULL)
+    if((recv_ctx = get_sended_ctx(MAIN_CTX, head->rsrcUri)) == NULL) {
         return NULL;
+	}
         
     memcpy(&recv_ctx->ahif_pkt.head, ptr, sizeof(AhifHttpCSMsgHeadType));
     memcpy(&recv_ctx->ahif_pkt.vheader, vheader, (sizeof(hdr_relay) * vheaderCnt));
     memcpy(&recv_ctx->ahif_pkt.body, body, bodyLen);
+
+#if 0
+	fprintf(stderr, "{{{dbg}}} in %s thrd %d ctx %d\n", 
+			__func__, head->thrd_index, head->ctx_id);
+#endif
     
     return recv_ctx;
 }
@@ -94,8 +108,10 @@ void https_read_cb(struct bufferevent *bev, void *arg)
 
 	if (rcv_len <= 0)
 		return;
-	else
-		thrd_ctx->rcv_len += rcv_len;
+
+	thrd_ctx->rcv_len += rcv_len;
+	/* stat */
+	thrd_ctx->recv_bytes += rcv_len;
 
 	return rx_handle_func(thrd_ctx, https_echo_rx_to_tx);
 }
@@ -109,8 +125,10 @@ void httpc_read_cb(struct bufferevent *bev, void *arg)
 
 	if (rcv_len <= 0)
 		return;
-	else
-		thrd_ctx->rcv_len += rcv_len;
+
+	thrd_ctx->rcv_len += rcv_len;
+	/* stat */
+	thrd_ctx->recv_bytes += rcv_len;
 
 	return rx_handle_func(thrd_ctx, httpc_remove_ctx);
 }

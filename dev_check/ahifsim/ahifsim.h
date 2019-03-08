@@ -26,6 +26,10 @@
 #define MAX_IOV_PUSH 256
 #define MAX_RCV_BUFF_LEN 1024 * 1024 // 1MB
 
+#define MAX_TEST_CTX_NUM 100000
+
+#define TEST_URI "/test_uri/ctx_id/"
+
 typedef enum conn_type {
 	TT_HTTPC_TX = 0,
 	TT_HTTPC_RX,
@@ -74,10 +78,15 @@ typedef struct thrd_ctx {
 	int rcv_len;
 
 	void *MAIN_CTX;
+
+	/* stat */
+	int send_bytes;
+	int recv_bytes;
 } thrd_ctx_t;
 
 typedef struct ahif_ctx {
 	char occupied;
+	int ctxId;
 	AhifHttpCSMsgType ahif_pkt;
 	iovec_item_t push_req;
 } ahif_ctx_t;
@@ -91,12 +100,18 @@ typedef struct main_ctx {
 	int body_lens_pos;
 
 	/* context */
-	ahif_ctx_t ahif_ctx[AHIF_MAX_APP_VERSION_LEN];
+	ahif_ctx_t *ahif_ctx;
 
 	thrd_ctx_t httpc_tx_ctx;
 	thrd_ctx_t httpc_rx_ctx;
 	thrd_ctx_t https_tx_ctx;
 	thrd_ctx_t https_rx_ctx;
+
+	/* stat */
+	int httpc_send_cnt;
+	int https_recv_cnt;
+	int https_send_cnt;
+	int httpc_recv_cnt;
 } main_ctx_t;
 
 
@@ -116,6 +131,8 @@ int     init_cfg(main_ctx_t *MAIN_CTX);
 thrd_ctx_t      *read_thread_conf(main_ctx_t *MAIN_CTX, config_setting_t *setting, char conn_type);
 double  commlib_getCurrTime_double (void);
 int     util_set_linger(int fd, int onoff, int linger);
+int     util_set_rcvbuffsize(int fd, int byte);
+int     util_set_sndbuffsize(int fd, int byte);
 int     crt_new_conn(thrd_ctx_t *thrd_ctx, bufferevent_data_cb readcb, bufferevent_data_cb writecb, bufferevent_event_cb eventcb);
 void    *perf_thread(void *arg);
 int     create_thread(thrd_ctx_t *thrd_ctx);
@@ -128,6 +145,9 @@ int     main();
 write_item_t    *create_write_item(write_list_t *write_list, iovec_item_t *iovec_item);
 ssize_t push_write_item(int fd, write_list_t *write_list, int bundle_cnt, int bundle_bytes);
 void    unset_pushed_item(write_list_t *write_list, ssize_t nwritten);
+
+/* ------------------------- util.c --------------------------- */
+void    util_dumphex(const void* data, size_t size);
 
 /* ------------------------- cb.c --------------------------- */
 void    sock_eventcb(struct bufferevent *bev, short events, void *user_data);

@@ -39,6 +39,11 @@ https_ctx_t *get_assembled_ctx(char *ptr)
     memcpy(&recv_ctx->user_ctx.vheader, vheader, (sizeof(hdr_relay) * vheaderCnt));
     memcpy(&recv_ctx->user_ctx.body, body, bodyLen);
 
+#if 0
+	fprintf(stderr, "{{{DBG}}} GET TEMP CTX ASSIGN IT TH %d CTX %d\n", 
+			recv_ctx->user_ctx.head.thrd_index, recv_ctx->user_ctx.head.ctx_id);
+#endif
+
     return recv_ctx;
 }
 
@@ -91,7 +96,7 @@ void push_callback(evutil_socket_t fd, short what, void *arg)
     tcp_ctx_t *tcp_ctx = (tcp_ctx_t *)push_item->sender_tcp_ctx;
     sock_ctx_t *sock_ctx = search_node_by_ip(tcp_ctx, push_item->dest_ip);
 
-    fprintf(stderr, "((%s)) called dest %s (mypid(%jd))\n", __func__, push_item->dest_ip, (intmax_t)util_gettid());
+    //fprintf(stderr, "((%s)) called dest %s (mypid(%jd))\n", __func__, push_item->dest_ip, (intmax_t)util_gettid());
 
     if (sock_ctx == NULL) {
         fprintf(stderr, "((%s)) dest (%s) not exist, unset item\n", __func__, push_item->dest_ip);
@@ -99,7 +104,6 @@ void push_callback(evutil_socket_t fd, short what, void *arg)
         return;
     } else {
         create_write_item(&sock_ctx->push_items, push_item);
-        fprintf(stderr, "item pushed\n");
     }
 
     write_list_t *write_list = &sock_ctx->push_items;
@@ -108,7 +112,9 @@ void push_callback(evutil_socket_t fd, short what, void *arg)
     if (write_list->item_cnt >= LB_CONF.bundle_count || write_list->item_bytes >= LB_CONF.bundle_bytes) {
         ssize_t nwritten = push_write_item(sock_ctx->client_fd, write_list, LB_CONF.bundle_count, LB_CONF.bundle_bytes);
         if (nwritten > 0)
-            unset_pushed_item(write_list, nwritten);
+			unset_pushed_item(write_list, nwritten);
+		else if (errno != EINTR && errno != EAGAIN)
+			fprintf(stderr, "there error! %d : %s\n", errno, strerror(errno));
     }
 }
 
@@ -124,6 +130,7 @@ void iovec_push_req(tcp_ctx_t *dest_tcp_ctx, iovec_item_t *push_req)
 int send_request_to_fep(https_ctx_t *https_ctx)
 {
     tcp_ctx_t *fep_tcp_ctx = &MAIN_CTX.fep_tx_thrd;
+	//fprintf(stderr, "{{{DBG}}} recv from httpc appVer(ctxId %s)\n", https_ctx->user_ctx.head.appVer);
 
     int sock_cnt = return_sock_num(fep_tcp_ctx);
 	if (sock_cnt <= 0) 
@@ -150,7 +157,10 @@ void send_to_worker(https_ctx_t *recv_ctx)
 	https_ctx_t *https_ctx = NULL;
 	http2_session_data *session_data = NULL;
 
+	//fprintf(stderr, "{{{DBG}}} %s TRY GET ORG CTX TH %d CTX %d\n", __func__, thrd_index, ctx_id);
+
 	if ((https_ctx = get_context(thrd_index, ctx_id, 1)) == NULL) {
+		fprintf(stderr, "{{{DBG}}} %s get context FAILED\n", __func__);
 		if ((session_data = get_session(thrd_index, session_index, session_id)) == NULL) 
 			http_stat_inc(0, 0, HTTP_STRM_N_FOUND); 
 		else
@@ -195,10 +205,15 @@ KEEP_PROCESS:
         APPLOG(APPLOG_ERR, "cant process packet, will just dropped");
         return packet_process_res(sock_ctx, process_ptr, processed_len);
     }
-    
+
     process_ptr += AHIF_TCP_MSG_LEN(head);
     processed_len += AHIF_TCP_MSG_LEN(head);
     
+#if 0
+	fprintf(stderr, "{{{DBG}}} processed now %ld thrd %d ctx %d\n", 
+			processed_len, head->thrd_index, head->ctx_id);
+#endif
+
 	send_to_worker(recv_ctx);
 
     goto KEEP_PROCESS;
@@ -216,6 +231,8 @@ void lb_buff_readcb(struct bufferevent *bev, void *arg)
         return;
     else
         sock_ctx->rcv_len += rcv_len;
+
+	//fprintf(stderr, "{{{DBG}}} we read %ld now sock buff rcvlen %d\n", rcv_len, sock_ctx->rcv_len);
 
     return check_and_send(sock_ctx);
 }

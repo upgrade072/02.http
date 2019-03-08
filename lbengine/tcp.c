@@ -132,6 +132,8 @@ void svr_sock_eventcb(struct bufferevent *bev, short events, void *user_data)
 
 void packet_process_res(sock_ctx_t *sock_ctx, char *process_ptr, size_t processed_len)
 {
+	//fprintf(stderr, "{{{DBG}}} %s called (processed_len :%ld) it means we expect next turn!\n", __func__, processed_len);
+
     // if sock recv 10, process 3 ==> move remain 7 byte to front
     memmove(sock_ctx->buff, process_ptr, sock_ctx->rcv_len - (sock_ctx->rcv_len - processed_len));
     sock_ctx->rcv_len = sock_ctx->rcv_len - processed_len;
@@ -160,6 +162,8 @@ sock_ctx_t *assign_sock_ctx(tcp_ctx_t *tcp_ctx, evutil_socket_t fd, struct socka
 
 void sock_flush_callback(evutil_socket_t fd, short what, void *arg)
 {
+	if (fd < 0) return;
+
     sock_ctx_t *sock_ctx = (sock_ctx_t *)arg;
     write_list_t *write_list = &sock_ctx->push_items;
 
@@ -189,11 +193,18 @@ void lb_listener_cb(struct evconnlistener *listener, evutil_socket_t fd,
         exit(0);
     }
 
+    if (util_set_linger(fd, 1, 0) != 0) 
+        fprintf(stderr, "fail to set SO_LINGER (ABORT) to fd\n");
+	if (util_set_rcvbuffsize(fd, 1024 * 1024 * 1024 /*1MB*/) != 0)
+        fprintf(stderr, "fail to set SO_RCVBUF (size 1MB) to fd\n");
+	if (util_set_sndbuffsize(fd, 1024 * 1024 * 1024 /*1MB*/) != 0)
+        fprintf(stderr, "fail to set SO_SNDBUF (size 1MB) to fd\n");
+
     /* only single thread approach to FD, cause we don't need BEV_OPT_THREADSAFE option */
 #if 0
     struct bufferevent *bev = sock_ctx->bev = bufferevent_socket_new(evbase, fd, BEV_OPT_CLOSE_ON_FREE);
 #else
-    struct bufferevent *bev = sock_ctx->bev = bufferevent_socket_new(evbase, fd, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
+    struct bufferevent *bev = sock_ctx->bev = bufferevent_socket_new(evbase, fd, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);
 #endif
     if (!bev) {
         fprintf(stderr, "Error constructing bufferevent!");
@@ -201,14 +212,11 @@ void lb_listener_cb(struct evconnlistener *listener, evutil_socket_t fd,
         return;
     }
 
-    if (util_set_linger(fd, 1, 0) != 0) 
-        fprintf(stderr, "fail to set SO_LINGER (ABORT) to fd\n");
-
     switch (tcp_ctx->svr_type) {
         case TT_RX_ONLY:
             fprintf(stderr, "{dbg} rx only connected!\n");
-            bufferevent_enable(bev, EV_READ);
             bufferevent_setcb(bev, lb_buff_readcb, NULL, svr_sock_eventcb, sock_ctx);
+            bufferevent_enable(bev, EV_READ);
             break;
         case TT_TX_ONLY:
             fprintf(stderr, "{dbg} tx only connected!\n");
@@ -216,8 +224,8 @@ void lb_listener_cb(struct evconnlistener *listener, evutil_socket_t fd,
 			if (res < 0) {
 				// TODO!!!
 			}
-            bufferevent_enable(bev, EV_READ);
             bufferevent_setcb(bev, unexpect_readcb, NULL, svr_sock_eventcb, sock_ctx);
+            bufferevent_enable(bev, EV_READ);
             break;
         default:
             fprintf(stderr, "{dbg} wrong context received\n");
@@ -322,13 +330,10 @@ sock_ctx_t *create_new_peer_sock(tcp_ctx_t *tcp_ctx, const char *peer_addr)
     }
 
     struct event_base *evbase = tcp_ctx->evbase;
-#if 0
-    struct bufferevent *bev = sock_ctx->bev = bufferevent_socket_new(evbase, fd, BEV_OPT_CLOSE_ON_FREE);
-#else
 	// TODO!!! check BEB_OPV_THREADSAFE
     struct bufferevent *bev = sock_ctx->bev = bufferevent_socket_new(evbase, fd, 
-			BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
-#endif
+			BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);
+
     if (!bev) {
         fprintf(stderr, "Error constructing bufferevent!");
         event_base_loopbreak(evbase);

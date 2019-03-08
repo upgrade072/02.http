@@ -30,6 +30,22 @@ int util_set_linger(int fd, int onoff, int linger)
     return res;
 }
 
+int util_set_rcvbuffsize(int fd, int byte)
+{
+	int opt = byte;
+	int res = setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &opt, sizeof(opt));
+
+	return res;
+}
+
+int util_set_sndbuffsize(int fd, int byte)
+{
+	int opt = byte;
+	int res = setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &opt, sizeof(opt));
+
+	return res;
+}
+
 // set keepalived option to sock
 int util_set_keepalive(int fd, int keepalive, int cnt, int idle, int intvl)
 {

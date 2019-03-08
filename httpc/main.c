@@ -692,6 +692,8 @@ int send_request(http2_session_data_t *session_data, int thrd_index, int ctx_id)
 		return (-1);
 	}
 
+	//fprintf(stderr, "{{{dbg}}} httpc-->https appVer(ctxId) %s\n", httpc_ctx->user_ctx.head.appVer);
+
 	stream_id = submit_request(session_data, httpc_ctx, &httpc_ctx->stream);
 
 	if (stream_id >= 0) {
