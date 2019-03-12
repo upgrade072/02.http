@@ -28,8 +28,9 @@ sock_ctx_t *search_node_by_ip(tcp_ctx_t *tcp_ctx, const char *ipaddr)
     for (int i = 0; i < conn_num; i++) {
         GNode *nth_conn = g_node_nth_child(root, i);
         sock_ctx_t *sock_ctx = (sock_ctx_t *)nth_conn->data;
-        if (!strcmp(sock_ctx->client_ip, ipaddr))
+        if (!strcmp(sock_ctx->client_ip, ipaddr)) {
             return sock_ctx;
+		}
     }
     return (sock_ctx_t *)NULL;
 }
@@ -111,6 +112,7 @@ void svr_sock_eventcb(struct bufferevent *bev, short events, void *user_data)
 
     // client sock conneted
     if(events & BEV_EVENT_CONNECTED) {
+
         int fd = bufferevent_getfd(bev);
         fprintf(stderr, "connected fd is (%d)\n", fd);
 
@@ -165,12 +167,16 @@ void sock_flush_callback(evutil_socket_t fd, short what, void *arg)
 	if (fd < 0) return;
 
     sock_ctx_t *sock_ctx = (sock_ctx_t *)arg;
+	tcp_ctx_t *tcp_ctx = (tcp_ctx_t *)sock_ctx->tcp_ctx;
     write_list_t *write_list = &sock_ctx->push_items;
 
     /* push all remain item */
     ssize_t nwritten = push_write_item(sock_ctx->client_fd, write_list, 1024, 1024*1024);
-    if (nwritten > 0)
+    if (nwritten > 0) {
         unset_pushed_item(write_list, nwritten);
+		/* stat */
+		tcp_ctx->send_bytes += nwritten;
+	}
 }
 
 int sock_add_flushcb(tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx)
@@ -191,23 +197,18 @@ void lb_listener_cb(struct evconnlistener *listener, evutil_socket_t fd,
     if (sock_ctx == NULL) {
         fprintf(stderr, "something wrong (%s)\n", __func__);
         exit(0);
-    }
+    } else {
+		sock_ctx->tcp_ctx = tcp_ctx;
+	}
 
     if (util_set_linger(fd, 1, 0) != 0) 
         fprintf(stderr, "fail to set SO_LINGER (ABORT) to fd\n");
-	//if (util_set_rcvbuffsize(fd, 1024 * 1024 * 1024 * 1 /*1MB*/) != 0)
 	if (util_set_rcvbuffsize(fd, INT_MAX) != 0)
-        fprintf(stderr, "fail to set SO_RCVBUF (size 1MB) to fd\n");
-	//if (util_set_sndbuffsize(fd, 1024 * 1024 * 1024 * 1 /*1MB*/) != 0)
+        fprintf(stderr, "fail to set SO_RCVBUF (size INT_MAX) to fd\n");
 	if (util_set_sndbuffsize(fd, INT_MAX) != 0)
-        fprintf(stderr, "fail to set SO_SNDBUF (size 1MB) to fd\n");
+        fprintf(stderr, "fail to set SO_SNDBUF (size INT_MAX) to fd\n");
 
-    /* only single thread approach to FD, cause we don't need BEV_OPT_THREADSAFE option */
-#if 0
-    struct bufferevent *bev = sock_ctx->bev = bufferevent_socket_new(evbase, fd, BEV_OPT_CLOSE_ON_FREE);
-#else
     struct bufferevent *bev = sock_ctx->bev = bufferevent_socket_new(evbase, fd, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);
-#endif
     if (!bev) {
         fprintf(stderr, "Error constructing bufferevent!");
         event_base_loopbreak(evbase);
@@ -293,12 +294,16 @@ void cli_sock_eventcb(struct bufferevent *bev, short events, void *user_data)
 
     // normal connected
     if(events & BEV_EVENT_CONNECTED) {
+
+		bufferevent_set_timeouts(bev, NULL, NULL); // remove SYN timeout 
+
         int fd = bufferevent_getfd(bev);
         fprintf(stderr, "connected fd is (%d)\n", fd);
 
         if (util_set_linger(fd, 1, 0) != 0) 
             fprintf(stderr, "fail to set SO_LINGER (ABORT) to fd\n");
 
+		sock_ctx->connected = 1;
         return;
     }
 
@@ -307,7 +312,9 @@ void cli_sock_eventcb(struct bufferevent *bev, short events, void *user_data)
         fprintf(stderr, "Connection closed.\n");
     } else if (events & BEV_EVENT_ERROR) {
         fprintf(stderr, "Got an error on the connection: %s\n", strerror(errno));
-    }
+	} else {
+		fprintf(stderr, "We occured event 0x%x\n", events);
+	}
 
     release_conncb(sock_ctx);
 }
@@ -319,7 +326,7 @@ sock_ctx_t *create_new_peer_sock(tcp_ctx_t *tcp_ctx, const char *peer_addr)
 
     sin.sin_family = AF_INET;
     sin.sin_addr.s_addr = inet_addr(peer_addr);
-    sin.sin_port = htons(tcp_ctx->peer_listen_port);
+    sin.sin_port = htons(tcp_ctx->listen_port);
 
     int fd = socket(AF_INET, SOCK_STREAM, 0);
 	if (evutil_make_socket_nonblocking(fd) == -1) {
@@ -332,7 +339,9 @@ sock_ctx_t *create_new_peer_sock(tcp_ctx_t *tcp_ctx, const char *peer_addr)
     if (sock_ctx == NULL) {
         fprintf(stderr, "something wrong (%s)\n", __func__);
         exit(0);
-    }
+    } else {
+		sock_ctx->tcp_ctx = tcp_ctx;
+	}
 
     struct event_base *evbase = tcp_ctx->evbase;
 	// TODO!!! check BEB_OPV_THREADSAFE
@@ -410,7 +419,7 @@ void *fep_peer_thread(void *arg)
     }
 
     fprintf(stderr, ">>>[ %-20s ] thread id [%jd] connect to  [peer(s):%5d]<<<\n",
-            __func__, (intmax_t)util_gettid(), tcp_ctx->peer_listen_port);
+            __func__, (intmax_t)util_gettid(), tcp_ctx->listen_port);
 
     struct timeval tm_interval = {1, 0}; // 1sec interval
     struct event *ev_tmr;

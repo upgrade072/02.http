@@ -93,3 +93,38 @@ void util_dumphex(const void* data, size_t size)
         }
     }
 }
+
+#define GIB 1073741824
+#define MIB 1048576
+#define KIB 1024
+#define BYTE 1
+typedef enum measure_print {
+    M_GIB = 0,
+    M_MIB,
+    M_KIB,
+    M_BYTE,
+    M_MAX
+} measure_print_t;
+
+char measure_str[][1024] = {
+    "GB",
+    "MB",
+    "KB",
+    "BYTE",
+    "MAX"
+};
+
+char *measure_print(int bytes, char *return_str)
+{
+    int measure = bytes > GIB ? M_GIB :
+        bytes > MIB ? M_MIB :
+        bytes > KIB ? M_KIB : M_BYTE;
+    int val = bytes > GIB ? (bytes / GIB) :
+        bytes > MIB ? (bytes / MIB) :
+        bytes > KIB ? (bytes / KIB) : bytes;
+
+    sprintf(return_str, "%d %s", val, measure_str[measure]);
+
+    return return_str;
+}
+

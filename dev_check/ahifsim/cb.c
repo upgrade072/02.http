@@ -82,6 +82,8 @@ ahif_ctx_t *get_assembled_ctx(thrd_ctx_t *thrd_ctx, char *ptr)
 		recv_ctx = malloc(sizeof(ahif_ctx_t));
 		recv_ctx->occupied = 1;
 	}
+	if (recv_ctx == NULL)
+		return NULL;
         
     memcpy(&recv_ctx->ahif_pkt.head, ptr, sizeof(AhifHttpCSMsgHeadType));
     memcpy(&recv_ctx->ahif_pkt.vheader, vheader, (sizeof(hdr_relay) * vheaderCnt));

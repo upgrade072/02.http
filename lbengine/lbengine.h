@@ -73,6 +73,8 @@ typedef struct sock_ctx {
     int rcv_len;
 
     void *main_ctx;
+	void *tcp_ctx;
+
     GNode *my_conn;
 } sock_ctx_t;
 
@@ -102,12 +104,18 @@ typedef struct tcp_ctx {
 
     void *main_ctx;
     GNode *root_conn;
+
+	/* for stat */
+	int send_bytes;
+	int recv_bytes;
 } tcp_ctx_t;
 
 typedef struct main_ctx {
     tcp_ctx_t fep_rx_thrd;
     tcp_ctx_t fep_tx_thrd;
     tcp_ctx_t peer_tx_thrd;
+
+	pthread_t stat_thrd_id;
 } main_ctx_t;
 
 
@@ -154,5 +162,6 @@ int     util_set_sndbuffsize(int fd, int byte);
 int     util_set_keepalive(int fd, int keepalive, int cnt, int idle, int intvl);
 pid_t   util_gettid(void);
 void    util_dumphex(const void* data, size_t size);
+char    *measure_print(int bytes, char *return_str);
 
 #endif

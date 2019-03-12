@@ -176,6 +176,33 @@ void *perf_thread(void *arg)
 	return (void *)NULL;
 }
 
+int httpc_peer_conn(main_ctx_t *MAIN_CTX)
+{
+	config_t *CFG = &MAIN_CTX->CFG;
+	int pr_send_test = 0;
+
+	if (config_lookup_int(CFG, "application.pr_send_test", &pr_send_test) == CONFIG_FALSE) {
+		fprintf(stderr, "INFORM}} config [application.pr_send_test] not exist! normal case test\n");
+		return (-1);
+	} else {
+		if (pr_send_test == 0) 
+			MAIN_CTX->httpc_pr_ctx.connected = 1;
+		fprintf(stderr, "INFORM}} config [application.pr_send_test] exist! peer-send-case test\n");
+	}
+
+	thrd_ctx_t *thrd_ctx = &MAIN_CTX->httpc_pr_ctx;
+	thrd_ctx->my_conn_type = TT_HTTPC_RX;
+	thrd_ctx->MAIN_CTX = MAIN_CTX;
+
+	if (config_lookup_string(CFG, "scenario.httpc_pr_ip", &thrd_ctx->ipaddr)== CONFIG_FALSE ||
+			config_lookup_int(CFG, "scenario.httpc_pr_port", &thrd_ctx->port) == CONFIG_FALSE) {
+		fprintf(stderr, "ERROR}} pr_send_test = 1 but httpc_pr conf not exist!\n");
+		return (-1);
+	}
+
+	return create_thread(thrd_ctx);
+}
+
 int create_thread(thrd_ctx_t *thrd_ctx)
 {
 	pthread_t thread_id = {0,};
@@ -274,11 +301,13 @@ void stat(main_ctx_t *MAIN_CTX)
 	fprintf(stderr, "httpc rx recv [%s]\n", stat_print(MAIN_CTX->httpc_rx_ctx.recv_bytes));
 	fprintf(stderr, "https tx send [%s]\n", stat_print(MAIN_CTX->https_tx_ctx.send_bytes));
 	fprintf(stderr, "https rx recv [%s]\n", stat_print(MAIN_CTX->https_rx_ctx.recv_bytes));
+	fprintf(stderr, "http* rx recv [%s]\n", stat_print(MAIN_CTX->httpc_pr_ctx.recv_bytes));
 
 	MAIN_CTX->httpc_tx_ctx.send_bytes = 0;
 	MAIN_CTX->httpc_rx_ctx.recv_bytes = 0;
 	MAIN_CTX->https_tx_ctx.send_bytes = 0;
 	MAIN_CTX->https_rx_ctx.recv_bytes = 0;
+	MAIN_CTX->httpc_pr_ctx.recv_bytes = 0;
 }
 
 void perf_gen(main_ctx_t *MAIN_CTX)
@@ -358,11 +387,14 @@ int main()
 		fprintf(stderr, "fail to init_thread()\n");
 		exit(-1);
 	}
+	// peer conn test
+	httpc_peer_conn(&MAIN_CTX);
 
 	while (MAIN_CTX.httpc_tx_ctx.connected != 1 &&
 		MAIN_CTX.httpc_rx_ctx.connected != 1 &&
 		MAIN_CTX.https_tx_ctx.connected != 1 &&
-		MAIN_CTX.https_rx_ctx.connected != 1) {
+		MAIN_CTX.https_rx_ctx.connected != 1 &&
+		MAIN_CTX.httpc_pr_ctx.connected != 1) {
 		fprintf(stderr, "(%s) wait until all conn is connected\n", __func__);
 		sleep(1);
 	}

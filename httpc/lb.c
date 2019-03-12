@@ -71,8 +71,6 @@ void send_to_worker(conn_list_t *httpc_conn, httpc_ctx_t *recv_ctx, char *client
 	memcpy(&httpc_ctx->user_ctx.vheader, &recv_ctx->user_ctx.vheader, sizeof(hdr_relay) * recv_ctx->user_ctx.head.vheaderCnt);
 	memcpy(&httpc_ctx->user_ctx.body, &recv_ctx->user_ctx.body, recv_ctx->user_ctx.head.bodyLen);
 
-	sprintf(httpc_ctx->resp_client_ip, "%s", client_ip);					// for relay resp to fep
-
 	httpc_ctx->user_ctx.head.mtype = MTYPE_HTTP2_RESPONSE_HTTPC_TO_AHIF;	// in advance set
 
 	set_intl_req_msg(&intl_req, thrd_idx, ctx_idx, sess_idx, session_id, 0, HTTP_INTL_SND_REQ);
@@ -151,8 +149,11 @@ void push_callback(evutil_socket_t fd, short what, void *arg)
 	/* bundle packet by config ==> send by once */
     if (write_list->item_cnt >= LB_CONF.bundle_count || write_list->item_bytes >= LB_CONF.bundle_bytes) {
         ssize_t nwritten = push_write_item(sock_ctx->client_fd, write_list, LB_CONF.bundle_count, LB_CONF.bundle_bytes);
-        if (nwritten > 0)
+        if (nwritten > 0) {
             unset_pushed_item(write_list, nwritten);
+			/* stat */
+			tcp_ctx->send_bytes += nwritten;
+		}
 		else if (errno != EINTR && errno != EAGAIN)
 			fprintf(stderr, "there error! %d : %s\n", errno, strerror(errno));
     }
@@ -178,7 +179,8 @@ void stp_err_to_fep(sock_ctx_t *sock_ctx, tcp_ctx_t *fep_tcp_ctx, httpc_ctx_t *r
 	recv_ctx->user_ctx.head.vheaderCnt = 0;
 	recv_ctx->user_ctx.head.bodyLen = 0;
 
-	set_iovec(fep_tcp_ctx, recv_ctx, sock_ctx->client_ip, &recv_ctx->push_req, NULL, NULL);
+	/* response to origin fep */
+	set_iovec(fep_tcp_ctx, recv_ctx, recv_ctx->user_ctx.head.fep_origin_addr, &recv_ctx->push_req, NULL, NULL);
 
 	return iovec_push_req(fep_tcp_ctx, &recv_ctx->push_req);
 }
@@ -209,7 +211,7 @@ void send_response_to_fep(httpc_ctx_t *httpc_ctx)
 {
 	tcp_ctx_t *fep_tcp_ctx = &MAIN_CTX.fep_tx_thrd;
 
-	set_iovec(fep_tcp_ctx, httpc_ctx, httpc_ctx->resp_client_ip, &httpc_ctx->push_req, free_ctx_with_httpc_ctx, httpc_ctx);
+	set_iovec(fep_tcp_ctx, httpc_ctx, httpc_ctx->user_ctx.head.fep_origin_addr, &httpc_ctx->push_req, free_ctx_with_httpc_ctx, httpc_ctx);
 	
 	return iovec_push_req(fep_tcp_ctx, &httpc_ctx->push_req);
 }
@@ -222,14 +224,19 @@ void send_to_peerlb(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx)
 
 	int peer_cnt = config_setting_length(peer_tcp_ctx->peer_list);
 
-	if (recv_ctx->user_ctx.head.hopped_cnt > peer_cnt) 
+	if (recv_ctx->user_ctx.head.hopped_cnt >= peer_cnt) 
 		return stp_err_to_fep(sock_ctx, fep_tcp_ctx, recv_ctx); /* send err to fep */
 
 	config_setting_t *list = config_setting_get_elem(peer_tcp_ctx->peer_list, recv_ctx->user_ctx.head.hopped_cnt);
 	const char *peer_addr = config_setting_get_string(list);
+
 	sock_ctx_t *target_sock_ctx = search_node_by_ip(peer_tcp_ctx, peer_addr);
-	if (target_sock_ctx == NULL || target_sock_ctx->connected != 1) 
+	if (target_sock_ctx == NULL || target_sock_ctx->connected != 1)  {
+		fprintf(stderr, "{{{DBG}}} target sock %s\n", 
+				target_sock_ctx == NULL ? "[target sock null]" : 
+				target_sock_ctx != NULL && target_sock_ctx->connected != 1 ? "[not connected]" :  "[wtf]");
 		return stp_err_to_fep(sock_ctx, fep_tcp_ctx, recv_ctx); /* send err to fep */
+	}
 
 	return stp_snd_to_peer(peer_addr, peer_tcp_ctx, recv_ctx); /* send relay to peer */
 }
@@ -238,9 +245,11 @@ void send_to_remote(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx)
 {
 	conn_list_t *HTTPC_CONN = 0;
 
+	/* save fep origin address */
+	if (recv_ctx->user_ctx.head.hopped_cnt == 0) 
+		sprintf(recv_ctx->user_ctx.head.fep_origin_addr, "%s", sock_ctx->client_ip);
+
 	if ((HTTPC_CONN = find_packet_index(recv_ctx->user_ctx.head.destHost, LSMODE_LS)) == NULL) {
-		// TODO can't process (peer send or send err response)
-		fprintf(stderr,  "{{{DBG}}} cant find dest host %s\n", recv_ctx->user_ctx.head.destHost);
 		send_to_peerlb(sock_ctx, recv_ctx);
 	} else {
 		send_to_worker(HTTPC_CONN, recv_ctx, sock_ctx->client_ip);
@@ -282,15 +291,19 @@ KEEP_PROCESS:
 void lb_buff_readcb(struct bufferevent *bev, void *arg)
 {
 	sock_ctx_t *sock_ctx = (sock_ctx_t *)arg;
+	tcp_ctx_t *tcp_ctx = (tcp_ctx_t *)sock_ctx->tcp_ctx;
 	ssize_t rcv_len = bufferevent_read(bev, 
 			sock_ctx->buff + sock_ctx->rcv_len, 
 			MAX_RCV_BUFF_LEN - sock_ctx->rcv_len);
 
 	// TODO !!! check strerror() & if critical, call relese_conn()
-	if (rcv_len <= 0)
+	if (rcv_len <= 0) {
 		return;
-	else
+	} else {
 		sock_ctx->rcv_len += rcv_len;
+		/* stat */
+		tcp_ctx->recv_bytes += rcv_len;
+	}
 
 	return check_and_send(sock_ctx);
 }
@@ -345,6 +358,55 @@ void load_lb_config(client_conf_t *cli_conf, lb_global_t *lb_conf)
 	}
 }
 
+void fep_stat_print(evutil_socket_t fd, short what, void *arg)
+{
+	main_ctx_t *main_ctx = (main_ctx_t *)arg;
+	char fep_read[1024] = {0,};
+	char fep_write[1024] = {0,};
+	char peer_write[1024] = {0,};
+
+	int used = 0, not_used = 0;
+	for (int i = 0; i < MAX_LB_CTX_NUM; i++) {
+		if (LB_RECV_CTX[i].occupied == 1)
+			used ++;
+		else
+			not_used ++;
+	}
+
+	APPLOG(APPLOG_ERR, "FEP CTX [total: %5d used: %5d not used: %5d] FEP RX [%s] FEP TX [%s] ( PEER TX [%s] )",
+			MAX_LB_CTX_NUM,
+			used,
+			not_used,
+			measure_print(main_ctx->fep_rx_thrd.recv_bytes, fep_read),
+			measure_print(main_ctx->fep_tx_thrd.send_bytes, fep_write),
+			measure_print(main_ctx->peer_tx_thrd.send_bytes, peer_write));
+
+	main_ctx->fep_rx_thrd.recv_bytes = 0;
+	main_ctx->fep_tx_thrd.send_bytes = 0;
+	main_ctx->peer_tx_thrd.send_bytes = 0;
+}
+
+void *fep_stat_thread(void *arg)
+{
+	main_ctx_t *main_ctx = (main_ctx_t *)arg;
+
+	struct event_base *evbase;
+	evbase = event_base_new();
+
+	struct timeval one_sec = {1, 0};
+	struct event *ev;
+	ev = event_new(evbase, -1, EV_PERSIST, fep_stat_print, (void *)main_ctx);
+	event_add(ev, &one_sec);
+
+	/* start loop */
+	event_base_loop(evbase, EVLOOP_NO_EXIT_ON_EMPTY);
+
+	/* never reach here */
+	event_base_free(evbase);
+
+	return (void *)NULL;
+}
+
 void attach_lb_thread(lb_global_t *lb_conf, main_ctx_t *main_ctx)
 {
 
@@ -362,7 +424,7 @@ void attach_lb_thread(lb_global_t *lb_conf, main_ctx_t *main_ctx)
 
     /* peer send thread ctx */
     main_ctx->peer_tx_thrd.peer_list = lb_conf->peer_list;
-    main_ctx->peer_tx_thrd.peer_listen_port = lb_conf->rxonly_port;
+    main_ctx->peer_tx_thrd.listen_port = lb_conf->rxonly_port; /* connect to */
     main_ctx->peer_tx_thrd.flush_tmval = lb_conf->flush_tmval;
     main_ctx->peer_tx_thrd.main_ctx = main_ctx;
 
@@ -388,6 +450,14 @@ void attach_lb_thread(lb_global_t *lb_conf, main_ctx_t *main_ctx)
         exit(0);
     } else {
         pthread_detach(main_ctx->peer_tx_thrd.my_thread_id);
+    }
+
+	/* for stat print small thread */
+    if (pthread_create(&main_ctx->stat_thrd_id, NULL, &fep_stat_thread, main_ctx) != 0) {
+        APPLOG(APPLOG_ERR, "fail to create thread\n");
+        exit(0);
+    } else {
+        pthread_detach(main_ctx->stat_thrd_id);
     }
 }
 

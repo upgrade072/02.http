@@ -304,7 +304,7 @@ conn_list_t *find_packet_index(char *host, int ls_mode) {
 		}
 	}
     if (!found) {
-        APPLOG(APPLOG_DEBUG, "warn} %s not found! host (%s)", __func__, host);
+        //APPLOG(APPLOG_DEBUG, "warn} %s not found! host (%s)", __func__, host);
         return NULL;
 	}
     start = curr = &CONN_LIST[i];

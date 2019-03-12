@@ -112,8 +112,11 @@ void push_callback(evutil_socket_t fd, short what, void *arg)
     /* bundle packet by config ==> send by once */
     if (write_list->item_cnt >= LB_CONF.bundle_count || write_list->item_bytes >= LB_CONF.bundle_bytes) {
         ssize_t nwritten = push_write_item(sock_ctx->client_fd, write_list, LB_CONF.bundle_count, LB_CONF.bundle_bytes);
-        if (nwritten > 0)
+        if (nwritten > 0) {
 			unset_pushed_item(write_list, nwritten);
+			/* stat */
+			tcp_ctx->send_bytes += nwritten;
+		}
 		else if (errno != EINTR && errno != EAGAIN)
 			fprintf(stderr, "there error! %d : %s\n", errno, strerror(errno));
     }
@@ -223,19 +226,67 @@ KEEP_PROCESS:
 void lb_buff_readcb(struct bufferevent *bev, void *arg)
 {
     sock_ctx_t *sock_ctx = (sock_ctx_t *)arg;
+	tcp_ctx_t *tcp_ctx = (tcp_ctx_t *)sock_ctx->tcp_ctx;
     ssize_t rcv_len = bufferevent_read(bev,
             sock_ctx->buff + sock_ctx->rcv_len,
             MAX_RCV_BUFF_LEN - sock_ctx->rcv_len);
 
     // TODO !!! check strerror() & if critical, call relese_conn()
-    if (rcv_len <= 0)
+    if (rcv_len <= 0) {
         return;
-    else
+	} else {
         sock_ctx->rcv_len += rcv_len;
-
-	//fprintf(stderr, "{{{DBG}}} we read %ld now sock buff rcvlen %d\n", rcv_len, sock_ctx->rcv_len);
+		/* stat */
+		tcp_ctx->recv_bytes += rcv_len;
+	}
 
     return check_and_send(sock_ctx);
+}
+
+void fep_stat_print(evutil_socket_t fd, short what, void *arg)
+{
+	main_ctx_t *main_ctx = (main_ctx_t *)arg;
+	char fep_read[1024] = {0,};
+	char fep_write[1024] = {0,};
+
+	int used = 0, not_used = 0;
+	for (int i = 0; i < MAX_LB_CTX_NUM; i++) {
+		if (LB_RECV_CTX[i].occupied == 1)
+			used ++;
+		else
+			not_used ++;
+	}
+
+	APPLOG(APPLOG_ERR, "FEP CTX [total: %5d used: %5d not used: %5d] FEP RX [%s] FEP TX [%s]",
+			MAX_LB_CTX_NUM,
+			used,
+			not_used,
+			measure_print(main_ctx->fep_rx_thrd.recv_bytes, fep_read),
+			measure_print(main_ctx->fep_tx_thrd.send_bytes, fep_write));
+
+	main_ctx->fep_rx_thrd.recv_bytes = 0;
+	main_ctx->fep_tx_thrd.send_bytes = 0;
+}
+
+void *fep_stat_thread(void *arg)
+{
+	main_ctx_t *main_ctx = (main_ctx_t *)arg;
+
+	struct event_base *evbase;
+	evbase = event_base_new();
+
+	struct timeval one_sec = {1, 0};
+	struct event *ev;
+	ev = event_new(evbase, -1, EV_PERSIST, fep_stat_print, (void *)main_ctx);
+	event_add(ev, &one_sec);
+
+	/* start loop */
+	event_base_loop(evbase, EVLOOP_NO_EXIT_ON_EMPTY);
+
+	/* never reach here */
+	event_base_free(evbase);
+
+	return (void *)NULL;
 }
 
 void load_lb_config(server_conf *svr_conf, lb_global_t *lb_conf)
@@ -304,6 +355,14 @@ void attach_lb_thread(lb_global_t *lb_conf, main_ctx_t *main_ctx)
     } else {
         pthread_detach(main_ctx->fep_tx_thrd.my_thread_id);
     }
+
+	/* for stat print small thread */
+	if (pthread_create(&main_ctx->stat_thrd_id, NULL, &fep_stat_thread, main_ctx) != 0) {
+		APPLOG(APPLOG_ERR, "fail to create thread\n");
+		exit(0);
+	} else {
+		pthread_detach(main_ctx->stat_thrd_id);
+	}
 }
 
 int create_lb_thread()

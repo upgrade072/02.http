@@ -82,7 +82,6 @@ typedef struct thrd_ctx {
 
 	void *MAIN_CTX;
 
-	/* stat */
 	int send_bytes;
 	int recv_bytes;
 } thrd_ctx_t;
@@ -110,6 +109,9 @@ typedef struct main_ctx {
 	thrd_ctx_t httpc_rx_ctx;
 	thrd_ctx_t https_tx_ctx;
 	thrd_ctx_t https_rx_ctx;
+
+	/* for httpc peer-conn test */
+	thrd_ctx_t httpc_pr_ctx;
 
 	/* stat */
 	int httpc_send_cnt;
