@@ -30,7 +30,7 @@ static void remove_write_item(write_list_t *write_list, write_item_t *write_item
         write_list->last = write_item->prev;
  
     write_list->item_cnt--;
-    write_list->item_cnt -= write_item->iovec_item->remain_bytes;
+    //write_list->item_bytes -= write_item->iovec_item->remain_bytes;
 }
 
 write_item_t *create_write_item(write_list_t *write_list, iovec_item_t *iovec_item)
@@ -75,11 +75,21 @@ void print_write_item(write_list_t *write_list)
 
 ssize_t push_write_item(int fd, write_list_t *write_list, int bundle_cnt, int bundle_bytes)
 {
-	if (fd < 0) 
-		return -1;
+	if (write_list->item_cnt == 0 && write_list->item_bytes == 0)
+		return 0;
 
-    if (write_list->item_cnt <= 0 || write_list->item_bytes <= 0)
-        return -1; 
+	if (bundle_cnt < 0 || bundle_bytes < 0) {
+		fprintf(stderr, "{dbg} wrong input in %s %d\n", __func__, __LINE__);
+		return -1;
+	}
+    if (write_list->item_cnt <= 0 || write_list->item_bytes <= 0) {
+		fprintf(stderr, "{dbg} wrong input in %s %d\n", __func__, __LINE__);
+		return -1;
+	}
+	if (fd < 0) {
+		fprintf(stderr, "{dbg} wrong input in %s %d\n", __func__, __LINE__);
+		return -1;
+	}
 
     struct iovec iov[MAX_IOV_PUSH] = {0,};
     int slot_cnt = 0;

@@ -72,6 +72,7 @@ void send_to_worker(conn_list_t *httpc_conn, httpc_ctx_t *recv_ctx, char *client
 	memcpy(&httpc_ctx->user_ctx.body, &recv_ctx->user_ctx.body, recv_ctx->user_ctx.head.bodyLen);
 
 	sprintf(httpc_ctx->resp_client_ip, "%s", client_ip);					// for relay resp to fep
+
 	httpc_ctx->user_ctx.head.mtype = MTYPE_HTTP2_RESPONSE_HTTPC_TO_AHIF;	// in advance set
 
 	set_intl_req_msg(&intl_req, thrd_idx, ctx_idx, sess_idx, session_id, 0, HTTP_INTL_SND_REQ);
@@ -138,7 +139,8 @@ void push_callback(evutil_socket_t fd, short what, void *arg)
 
     if (sock_ctx == NULL) {
         fprintf(stderr, "((%s)) dest (%s) not exist, unset item\n", __func__, push_item->dest_ip);
-        *push_item->ctx_unset_ptr = 0;
+		if (push_item->ctx_unset_ptr != NULL)
+			*push_item->ctx_unset_ptr = 0;
         return;
     } else {
         create_write_item(&sock_ctx->push_items, push_item);
@@ -238,6 +240,7 @@ void send_to_remote(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx)
 
 	if ((HTTPC_CONN = find_packet_index(recv_ctx->user_ctx.head.destHost, LSMODE_LS)) == NULL) {
 		// TODO can't process (peer send or send err response)
+		fprintf(stderr,  "{{{DBG}}} cant find dest host %s\n", recv_ctx->user_ctx.head.destHost);
 		send_to_peerlb(sock_ctx, recv_ctx);
 	} else {
 		send_to_worker(HTTPC_CONN, recv_ctx, sock_ctx->client_ip);

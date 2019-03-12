@@ -100,7 +100,8 @@ void push_callback(evutil_socket_t fd, short what, void *arg)
 
     if (sock_ctx == NULL) {
         fprintf(stderr, "((%s)) dest (%s) not exist, unset item\n", __func__, push_item->dest_ip);
-        *push_item->ctx_unset_ptr = 0;
+		if (push_item->ctx_unset_ptr != NULL)
+			*push_item->ctx_unset_ptr = 0;
         return;
     } else {
         create_write_item(&sock_ctx->push_items, push_item);

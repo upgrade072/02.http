@@ -26,7 +26,7 @@
 #define MAX_IOV_PUSH 256
 #define MAX_RCV_BUFF_LEN 1024 * 1024 // 1MB
 
-#define MAX_TEST_CTX_NUM 100000
+#define MAX_TEST_CTX_NUM 20000
 
 #define TEST_URI "/test_uri/ctx_id/"
 
@@ -45,6 +45,9 @@ typedef struct iovec_item {
 	int remain_bytes;
 
 	char *ctx_unset_ptr;
+	void (*unset_cb_func)();
+	void *unset_cb_arg;
+
 	void *sender_thrd_ctx;
 	config_t *CFG;
 } iovec_item_t;
@@ -92,6 +95,7 @@ typedef struct ahif_ctx {
 } ahif_ctx_t;
 
 typedef struct main_ctx {
+	//pthread_mutex_t CtxLock;
 	config_t CFG;
 
 	/* with CFG R.R */
@@ -115,16 +119,14 @@ typedef struct main_ctx {
 } main_ctx_t;
 
 
+
 /* ------------------------- pkt.c --------------------------- */
 ahif_ctx_t      *get_null_ctx(main_ctx_t *MAIN_CTX);
 void    set_ahif_ctx(main_ctx_t *MAIN_CTX, ahif_ctx_t *ahif_ctx);
-void    set_iovec(ahif_ctx_t *ahif_ctx, iovec_item_t *push_req, char *ctx_unset_ptr);
+void    set_iovec(ahif_ctx_t *ahif_ctx, iovec_item_t *push_req, char *ctx_unset_ptr, void (*cbfunc)(), void *cbarg);
 void    push_callback(evutil_socket_t fd, short what, void *arg);
 void    iovec_push_req(main_ctx_t *MAIN_CTX, thrd_ctx_t *tx_thread_ctx, iovec_item_t *push_req);
 void    snd_ahif_pkt(main_ctx_t *MAIN_CTX);
-void    https_echo_rx_to_tx(main_ctx_t *MAIN_CTX, ahif_ctx_t *ahif_ctx);
-void    httpc_remove_ctx(main_ctx_t *MAIN_CTX, ahif_ctx_t *ahif_ctx);
-void    rx_handle_func(thrd_ctx_t *thrd_ctx, void (*handle_func)());
 
 /* ------------------------- main.c --------------------------- */
 int     init_cfg(main_ctx_t *MAIN_CTX);
@@ -138,6 +140,8 @@ void    *perf_thread(void *arg);
 int     create_thread(thrd_ctx_t *thrd_ctx);
 int     init_thread(main_ctx_t *MAIN_CTX);
 void    end_perf();
+char    *stat_print(int bytes);
+void    stat(main_ctx_t *MAIN_CTX);
 void    perf_gen(main_ctx_t *MAIN_CTX);
 int     main();
 
@@ -152,7 +156,11 @@ void    util_dumphex(const void* data, size_t size);
 /* ------------------------- cb.c --------------------------- */
 void    sock_eventcb(struct bufferevent *bev, short events, void *user_data);
 void    packet_process_res(thrd_ctx_t *thrd_ctx, char *process_ptr, size_t processed_len);
-ahif_ctx_t      *get_sended_ctx(main_ctx_t *MAIN_CTX, char *ctxIdStr);
-ahif_ctx_t      *get_assembled_ctx(main_ctx_t *MAIN_CTX, char *ptr);
+ahif_ctx_t      *get_sended_ctx(main_ctx_t *MAIN_CTX, int ctxId);
+ahif_ctx_t      *get_assembled_ctx(thrd_ctx_t *thrd_ctx, char *ptr);
+void    free_https_malloc_ctx(ahif_ctx_t *ahif_ctx);
+void    https_echo_rx_to_tx(main_ctx_t *MAIN_CTX, ahif_ctx_t *ahif_ctx);
+void    httpc_remove_ctx(main_ctx_t *MAIN_CTX, ahif_ctx_t *ahif_ctx);
+void    rx_handle_func(thrd_ctx_t *thrd_ctx);
 void    https_read_cb(struct bufferevent *bev, void *arg);
 void    httpc_read_cb(struct bufferevent *bev, void *arg);

@@ -255,8 +255,7 @@ char *stat_print(int bytes)
 
 void stat(main_ctx_t *MAIN_CTX)
 {
-	int used = 0;
-	int not_used = 0;
+	int used = 0, not_used = 0;
 	for (int i = 0; i < MAX_TEST_CTX_NUM; i++) {
 		ahif_ctx_t *ahif_ctx = &MAIN_CTX->ahif_ctx[i];
 		if (ahif_ctx->occupied == 0)
@@ -264,7 +263,7 @@ void stat(main_ctx_t *MAIN_CTX)
 		else
 			used++;
 	}
-	fprintf(stderr, "1sec [%5d] sended [%5d] received ____ used [%5d] not [%5d]\n", 
+	fprintf(stderr, "1sec [%5d] sended [%5d] received ____ ctx_used [%5d:%5d]\n",
 			MAIN_CTX->httpc_send_cnt,
 			MAIN_CTX->https_recv_cnt,
 			used, not_used);
@@ -320,6 +319,7 @@ void perf_gen(main_ctx_t *MAIN_CTX)
 				snd_count++;
 			}
 			sleep(1);
+			stat(MAIN_CTX);
 		} else {
 			now = commlib_getCurrTime_double();
 			if ((now - before_100) >= 0.01) {
@@ -332,8 +332,8 @@ void perf_gen(main_ctx_t *MAIN_CTX)
 				usleep(1);
 			}
 			if (snd_count >= 100) {
-				snd_count = 0;
 				stat(MAIN_CTX);
+				snd_count = 0;
 			}
 		}
 	}
@@ -343,6 +343,8 @@ void perf_gen(main_ctx_t *MAIN_CTX)
 int main()
 {
 	main_ctx_t MAIN_CTX = { .dest_hosts_pos = 0, .vheader_cnts_pos = 0, .body_lens_pos = 0 };
+	//pthread_mutex_init(&MAIN_CTX.CtxLock, NULL);
+
 	MAIN_CTX.ahif_ctx = calloc(MAX_TEST_CTX_NUM, sizeof(ahif_ctx_t));
 
 	evthread_use_pthreads();
@@ -364,6 +366,8 @@ int main()
 		fprintf(stderr, "(%s) wait until all conn is connected\n", __func__);
 		sleep(1);
 	}
+
+	fprintf(stderr, "perf started!\n");
 
 	RUNNING = 1; // start
 	perf_gen(&MAIN_CTX);

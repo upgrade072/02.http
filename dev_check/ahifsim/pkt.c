@@ -4,15 +4,11 @@ ahif_ctx_t *get_null_ctx(main_ctx_t *MAIN_CTX)
 {
 	for (int i = 0; i < MAX_TEST_CTX_NUM; i++) {
 		ahif_ctx_t *ahif_ctx = &MAIN_CTX->ahif_ctx[i];
+
 		if (ahif_ctx->occupied == 0) {
 			memset(ahif_ctx, 0x00, sizeof(ahif_ctx_t));
 			ahif_ctx->occupied = 1;
-			sprintf(ahif_ctx->ahif_pkt.head.magicByte, AHIF_MAGIC_BYTE);
-			ahif_ctx->ahif_pkt.head.mtype = MTYPE_HTTP2_REQUEST_AHIF_TO_HTTPC;
 			ahif_ctx->ctxId = i;
-			sprintf(ahif_ctx->ahif_pkt.head.httpMethod, "TEST");
-			sprintf(ahif_ctx->ahif_pkt.head.rsrcUri, "%s%d", TEST_URI, i);
-
 			return ahif_ctx;
 		}
 	}
@@ -21,6 +17,13 @@ ahif_ctx_t *get_null_ctx(main_ctx_t *MAIN_CTX)
 
 void set_ahif_ctx(main_ctx_t *MAIN_CTX, ahif_ctx_t *ahif_ctx)
 {
+	sprintf(ahif_ctx->ahif_pkt.head.httpMethod, "TEST");
+	sprintf(ahif_ctx->ahif_pkt.head.rsrcUri, "%s%d", TEST_URI, ahif_ctx->ctxId);
+	ahif_ctx->ahif_pkt.head.ahifCid = ahif_ctx->ctxId;
+
+	sprintf(ahif_ctx->ahif_pkt.head.magicByte, AHIF_MAGIC_BYTE);
+	ahif_ctx->ahif_pkt.head.mtype = MTYPE_HTTP2_REQUEST_AHIF_TO_HTTPC;
+
 	config_setting_t *setting = config_lookup(&MAIN_CTX->CFG, "scenario");
 
 	config_setting_t *dest_hosts_list = config_setting_get_member(setting, "dest_hosts");
@@ -39,10 +42,12 @@ void set_ahif_ctx(main_ctx_t *MAIN_CTX, ahif_ctx_t *ahif_ctx)
 	ahif_ctx->ahif_pkt.head.bodyLen = config_setting_get_int(body_len);
 }
 
-void set_iovec(ahif_ctx_t *ahif_ctx, iovec_item_t *push_req, char *ctx_unset_ptr)
+void set_iovec(ahif_ctx_t *ahif_ctx, iovec_item_t *push_req, char *ctx_unset_ptr, void (*cbfunc)(), void *cbarg)
 {
 	int item_cnt = 0;
 	int total_bytes = 0;
+
+	memset(push_req, 0x00, sizeof(iovec_item_t));
 
 	// header must exist
 	if (1) {
@@ -73,6 +78,11 @@ void set_iovec(ahif_ctx_t *ahif_ctx, iovec_item_t *push_req, char *ctx_unset_ptr
 
 	if (ctx_unset_ptr != NULL)
 		push_req->ctx_unset_ptr = ctx_unset_ptr;
+
+	if (cbfunc != NULL) {
+		push_req->unset_cb_func = cbfunc;
+		push_req->unset_cb_arg = cbarg;
+	}
 }
 
 void push_callback(evutil_socket_t fd, short what, void *arg)
@@ -99,8 +109,11 @@ void push_callback(evutil_socket_t fd, short what, void *arg)
 			/* stat */
 			sender_thrd_ctx->send_bytes += nwritten;
 		} else if (nwritten < 0 ) {
-			if (errno != EINTR && errno != EAGAIN)
-				fprintf(stderr, "there error! %d : %s\n", errno, strerror(errno));
+			if (errno != EINTR && errno != EAGAIN) {
+				fprintf(stderr, "(FD: %d) there error! %d : %s\n", 
+						sender_thrd_ctx->fd, errno, strerror(errno));
+				exit(0);
+			}
 		}
 	}
 }
@@ -121,88 +134,16 @@ void snd_ahif_pkt(main_ctx_t *MAIN_CTX)
 	/* stat */
 	MAIN_CTX->httpc_send_cnt++;
 
-	// [prepare packet]
-	//	- dest host
-	//	- vheader cnt
-	//	- body len
+	//pthread_mutex_lock(&MAIN_CTX->CtxLock);
 	ahif_ctx_t *ahif_ctx = get_null_ctx(MAIN_CTX);
+	//pthread_mutex_unlock(&MAIN_CTX->CtxLock);
+
 	if (ahif_ctx == NULL) {
 		fprintf(stderr, "{dbg} %s fail to get ctx!\n", __func__);
 		exit(0);
 	}
 	set_ahif_ctx(MAIN_CTX, ahif_ctx);
 
-	//fprintf(stderr, "{dbg} %s called ctxId(%d) we expect size (%ld)\n", __func__, ahif_ctx->ctxId, AHIF_TCP_MSG_LEN(&ahif_ctx->ahif_pkt.head));
-	
-	// [send request]
-	//  - make iovec
-	//  - add to sender linked list
-	set_iovec(ahif_ctx, &ahif_ctx->push_req, NULL);
+	set_iovec(ahif_ctx, &ahif_ctx->push_req, NULL, NULL, NULL);
 	iovec_push_req(MAIN_CTX, &MAIN_CTX->httpc_tx_ctx, &ahif_ctx->push_req);
-}
-
-void https_echo_rx_to_tx(main_ctx_t *MAIN_CTX, ahif_ctx_t *ahif_ctx)
-{   
-	/* stat */
-	MAIN_CTX->https_recv_cnt ++;
-
-	//fprintf(stderr, "{{{dbg}}} %s called!\n", __func__);
-
-	sprintf(ahif_ctx->ahif_pkt.head.magicByte, AHIF_MAGIC_BYTE);
-	// test
-	sprintf(ahif_ctx->ahif_pkt.head.rsrcUri, "/fuckmyuri/%d/%d", 
-			ahif_ctx->ahif_pkt.head.thrd_index,
-			ahif_ctx->ahif_pkt.head.ctx_id);
-	//fprintf(stderr, "{{{dbg}}} uri test set [%s]\n", ahif_ctx->ahif_pkt.head.rsrcUri);
-    ahif_ctx->ahif_pkt.head.mtype = MTYPE_HTTP2_RESPONSE_AHIF_TO_HTTPS;
-    ahif_ctx->ahif_pkt.head.respCode = 200;
-
-#if 0
-	fprintf(stderr, "{{{dbg}}} %s thrd_index %d ctx_idx %d\n", 
-			__func__, ahif_ctx->ahif_pkt.head.thrd_index, ahif_ctx->ahif_pkt.head.ctx_id);
-#endif
-	
-	memset(&ahif_ctx->push_req, 0x00, sizeof(iovec_item_t));
-
-	set_iovec(ahif_ctx, &ahif_ctx->push_req, NULL);
-	//fprintf(stderr, "{{{dbg}}} response size %d\n", ahif_ctx->push_req.remain_bytes);
-
-	iovec_push_req(MAIN_CTX, &MAIN_CTX->https_tx_ctx, &ahif_ctx->push_req);
-}
-    
-void httpc_remove_ctx(main_ctx_t *MAIN_CTX, ahif_ctx_t *ahif_ctx)
-{
-	//fprintf(stderr, "{dbg} %s called! ctxId (%d)\n", __func__, ahif_ctx->ctxId);
-	ahif_ctx->occupied = 0;
-}
-
-void rx_handle_func(thrd_ctx_t *thrd_ctx, void (*handle_func)())
-{   
-    ahif_ctx_t *ahif_ctx = NULL;
-    
-    AhifHttpCSMsgHeadType *head = NULL;
-    char *process_ptr = thrd_ctx->buff;
-    size_t processed_len = 0;
-    
-KEEP_PROCESS:
-    if (thrd_ctx->rcv_len < (processed_len + AHIF_HTTPCS_MSG_HEAD_LEN))
-        return packet_process_res(thrd_ctx, process_ptr, processed_len);
-
-	head = (AhifHttpCSMsgHeadType *)&thrd_ctx->buff[processed_len];
-	process_ptr = (char *)head;
-    
-    if (thrd_ctx->rcv_len < (processed_len + AHIF_TCP_MSG_LEN(head)))
-        return packet_process_res(thrd_ctx, process_ptr, processed_len);
-
-    if ((ahif_ctx = get_assembled_ctx(thrd_ctx->MAIN_CTX, process_ptr)) == NULL) {
-        fprintf(stderr, "cant process packet, will just dropped\n");
-        return packet_process_res(thrd_ctx, process_ptr, processed_len); 
-    }   
-
-    handle_func(thrd_ctx->MAIN_CTX, ahif_ctx);
-
-    process_ptr += AHIF_TCP_MSG_LEN(head);
-    processed_len += AHIF_TCP_MSG_LEN(head);
-
-    goto KEEP_PROCESS;
 }

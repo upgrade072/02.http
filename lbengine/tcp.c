@@ -195,9 +195,11 @@ void lb_listener_cb(struct evconnlistener *listener, evutil_socket_t fd,
 
     if (util_set_linger(fd, 1, 0) != 0) 
         fprintf(stderr, "fail to set SO_LINGER (ABORT) to fd\n");
-	if (util_set_rcvbuffsize(fd, 1024 * 1024 * 1024 /*1MB*/) != 0)
+	//if (util_set_rcvbuffsize(fd, 1024 * 1024 * 1024 * 1 /*1MB*/) != 0)
+	if (util_set_rcvbuffsize(fd, INT_MAX) != 0)
         fprintf(stderr, "fail to set SO_RCVBUF (size 1MB) to fd\n");
-	if (util_set_sndbuffsize(fd, 1024 * 1024 * 1024 /*1MB*/) != 0)
+	//if (util_set_sndbuffsize(fd, 1024 * 1024 * 1024 * 1 /*1MB*/) != 0)
+	if (util_set_sndbuffsize(fd, INT_MAX) != 0)
         fprintf(stderr, "fail to set SO_SNDBUF (size 1MB) to fd\n");
 
     /* only single thread approach to FD, cause we don't need BEV_OPT_THREADSAFE option */
@@ -238,6 +240,9 @@ void lb_listener_cb(struct evconnlistener *listener, evutil_socket_t fd,
 
 void *fep_conn_thread(void *arg)
 {
+	/* multiple WORKER approach to Thread-Evbase, use mutex */
+	evthread_use_pthreads();
+
     tcp_ctx_t *tcp_ctx = (tcp_ctx_t *)arg;
 
     sock_ctx_t sock_ctx = {0,};
@@ -389,6 +394,9 @@ void check_peer_conn(evutil_socket_t fd, short what, void *arg)
 
 void *fep_peer_thread(void *arg)
 {
+	/* multiple WORKER approach to Thread-Evbase, use mutex */
+	evthread_use_pthreads();
+
     tcp_ctx_t *tcp_ctx = (tcp_ctx_t *)arg;
 
     sock_ctx_t sock_ctx = {0,};

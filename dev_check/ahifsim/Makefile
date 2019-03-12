@@ -33,6 +33,8 @@ $(AOUT): $(OBJS)
 
 install:
 	\cp $(AOUT) $(DEST)
+	\cp $(AOUT) ./test1
+	\cp $(AOUT) ./test2
 
 clean:
 	\rm -f $(OBJS) $(AOUT) core.* *.out
