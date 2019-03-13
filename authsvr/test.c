@@ -39,5 +39,5 @@ int test()
 
     jwt_free(jwt);
 
-    return 0;
+    return ret;
 }

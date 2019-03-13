@@ -18,11 +18,12 @@ ahif_ctx_t *get_null_ctx(main_ctx_t *MAIN_CTX)
 void set_ahif_ctx(main_ctx_t *MAIN_CTX, ahif_ctx_t *ahif_ctx)
 {
 	sprintf(ahif_ctx->ahif_pkt.head.httpMethod, "TEST");
-	sprintf(ahif_ctx->ahif_pkt.head.rsrcUri, "%s%d", TEST_URI, ahif_ctx->ctxId);
 	ahif_ctx->ahif_pkt.head.ahifCid = ahif_ctx->ctxId;
 
 	sprintf(ahif_ctx->ahif_pkt.head.magicByte, AHIF_MAGIC_BYTE);
 	ahif_ctx->ahif_pkt.head.mtype = MTYPE_HTTP2_REQUEST_AHIF_TO_HTTPC;
+
+	sprintf(ahif_ctx->ahif_pkt.head.rsrcUri, "%s%d", TEST_URI, ahif_ctx->ctxId);
 
 	config_setting_t *setting = config_lookup(&MAIN_CTX->CFG, "scenario");
 

@@ -373,7 +373,7 @@ void fep_stat_print(evutil_socket_t fd, short what, void *arg)
 			not_used ++;
 	}
 
-	APPLOG(APPLOG_ERR, "FEP CTX [total: %5d used: %5d not used: %5d] FEP RX [%s] FEP TX [%s] ( PEER TX [%s] )",
+	APPLOG(APPLOG_ERR, "FEP CTX [total: %5d used: %5d not used: %5d] FEP RX [%s] FEP TX [%s] ( PEER TX [%s] )\n",
 			MAX_LB_CTX_NUM,
 			used,
 			not_used,

@@ -467,27 +467,16 @@ static int on_header_callback(nghttp2_session *session,
 				break;
 			}
 
-			/* get headers, if PATH, get query together */
 			if (!strcmp(header_name, HDR_PATH)) {
-				size_t j;
-                char request_path[AHIF_MAX_RESOURCE_URI_LEN + 1 + AHIF_MAX_RESOURCE_URI_LEN] = {0,};
-                int query_len = 0;
-				strncpy(request_path, header_value, valuelen);
-                request_path[valuelen] = '\0';
-
-				for (j = 0; j < valuelen && value[j] != '?'; ++j)
-					;
-                if (j == valuelen) {
-                    sprintf(https_ctx->user_ctx.head.rsrcUri, "%s", request_path);
-                } else {
-                    /* path */
-                    strncpy(https_ctx->user_ctx.head.rsrcUri, request_path, j);
-                    https_ctx->user_ctx.head.rsrcUri[j] = '\0';
-                    /* query */
-                    query_len = strlen(request_path) - strlen(https_ctx->user_ctx.head.rsrcUri) - 1;
-                    strncpy(https_ctx->user_ctx.head.queryParam, request_path + j + 1, query_len);
-                    https_ctx->user_ctx.head.queryParam[query_len] = '\0';
-                }
+				divide_string(header_value, '?', 
+						https_ctx->user_ctx.head.rsrcUri,
+						sizeof(https_ctx->user_ctx.head.rsrcUri),
+						https_ctx->user_ctx.head.queryParam,
+						sizeof(https_ctx->user_ctx.head.queryParam));
+			} else if (!strcmp(header_name, HDR_SCHEME)) {
+				sprintf(https_ctx->user_ctx.head.scheme, "%s", header_value);
+			} else if (!strcmp(header_name, HDR_AUTHORITY)) {
+				sprintf(https_ctx->user_ctx.head.authority, "%s", header_value);
 			} else if (!strcmp(header_name, HDR_METHOD)) {
 				sprintf(https_ctx->user_ctx.head.httpMethod, "%s", header_value);
 			} else if (!strcmp(header_name, HDR_CONTENT_ENCODING)) {
@@ -498,7 +487,6 @@ static int on_header_callback(nghttp2_session *session,
 #endif
 			} else {
 				/* vHeader relay */
-				//fprintf(stderr, "{{{dbg}}} recv header %s %s\n", header_name, header_value);
 				set_defined_header(VHDR_INDEX[1], header_name, header_value, &https_ctx->user_ctx);
 			}
 			break;

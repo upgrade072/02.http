@@ -70,13 +70,13 @@ void unexpect_readcb(struct bufferevent *bev, void *arg)
 {
     sock_ctx_t *sock_ctx = (sock_ctx_t *)arg;
 
-    fprintf(stderr, "((%s)) called\n", __func__);
+    fprintf(stderr, "LB-ENGINE] ((%s)) called\n", __func__);
 
     char buff[10240] = {0,};
     ssize_t rsize = bufferevent_read(bev, buff, sizeof(buff));
 
     buff[rsize + 1] = '\0';
-    fprintf(stderr, "recv unexpected (%ld byte)\n", rsize);
+    fprintf(stderr, "LB-ENGINE] recv unexpected (%ld byte)\n", rsize);
     util_dumphex(buff, rsize);
 
     release_conncb(sock_ctx);
@@ -84,7 +84,7 @@ void unexpect_readcb(struct bufferevent *bev, void *arg)
 
 void release_conncb(sock_ctx_t *sock_ctx)
 {
-    fprintf(stderr, "warn] sock from %s:%d fd(%d) (%.19s ~ ) closed\n",
+    fprintf(stderr, "LB-ENGINE] sock %s:%d fd(%d) (%.19s ~ ) closed\n",
             sock_ctx->client_ip, sock_ctx->client_port, sock_ctx->client_fd,
             ctime(&sock_ctx->create_time));
 
@@ -108,25 +108,25 @@ void svr_sock_eventcb(struct bufferevent *bev, short events, void *user_data)
 {
     sock_ctx_t *sock_ctx = (sock_ctx_t *)user_data;
 
-    fprintf(stderr, "((%s)) called in conn(%s:%d)\n", __func__, sock_ctx->client_ip, sock_ctx->client_port);
+    fprintf(stderr, "LB-ENGINE] ((%s)) called in conn(%s:%d)\n", __func__, sock_ctx->client_ip, sock_ctx->client_port);
 
     // client sock conneted
     if(events & BEV_EVENT_CONNECTED) {
 
         int fd = bufferevent_getfd(bev);
-        fprintf(stderr, "connected fd is (%d)\n", fd);
+        fprintf(stderr, "LB-ENGINE] connected fd is (%d)\n", fd);
 
         if (util_set_linger(fd, 1, 0) != 0) 
-            fprintf(stderr, "fail to set SO_LINGER (ABORT) to fd\n");
+            fprintf(stderr, "LB-ENGINE] fail to set SO_LINGER (ABORT) to fd\n");
 
 		sock_ctx->connected = 1;
         return;
     }
 
     if (events & BEV_EVENT_EOF) {
-        fprintf(stderr, "Connection closed.\n");
+        fprintf(stderr, "LB-ENGINE] Connection closed.\n");
     } else if (events & BEV_EVENT_ERROR) {
-        fprintf(stderr, "Got an error on the connection: %s\n", strerror(errno));
+        fprintf(stderr, "LB-ENGINE] Got an error on the connection: %s\n", strerror(errno));
     }
 
     release_conncb(sock_ctx);
@@ -134,7 +134,6 @@ void svr_sock_eventcb(struct bufferevent *bev, short events, void *user_data)
 
 void packet_process_res(sock_ctx_t *sock_ctx, char *process_ptr, size_t processed_len)
 {
-	//fprintf(stderr, "{{{DBG}}} %s called (processed_len :%ld) it means we expect next turn!\n", __func__, processed_len);
 
     // if sock recv 10, process 3 ==> move remain 7 byte to front
     memmove(sock_ctx->buff, process_ptr, sock_ctx->rcv_len - (sock_ctx->rcv_len - processed_len));
@@ -157,7 +156,7 @@ sock_ctx_t *assign_sock_ctx(tcp_ctx_t *tcp_ctx, evutil_socket_t fd, struct socka
         sock_ctx->my_conn = new_conn;
         return sock_ctx;
     } else {
-        fprintf(stderr, "fail to create sock ctx!\n");
+        fprintf(stderr, "LB-ENGINE] fail to create sock ctx!\n");
         return NULL;
     }
 }
@@ -195,34 +194,34 @@ void lb_listener_cb(struct evconnlistener *listener, evutil_socket_t fd,
 
     sock_ctx_t *sock_ctx = assign_sock_ctx(tcp_ctx, fd, sa);
     if (sock_ctx == NULL) {
-        fprintf(stderr, "something wrong (%s)\n", __func__);
+        fprintf(stderr, "LB-ENGINE] something wrong (%s)\n", __func__);
         exit(0);
     } else {
 		sock_ctx->tcp_ctx = tcp_ctx;
 	}
 
     if (util_set_linger(fd, 1, 0) != 0) 
-        fprintf(stderr, "fail to set SO_LINGER (ABORT) to fd\n");
+        fprintf(stderr, "LB-ENGINE] fail to set SO_LINGER (ABORT) to fd\n");
 	if (util_set_rcvbuffsize(fd, INT_MAX) != 0)
-        fprintf(stderr, "fail to set SO_RCVBUF (size INT_MAX) to fd\n");
+        fprintf(stderr, "LB-ENGINE] fail to set SO_RCVBUF (size INT_MAX) to fd\n");
 	if (util_set_sndbuffsize(fd, INT_MAX) != 0)
-        fprintf(stderr, "fail to set SO_SNDBUF (size INT_MAX) to fd\n");
+        fprintf(stderr, "LB-ENGINE] fail to set SO_SNDBUF (size INT_MAX) to fd\n");
 
     struct bufferevent *bev = sock_ctx->bev = bufferevent_socket_new(evbase, fd, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);
     if (!bev) {
-        fprintf(stderr, "Error constructing bufferevent!");
+        fprintf(stderr, "LB-ENGINE] Error constructing bufferevent!");
         event_base_loopbreak(evbase);
         return;
     }
 
     switch (tcp_ctx->svr_type) {
         case TT_RX_ONLY:
-            fprintf(stderr, "{dbg} rx only connected!\n");
+            fprintf(stderr, "LB-ENGINE] {dbg} rx only connected!\n");
             bufferevent_setcb(bev, lb_buff_readcb, NULL, svr_sock_eventcb, sock_ctx);
             bufferevent_enable(bev, EV_READ);
             break;
         case TT_TX_ONLY:
-            fprintf(stderr, "{dbg} tx only connected!\n");
+            fprintf(stderr, "LB-ENGINE] {dbg} tx only connected!\n");
             int res = sock_add_flushcb(tcp_ctx, sock_ctx); // TODO res < 0 ???
 			if (res < 0) {
 				// TODO!!!
@@ -231,11 +230,11 @@ void lb_listener_cb(struct evconnlistener *listener, evutil_socket_t fd,
             bufferevent_enable(bev, EV_READ);
             break;
         default:
-            fprintf(stderr, "{dbg} wrong context received\n");
+            fprintf(stderr, "LB-ENGINE] {dbg} wrong context received\n");
             exit(0);
     }
 
-    fprintf(stderr, "accepted fd (%d) addr %s port %d\n",
+    fprintf(stderr, "LB-ENGINE] accepted fd (%d) addr %s port %d\n",
             sock_ctx->client_fd, sock_ctx->client_ip, sock_ctx->client_port);
 }
 
@@ -254,7 +253,7 @@ void *fep_conn_thread(void *arg)
     struct evconnlistener *listener = NULL;
 
     if ((evbase = tcp_ctx->evbase = event_base_new()) == NULL) {
-        fprintf(stderr, "ERR}} could not init event!\n");
+        fprintf(stderr, "LB-ENGINE] ERR}} could not init event!\n");
         exit(0);
     }
 
@@ -269,7 +268,7 @@ void *fep_conn_thread(void *arg)
     if ((listener = tcp_ctx->listener = evconnlistener_new_bind(evbase, lb_listener_cb, (void *)tcp_ctx,
             LEV_OPT_REUSEABLE|LEV_OPT_CLOSE_ON_FREE|LEV_OPT_THREADSAFE, 
             16, (struct sockaddr*)&listen_addr, sizeof(listen_addr))) == NULL) {
-        fprintf(stderr, "Could not create a listener!\n");
+        fprintf(stderr, "LB-ENGINE] Could not create a listener!\n");
         return (void *)NULL;
     }
 
@@ -290,7 +289,7 @@ void cli_sock_eventcb(struct bufferevent *bev, short events, void *user_data)
 {
     sock_ctx_t *sock_ctx = (sock_ctx_t *)user_data;
 
-    fprintf(stderr, "((%s)) called in conn(%s:%d)\n", __func__, sock_ctx->client_ip, sock_ctx->client_port);
+    fprintf(stderr, "LB-ENGINE] ((%s)) called in conn(%s:%d)\n", __func__, sock_ctx->client_ip, sock_ctx->client_port);
 
     // normal connected
     if(events & BEV_EVENT_CONNECTED) {
@@ -298,10 +297,10 @@ void cli_sock_eventcb(struct bufferevent *bev, short events, void *user_data)
 		bufferevent_set_timeouts(bev, NULL, NULL); // remove SYN timeout 
 
         int fd = bufferevent_getfd(bev);
-        fprintf(stderr, "connected fd is (%d)\n", fd);
+        fprintf(stderr, "LB-ENGINE] connected fd is (%d)\n", fd);
 
         if (util_set_linger(fd, 1, 0) != 0) 
-            fprintf(stderr, "fail to set SO_LINGER (ABORT) to fd\n");
+            fprintf(stderr, "LB-ENGINE] fail to set SO_LINGER (ABORT) to fd\n");
 
 		sock_ctx->connected = 1;
         return;
@@ -309,11 +308,11 @@ void cli_sock_eventcb(struct bufferevent *bev, short events, void *user_data)
 
     // error event
     if (events & BEV_EVENT_EOF) {
-        fprintf(stderr, "Connection closed.\n");
+        fprintf(stderr, "LB-ENGINE] Connection closed.\n");
     } else if (events & BEV_EVENT_ERROR) {
-        fprintf(stderr, "Got an error on the connection: %s\n", strerror(errno));
+        fprintf(stderr, "LB-ENGINE] Got an error on the connection: %s\n", strerror(errno));
 	} else {
-		fprintf(stderr, "We occured event 0x%x\n", events);
+		fprintf(stderr, "LB-ENGINE] We occured event 0x%x\n", events);
 	}
 
     release_conncb(sock_ctx);
@@ -330,14 +329,12 @@ sock_ctx_t *create_new_peer_sock(tcp_ctx_t *tcp_ctx, const char *peer_addr)
 
     int fd = socket(AF_INET, SOCK_STREAM, 0);
 	if (evutil_make_socket_nonblocking(fd) == -1) {
-		fprintf(stderr, "peer sock set nonblock failed\n");
-	} else {
-		fprintf(stderr, "peer sock set nonblock success\n");
+		fprintf(stderr, "LB-ENGINE] peer sock set nonblock failed\n");
 	}
 
     sock_ctx_t *sock_ctx = assign_sock_ctx(tcp_ctx, fd, (struct sockaddr *)&sin);
     if (sock_ctx == NULL) {
-        fprintf(stderr, "something wrong (%s)\n", __func__);
+        fprintf(stderr, "LB-ENGINE] something wrong (%s)\n", __func__);
         exit(0);
     } else {
 		sock_ctx->tcp_ctx = tcp_ctx;
@@ -349,14 +346,14 @@ sock_ctx_t *create_new_peer_sock(tcp_ctx_t *tcp_ctx, const char *peer_addr)
 			BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);
 
     if (!bev) {
-        fprintf(stderr, "Error constructing bufferevent!");
+        fprintf(stderr, "LB-ENGINE] Error constructing bufferevent!");
         event_base_loopbreak(evbase);
         return NULL;
     }
 
     int res = sock_add_flushcb(tcp_ctx, sock_ctx); // TODO res < 0 ???
 	if (res < 0) {
-		fprintf(stderr, "fail to add flush cb in (%s)\n", __func__);
+		fprintf(stderr, "LB-ENGINE] fail to add flush cb in (%s)\n", __func__);
 		release_conncb(sock_ctx);
 		return NULL;
 	}
@@ -384,7 +381,7 @@ void check_peer_conn(evutil_socket_t fd, short what, void *arg)
         const char *peer_addr = config_setting_get_string(list);
         if (search_node_by_ip(tcp_ctx, peer_addr) == NULL) {
             sock_ctx = create_new_peer_sock(tcp_ctx, peer_addr);
-            fprintf(stderr, "dbg} peer %s not exist create new one ... %s\n", 
+            fprintf(stderr, "LB-ENGINE] peer %s not exist create new one ... %s\n", 
                     peer_addr, sock_ctx == NULL ?  "failed" : "success");
 		}
     }
@@ -394,7 +391,7 @@ void check_peer_conn(evutil_socket_t fd, short what, void *arg)
     for (int i = 0; i < sock_cnt; i++) {
         sock_ctx = return_nth_sock(tcp_ctx, i);
         if (check_conf_via_sock(tcp_ctx, sock_ctx) == 0) {
-            fprintf(stderr, "dbg} peer %s not exist in config delete this one ...\n", 
+            fprintf(stderr, "LB-ENGINE] peer %s not exist in config delete this one ...\n", 
                     sock_ctx->client_ip);
             release_conncb(sock_ctx);
         }
@@ -414,7 +411,7 @@ void *fep_peer_thread(void *arg)
     struct event_base *evbase = NULL;
 
     if ((evbase = tcp_ctx->evbase = event_base_new()) == NULL) {
-        fprintf(stderr, "ERR}} could not init event!\n");
+        fprintf(stderr, "LB-ENGINE] ERR}} could not init event!\n");
         exit(0);
     }
 

@@ -1,6 +1,5 @@
 #include "ahifsim.h"
 
-static struct timeval TM_SYN_TIMEOUT = {3, 0};
 static int RUNNING;
 
 int init_cfg(main_ctx_t *MAIN_CTX)
@@ -137,7 +136,6 @@ int crt_new_conn(thrd_ctx_t *thrd_ctx, bufferevent_data_cb readcb, bufferevent_d
 
     bufferevent_setcb(thrd_ctx->bev, readcb, writecb, sock_eventcb, thrd_ctx);
     bufferevent_enable(thrd_ctx->bev, EV_READ);
-    //bufferevent_set_timeouts(thrd_ctx->bev, &TM_SYN_TIMEOUT, &TM_SYN_TIMEOUT);
 
     if(bufferevent_socket_connect(thrd_ctx->bev, (struct sockaddr *)&sin, sizeof(sin)) < 0)
 		return (-1);
@@ -184,11 +182,15 @@ int httpc_peer_conn(main_ctx_t *MAIN_CTX)
 	if (config_lookup_int(CFG, "application.pr_send_test", &pr_send_test) == CONFIG_FALSE) {
 		fprintf(stderr, "INFORM}} config [application.pr_send_test] not exist! normal case test\n");
 		return (-1);
-	} else {
-		if (pr_send_test == 0) 
-			MAIN_CTX->httpc_pr_ctx.connected = 1;
-		fprintf(stderr, "INFORM}} config [application.pr_send_test] exist! peer-send-case test\n");
 	}
+
+	if (pr_send_test == 0) {
+		MAIN_CTX->httpc_pr_ctx.connected = 1;
+		fprintf(stderr, "INFORM}} config [application.pr_send_test] value == 0 normal case test\n");
+		return (-1);
+	}
+
+	fprintf(stderr, "INFORM}} config [application.pr_send_test] exist! peer-send-case test\n");
 
 	thrd_ctx_t *thrd_ctx = &MAIN_CTX->httpc_pr_ctx;
 	thrd_ctx->my_conn_type = TT_HTTPC_RX;
@@ -400,6 +402,7 @@ int main()
 	}
 
 	fprintf(stderr, "perf started!\n");
+	sleep(3);
 
 	RUNNING = 1; // start
 	perf_gen(&MAIN_CTX);
