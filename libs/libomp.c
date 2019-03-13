@@ -162,6 +162,8 @@ void stat_function(IxpcQMsgType *rxIxpcMsg, int running_thrd_num, int httpc, int
 		else
 			snprintf(commStatItem->strkey1, sizeof(commStatItem->strkey1), "%s", INDEX[i].listname);
 
+		APPLOG(APPLOG_ERR, "[STAT FOR HOST : %s ]", commStatItem->strkey1);
+
 		for (j = 0; j < item_size; j++) {
 			pos = item_ptr[j];
 			for (k = 0; k < running_thrd_num; k++) {

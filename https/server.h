@@ -40,9 +40,10 @@
 #include <sys/ipc.h>
 #include <sys/msg.h>
 #include <pthread.h>
-
 /* OAuth 2.0 / JWT */
 #include <jwt.h>
+/* for lb */
+#include <lbengine.h>
 
 #define OUTPUT_WOULDBLOCK_THRESHOLD (1 << 16)
 
@@ -65,6 +66,8 @@ typedef struct server_conf {
 	char cert_file[128];
 	char key_file[128];
 	char credential[MAX_ACC_TOKEN_LEN];
+
+    config_setting_t *lb_config;
 } server_conf;
 
 typedef struct conn_client {
@@ -89,9 +92,7 @@ typedef struct allow_list {
 
 	conn_client_t client[MAX_SVR_NUM];
 
-#ifdef OAUTH
 	int auth_act;
-#endif
 } allow_list_t;
 
 typedef enum conn_status {
@@ -163,6 +164,7 @@ typedef struct https_ctx {
 #ifdef OAUTH
 	char access_token[MAX_ACC_TOKEN_LEN];
 #endif
+    iovec_item_t push_req;
 } https_ctx_t;
 
 typedef enum intl_req_mtype {
@@ -179,6 +181,13 @@ typedef struct intl_req {
 	HttpCSAhifTagType tag;
 } intl_req_t;
 
+typedef struct lb_global {
+    int rxonly_port;
+    int txonly_port;
+    int bundle_bytes;
+    int bundle_count;
+    int flush_tmval;
+} lb_global_t;
 
 /* ------------------------- config.c --------------------------- */
 int     init_cfg();
@@ -207,9 +216,10 @@ int     del_from_allowlist(int list_idx, int thrd_idx, int sess_idx);
 void    print_list();
 void    write_list(char *buff);
 
-/* ------------------------- server.c --------------------------- */
+/* ------------------------- main.c --------------------------- */
 int     get_in_port(struct sockaddr *sa);
 int     find_least_conn_worker();
+int     check_access_token(char *token);
 void    check_thread();
 void    monitor_worker();
 void    main_tick_callback(evutil_socket_t fd, short what, void *arg);
@@ -219,8 +229,7 @@ void    chk_tmout_callback(evutil_socket_t fd, short what, void *arg);
 void    send_ping_callback(evutil_socket_t fd, short what, void *arg);
 void    send_status_to_omp(evutil_socket_t fd, short what, void *arg);
 void    *workerThread(void *arg);
-void    *receiverThread(void *arg);
-int     thrd_initialize();
+void    create_https_worker();
 int     initialize();
 int     main(int argc, char **argv);
 
@@ -237,3 +246,16 @@ int     func_chg_http_client(IxpcQMsgType *rxIxpcMsg);
 int     func_del_http_cli_ip(IxpcQMsgType *rxIxpcMsg);
 int     func_del_http_client(IxpcQMsgType *rxIxpcMsg);
 
+/* ------------------------- lb.c --------------------------- */
+https_ctx_t     *get_null_recv_ctx();
+https_ctx_t     *get_assembled_ctx(char *ptr);
+void    set_iovec(tcp_ctx_t *dest_tcp_ctx, https_ctx_t *https_ctx, const char *dest_ip, iovec_item_t *push_req, void (*cbfunc)(), void *cbarg);
+void    push_callback(evutil_socket_t fd, short what, void *arg);
+void    iovec_push_req(tcp_ctx_t *dest_tcp_ctx, iovec_item_t *push_req);
+int     send_request_to_fep(https_ctx_t *https_ctx);
+void    send_to_worker(https_ctx_t *recv_ctx);
+void    check_and_send(sock_ctx_t *sock_ctx);
+void    lb_buff_readcb(struct bufferevent *bev, void *arg);
+void    load_lb_config(server_conf *svr_conf, lb_global_t *lb_conf);
+void    attach_lb_thread(lb_global_t *lb_conf, main_ctx_t *main_ctx);
+int     create_lb_thread();

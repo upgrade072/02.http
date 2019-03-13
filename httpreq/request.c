@@ -444,8 +444,7 @@ static void lib_eventcb(struct bufferevent *bev, short events, void *ptr) {
 	lib_delete_session_data(session_data);
 }
 
-/* SYN_SENT & NO_ACK -->> wait 3 sec */
-static struct timeval TM_TIMEOUT = {3, 0};
+static struct timeval TM_SYN_TIMEOUT = {3, 0};
 static void lib_initiate_connection(struct event_base *evbase, SSL_CTX *ssl_ctx,
 		const char *host, uint16_t port,
 		libhttp_session_data_t *session_data) {
@@ -459,7 +458,7 @@ static void lib_initiate_connection(struct event_base *evbase, SSL_CTX *ssl_ctx,
 			BEV_OPT_DEFER_CALLBACKS | BEV_OPT_CLOSE_ON_FREE);
 	bufferevent_enable(bev, EV_READ | EV_WRITE);
 	bufferevent_setcb(bev, lib_readcb, lib_writecb, lib_eventcb, session_data);
-	bufferevent_set_timeouts(bev, &TM_TIMEOUT, &TM_TIMEOUT);
+	bufferevent_set_timeouts(bev, &TM_SYN_TIMEOUT, &TM_SYN_TIMEOUT);
 	rv = bufferevent_socket_connect_hostname(bev, session_data->dnsbase,
 			AF_UNSPEC, host, port);
 

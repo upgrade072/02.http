@@ -169,5 +169,6 @@ hdr_index_t     *search_vhdr(hdr_index_t hdr_index[], int array_size, char *vhdr
 int     parse_ipv4(char *temp_str, struct sockaddr_in *sa, int *port);
 int     parse_ipv6(char *temp_str, struct sockaddr_in6 *sa6, int *port);
 int     parse_http_addr(char *temp_str, struct sockaddr_in *sa, struct sockaddr_in6 *sa6, int *port);
+void	divide_string(char *input, int delim, char *head, ssize_t head_size, char *tail, ssize_t tail_size);
 
 #endif /* __HTTP_COMMON_H__ */

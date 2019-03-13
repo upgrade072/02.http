@@ -98,3 +98,17 @@ HTTP_ADDR_PARSE_ERR:
 	fprintf(stderr, "[%s] parse error !!!\n", __func__);
 	return (-1);
 }
+
+
+void divide_string(char *input, int delim, char *head, ssize_t head_size, char *tail, ssize_t tail_size)
+{
+    char *delim_ptr;
+
+    if ((delim_ptr = strchr(input, delim)) == NULL) {
+        snprintf(head, head_size, "%s", input);
+        return;
+    } else {
+        snprintf(head, (delim_ptr + 1 - input) % head_size, "%s", input);
+        snprintf(tail, tail_size, "%s", delim_ptr + 1);
+    }
+}

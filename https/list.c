@@ -40,6 +40,8 @@ void assign_rcv_ctx_info(https_ctx_t *https_ctx, AhifHttpCSMsgType *ResMsg)
 {
 	sprintf(https_ctx->user_ctx.head.contentEncoding, "%s", ResMsg->head.contentEncoding);
 	https_ctx->user_ctx.head.respCode = ResMsg->head.respCode;
+	https_ctx->user_ctx.head.vheaderCnt = ResMsg->head.vheaderCnt;
+	memcpy(&https_ctx->user_ctx.vheader, ResMsg->vheader, sizeof(hdr_relay) * ResMsg->head.vheaderCnt);
 	https_ctx->user_ctx.head.bodyLen = ResMsg->head.bodyLen;
 	memcpy(&https_ctx->user_ctx.body, ResMsg->body, ResMsg->head.bodyLen);
 }

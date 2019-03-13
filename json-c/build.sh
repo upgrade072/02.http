@@ -1,7 +1,7 @@
 #!/bin/bash
 
 export ROOTDIR="${PWD}"
-if [  -f ${ROOTDIR}/../build/lib/libjson.a ]; then
+if [  -f ${ROOTDIR}/../build/lib/libjson-c.a ]; then
     echo "lib exist"
     exit
 fi
@@ -15,6 +15,9 @@ rm -rf json-c-${VERSION}
 unzip ${VERSION}.zip
 
 cd json-c-${VERSION}
+
+export PATH=${HOME}/ac_install/bin:$PATH
+export PKG_CONFIG_PATH=${ROOTDIR}/../build/lib/pkgconfig:$PKG_CONFIG_PATH
 
 ./autogen.sh
 ./configure \

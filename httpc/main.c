@@ -11,7 +11,7 @@ int logLevel = APPLOG_DEBUG;
 int *lOG_FLAG = &logLevel;
 #endif
 
-int httpcQid, httpcTxQid, httpcRxQid, ixpcQid;
+int httpcQid, ixpcQid;
 
 int THREAD_NO[MAX_THRD_NUM] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
 int SESSION_ID;
@@ -19,11 +19,9 @@ int SESS_IDX;
 
 shm_http_t *SHM_HTTP_PTR;
 client_conf_t CLIENT_CONF;
-thrd_context_t THRD_RECEIVER;
 thrd_context_t THRD_WORKER[MAX_THRD_NUM];
 http2_session_data_t SESS[MAX_THRD_NUM][MAX_SVR_NUM];
-pthread_mutex_t ONLY_CRT_SESS_LOCK = PTHREAD_MUTEX_INITIALIZER; // TODO!!! we want remove this 
-pthread_mutex_t PUTQUE_WRITE_LOCK = PTHREAD_MUTEX_INITIALIZER;
+//pthread_mutex_t ONLY_CRT_SESS_LOCK = PTHREAD_MUTEX_INITIALIZER; // TODO!!! we want remove this 
 
 httpc_ctx_t *HttpcCtx[MAX_THRD_NUM];
 
@@ -78,7 +76,7 @@ static void delete_http2_session_data(http2_session_data_t *session_data)
 	/* stat HTTP_DISCONN */
 	http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_DISCONN);
 
-	pthread_mutex_lock(&ONLY_CRT_SESS_LOCK);
+	//pthread_mutex_lock(&ONLY_CRT_SESS_LOCK);
 	SSL *ssl = bufferevent_openssl_get_ssl(session_data->bev);
 
 	THRD_WORKER[session_data->thrd_index].server_num--;
@@ -99,7 +97,7 @@ static void delete_http2_session_data(http2_session_data_t *session_data)
 	session_data->session_index = 0;
 	session_data->session_id = 0;
 	session_data->used = 0;
-	pthread_mutex_unlock(&ONLY_CRT_SESS_LOCK);
+	//pthread_mutex_unlock(&ONLY_CRT_SESS_LOCK);
 }
 
 /* nghttp2_send_callback. Here we transmit the |data|, |length| bytes,
@@ -378,17 +376,8 @@ static int on_stream_close_callback(nghttp2_session *session, int32_t stream_id,
 	fwrite(httpc_ctx->user_ctx.body, 1, httpc_ctx->user_ctx.head.bodyLen, stderr);
 	fprintf(stderr, "\n");
 #endif
-	/* send to upper */
-	pthread_mutex_lock(&PUTQUE_WRITE_LOCK);
-	if (shmqlib_putMsg(httpcTxQid, (char*)&httpc_ctx->user_ctx, 
-				HTTPC_AHIF_SEND_SIZE(httpc_ctx->user_ctx)) <= 0) {
-		APPLOG(APPLOG_DEBUG, "%s) shmq_put fail", __func__);
-	}
-	pthread_mutex_unlock(&PUTQUE_WRITE_LOCK);
 
-	/* free context */
-	clear_and_free_ctx(httpc_ctx);
-	Free_CtxId(thrd_idx, idx);
+	send_response_to_fep(httpc_ctx);
 
 	return 0;
 }
@@ -615,6 +604,10 @@ static void eventcb(struct bufferevent *bev, short events, void *ptr) {
 		}
 
 		setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (char *)&val, sizeof(val));
+		// schlee test code  : from here
+		if (util_set_linger(fd, 1, 0) != 0)
+			fprintf(stderr, "fail to set SO_LINGER (ABORT) to fd\n");
+		// schlee test code  : to here
 		initialize_nghttp2_session(session_data);
 		send_client_connection_header(session_data);
 		if (session_send(session_data) != 0) {
@@ -623,7 +616,7 @@ static void eventcb(struct bufferevent *bev, short events, void *ptr) {
 		}
 
 		/* session connected */
-		pthread_mutex_lock(&ONLY_CRT_SESS_LOCK);
+		//pthread_mutex_lock(&ONLY_CRT_SESS_LOCK);
 		CONN_LIST[session_data->conn_index].conn = CN_CONNECTED;
 		session_data->connected = 1;
 		APPLOG(APPLOG_ERR, "%s) Connected conn_index %5d thrd_index %2d session_index %5d ip %s port %d",
@@ -637,7 +630,7 @@ static void eventcb(struct bufferevent *bev, short events, void *ptr) {
 		CONN_LIST[session_data->conn_index].thrd_index = session_data->thrd_index;
 		CONN_LIST[session_data->conn_index].session_index = session_data->session_index;
 		CONN_LIST[session_data->conn_index].session_id = session_data->session_id;
-		pthread_mutex_unlock(&ONLY_CRT_SESS_LOCK);
+		//pthread_mutex_unlock(&ONLY_CRT_SESS_LOCK);
 
 		return;
 	}
@@ -699,6 +692,8 @@ int send_request(http2_session_data_t *session_data, int thrd_index, int ctx_id)
 		return (-1);
 	}
 
+	//fprintf(stderr, "{{{dbg}}} httpc-->https appVer(ctxId) %s\n", httpc_ctx->user_ctx.head.appVer);
+
 	stream_id = submit_request(session_data, httpc_ctx, &httpc_ctx->stream);
 
 	if (stream_id >= 0) {
@@ -730,6 +725,8 @@ void chk_tmout_callback(evutil_socket_t fd, short what, void *arg)
             /* normal case */
             if ((httpc_ctx = get_context(index, i, 1)) == NULL) 
                 continue;
+
+			// TODO!!! if in TCP queue (wait send) how to ???
 
             /* timed out case */
             if ((THRD_WORKER[index].time_index - httpc_ctx->recv_time_index) >= 
@@ -958,85 +955,7 @@ void *workerThread(void *arg)
 	return NULL;
 }
 
-void *receiverThread(void *arg)
-{
-	char rxMsg[sizeof(AhifHttpCSMsgType) + 1024];
-	httpc_ctx_t *ReqMsg = (httpc_ctx_t *)&rxMsg;
-	int thrd_idx, sess_idx, idx, session_id;
-	int list_index;
-	intl_req_t intl_req;
-	int sleep_cnt, msgSize;
-	httpc_ctx_t *httpc_ctx = NULL;
-
-	while(1)
-	{
-        THRD_RECEIVER.running_index ++;
-		if((msgSize = shmqlib_getMsg (httpcRxQid, rxMsg)) <= 0 ) {
-			sleep_cnt ++;
-			if (sleep_cnt >= 1000) {
-				usleep(10);
-				sleep_cnt = 0;
-			}
-			continue;
-		} else {
-			rxMsg[msgSize] = '\0';
-			sleep_cnt = 0;
-		}
-
-		/* find session index */
-		list_index = find_packet_index(ReqMsg->user_ctx.head.destHost, LSMODE_LS); /* also you can LSMODE_RR */
-
-		if (list_index > 0) {
-			thrd_idx = CONN_LIST[list_index].thrd_index;
-			sess_idx = CONN_LIST[list_index].session_index;
-			session_id = CONN_LIST[list_index].session_id;
-		} else {
-			/* stat HTTP_DEST_N_AVAIL */
-			http_stat_inc(0, 0, HTTP_DEST_N_AVAIL);
-
-			ReqMsg->user_ctx.head.mtype = MTYPE_HTTP2_RESPONSE_HTTPC_TO_AHIF;
-			ReqMsg->user_ctx.head.respCode = HTTP_RESP_CODE_NOT_FOUND;
-			ReqMsg->user_ctx.head.bodyLen = 0;
-
-			pthread_mutex_lock(&PUTQUE_WRITE_LOCK);
-			if (shmqlib_putMsg(httpcTxQid, (char*)&ReqMsg->user_ctx, AHIF_HTTPCS_MSG_HEAD_LEN) <= 0) {
-				APPLOG(APPLOG_DEBUG, "%s) shmq_put fail", __func__);
-			}
-			pthread_mutex_unlock(&PUTQUE_WRITE_LOCK);
-			continue;
-		}
-
-		if ((idx = Get_CtxId(thrd_idx)) < 0) {
-			APPLOG(APPLOG_DEBUG, "%s) Assign Context fail thrd[%d]", __func__, thrd_idx);
-			continue;
-		}
-		if ((httpc_ctx = get_context(thrd_idx, idx, 0)) == NULL) {
-			APPLOG(APPLOG_DEBUG, "%s) get_context fail", __func__);
-			continue;
-		}
-		httpc_ctx->recv_time_index = THRD_WORKER[thrd_idx].time_index;
-		save_session_info(httpc_ctx, thrd_idx, sess_idx, session_id, &CONN_LIST[list_index]);
-		httpc_ctx->occupied = 1; /* after time set */
-
-		memcpy(&httpc_ctx->user_ctx.head, &ReqMsg->user_ctx.head, AHIF_HTTPCS_MSG_HEAD_LEN);
-		memcpy(&httpc_ctx->user_ctx.vheader, &ReqMsg->user_ctx.vheader, AHIF_VHDR_LEN);
-		if (ReqMsg->user_ctx.head.bodyLen) {
-			memcpy(&httpc_ctx->user_ctx.body, ReqMsg->user_ctx.body, ReqMsg->user_ctx.head.bodyLen);
-			httpc_ctx->user_ctx.head.bodyLen = ReqMsg->user_ctx.head.bodyLen;
-		}
-		httpc_ctx->user_ctx.head.mtype = MTYPE_HTTP2_RESPONSE_HTTPC_TO_AHIF; 
-
-		/* ok, send it to thread */
-		set_intl_req_msg(&intl_req, thrd_idx, idx, sess_idx, session_id, 0, HTTP_INTL_SND_REQ);
-
-		if (-1 == msgsnd(THRD_WORKER[thrd_idx].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0)) {
-			APPLOG(APPLOG_DEBUG, "%s) msgsnd fail", __func__);
-			continue;
-		}
-	}
-}
-
-void thrd_initialize()
+void create_httpc_worker()
 {
 	int i, res;
 
@@ -1060,13 +979,6 @@ void thrd_initialize()
 			pthread_detach(THRD_WORKER[i].thrd_id);
 		}
 	}
-
-	if ((res = pthread_create(&THRD_RECEIVER.thrd_id, NULL, &receiverThread, NULL)) != 0) {
-		APPLOG(APPLOG_ERR, "%s) Thread Create Fail (Receiver)", __func__);
-		exit(0);
-	} else {
-		pthread_detach(THRD_RECEIVER.thrd_id);
-	}
 }
 
 void conn_func(evutil_socket_t fd, short what, void *arg)
@@ -1075,7 +987,7 @@ void conn_func(evutil_socket_t fd, short what, void *arg)
 	http2_session_data_t *session_data;
 	int i;
 
-	pthread_mutex_lock(&ONLY_CRT_SESS_LOCK);
+	//pthread_mutex_lock(&ONLY_CRT_SESS_LOCK);
 	for (i = 0; i < MAX_SVR_NUM; i++) {
 		if (CONN_LIST[i].used == 0 || CONN_LIST[i].act != 1 || CONN_LIST[i].conn > CN_NOT_CONNECTED)
 			continue;
@@ -1103,13 +1015,14 @@ void conn_func(evutil_socket_t fd, short what, void *arg)
 		initiate_connection(THRD_WORKER[session_data->thrd_index].evbase, 
 				ssl_ctx, CONN_LIST[i].ip, CONN_LIST[i].port, session_data);
 	}
-	pthread_mutex_unlock(&ONLY_CRT_SESS_LOCK);
+	//pthread_mutex_unlock(&ONLY_CRT_SESS_LOCK);
 }
 
 #define MAX_THRD_WAIT_NUM 5
 void check_thread()
 {
-    int index, res;
+    //int index, res;
+    int index;
 
     /* check worker thread hang */
     for (index = 0; index < CLIENT_CONF.worker_num; index++) {
@@ -1124,28 +1037,8 @@ void check_thread()
             exit(0);
         }
     }
-
-    /* check receiver thread hang */
-    if (1) {
-        if (THRD_RECEIVER.running_index == THRD_RECEIVER.checked_index) {
-            THRD_RECEIVER.hang_counter ++;
-        } else {
-            THRD_RECEIVER.checked_index = THRD_RECEIVER.running_index;
-            THRD_RECEIVER.hang_counter = 0;
-        }
-        if (THRD_RECEIVER.hang_counter >= MAX_THRD_WAIT_NUM) {
-            APPLOG(APPLOG_ERR, "Receiver Thread hang detected, restart thread");
-            res = pthread_cancel(THRD_RECEIVER.thrd_id); // cancel early created thread
-            if ((res = pthread_create(&THRD_RECEIVER.thrd_id, NULL, &receiverThread, NULL)) != 0) {
-                APPLOG(APPLOG_ERR, "%s) Thread Create Fail (Receiver)", __func__);
-                exit(0);
-            } else {
-                THRD_RECEIVER.hang_counter = 0;
-                pthread_detach(THRD_RECEIVER.thrd_id);
-            }
-        }
-    }
 }
+
 void monitor_worker()
 {
 	int i, index;
@@ -1171,7 +1064,6 @@ void monitor_worker()
 				index, used_num, free_num, tmout_num);
 	}
 	APPLOG(APPLOG_ERR, "\n\n%s\n", buff);
-
 }
 
 void main_tick_callback(evutil_socket_t fd, short what, void *arg)
@@ -1321,22 +1213,6 @@ int initialize()
 		}
 	}
 
-	/* create shmq */
-#ifndef TEST
-	sprintf(fname, "%s/%s", getenv(IV_HOME), AHIF_CONF_FILE);
-#else
-	sprintf(fname, "%s", "../dev_check/temp.conf");
-#endif
-
-	if ((httpcRxQid = shmqlib_getQid (fname, "AHIF_TO_APP_SHMQ", myProcName, SHMQLIB_MODE_GETTER)) < 0) {
-		APPLOG(APPLOG_ERR, "shmqlib get qid AHIF_TO_APP_SHMQ (%s) from (%s) fail", myProcName, fname);
-		return -1;
-	}
-	if ((httpcTxQid = shmqlib_getQid (fname, "APP_TO_AHIF_SHMQ", myProcName, SHMQLIB_MODE_PUTTER)) < 0) {
-		APPLOG(APPLOG_ERR, "shmqlib get qid APP_TO_AHIF_SHMQ (%s) from (%s) fail", myProcName, fname);
-		return -1;
-	}
-
 #ifdef OAUTH
 	sprintf(fname,"%s/%s", env, SYSCONF_FILE);
 	if (conflib_getNthTokenInFileSection (fname, "GENERAL", "SYSTEM_TYPE", 1, mySysType) < 0) {
@@ -1428,6 +1304,9 @@ int main(int argc, char **argv)
 	act.sa_handler = SIG_IGN;
 	sigaction(SIGPIPE, &act, NULL);
 
+	fprintf(stderr, ">>>[ %-20s ] main thread id [%jd]<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n",
+			__func__, (intmax_t)util_gettid());
+
 	if (initialize() < 0) {
 		fprintf(stderr,">>>>>> httpc_initial fail\n");
 		return -1;
@@ -1436,7 +1315,9 @@ int main(int argc, char **argv)
 	SSL_load_error_strings();
 	SSL_library_init();
 
-	thrd_initialize();
+	create_httpc_worker();
+	create_lb_thread();
+
 	sleep(3);
 
 	main_loop();

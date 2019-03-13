@@ -5,10 +5,12 @@
 #define CF_LISTEN_PORT      "server_cfg.listen_port"
 #define CF_MAX_WORKER_NUM   "server_cfg.worker_num"
 #define CF_TIMEOUT_SEC      "server_cfg.timeout_sec"
-#define CF_CERT_FILE        "server_cfg.cert_file"
-#define CF_KEY_FILE         "server_cfg.key_file"
-#define CF_CREDENTIAL       "server_cfg.credential"
+#define CF_CERT_FILE        "server_cfg.oauth_config.cert_file"
+#define CF_KEY_FILE         "server_cfg.oauth_config.key_file"
+#define CF_CREDENTIAL       "server_cfg.oauth_config.credential"
+#define CF_LB_CONFIG        "server_cfg.lb_config"
 #define CF_ALLOW_LIST		"allow_list"
+
 extern server_conf SERVER_CONF;
 extern allow_list_t  ALLOW_LIST[MAX_LIST_NUM];
 extern thrd_context THRD_WORKER[MAX_THRD_NUM];
@@ -20,12 +22,11 @@ index_t INDEX[MAX_LIST_NUM];
 
 int init_cfg()
 {   
-    char *env;
-    
     config_init(&CFG);
     
     /* config path */
 #ifndef TEST 
+    char *env;
     if ((env = getenv(IV_HOME)) == NULL) {
         sprintf(CONFIG_PATH, "./%s",  CF_SERVER_CONF);
     } else {
@@ -184,6 +185,15 @@ int config_load()
         APPLOG(APPLOG_ERR, "key file name is  [%s]", SERVER_CONF.key_file);
     }
 
+    /* lb config load */
+    if ((setting = config_lookup(&CFG, CF_LB_CONFIG)) == NULL) {
+        APPLOG(APPLOG_ERR, "lb config loading fail (nok)");
+        goto CF_LOAD_ERR;
+    } else {
+        SERVER_CONF.lb_config = setting;
+        APPLOG(APPLOG_ERR, "lb config loading success (ok)");
+    }
+
 #ifdef OAUTH
 	/* oauth 2.0 secret key */
 	if (config_lookup_string(&CFG, CF_CREDENTIAL, &str) == CONFIG_FALSE) {
@@ -213,8 +223,6 @@ int config_load()
             const char *ip, *act;
             const char *type;
             int max;
-            //int act_val;
-			int auth_act;
 
 			group = config_setting_get_elem(setting, i);
 			if (group == NULL)
@@ -259,6 +267,7 @@ int config_load()
 				if (config_setting_lookup_string (item, "act", &act) == CONFIG_FALSE)
 					continue;
 #ifdef OAUTH
+				int auth_act = 0;
 				if (config_setting_lookup_int (item, "auth_act", &auth_act) == CONFIG_FALSE)
 					continue;
 #endif

@@ -66,11 +66,12 @@ http2_session_data_t *get_session(int thrd_idx, int sess_idx, int session_id)
 
 	return session_data;
 }
-void save_session_info(httpc_ctx_t *httpc_ctx, int thrd_idx, int sess_idx, int session_id, conn_list_t *conn_list)
+void save_session_info(httpc_ctx_t *httpc_ctx, int thrd_idx, int sess_idx, int session_id, int ctx_idx, conn_list_t *conn_list)
 {
 	httpc_ctx->thrd_idx = thrd_idx;
 	httpc_ctx->sess_idx = sess_idx;
 	httpc_ctx->session_id = session_id;
+	httpc_ctx->ctx_idx = ctx_idx;
 	sprintf(httpc_ctx->user_ctx.head.destIp, "%s", conn_list->ip);
 #ifdef OAUTH
 	char *token = NULL;
@@ -289,7 +290,7 @@ void order_list() {
     }
 }
 
-int find_packet_index(char *host, int ls_mode) {
+conn_list_t *find_packet_index(char *host, int ls_mode) {
     int i, found = 0, index;
     conn_list_t *curr = NULL, *start = NULL;
 	int ls_index, ls_send_num;
@@ -303,9 +304,9 @@ int find_packet_index(char *host, int ls_mode) {
 		}
 	}
     if (!found) {
-        APPLOG(APPLOG_DEBUG, "not found! (%s)", host);
-        return (-1);
-    }
+        //APPLOG(APPLOG_DEBUG, "warn} %s not found! host (%s)", __func__, host);
+        return NULL;
+	}
     start = curr = &CONN_LIST[i];
 
 	switch (ls_mode) {
@@ -324,7 +325,7 @@ int find_packet_index(char *host, int ls_mode) {
 #ifndef PERFORM
 					APPLOG(APPLOG_DEBUG, "packet sended via %d", curr->index);
 #endif
-					return (curr->index);
+					return curr;
 				}
 			}
 			break;
@@ -363,13 +364,13 @@ int find_packet_index(char *host, int ls_mode) {
                 } else {
                     curr->counter ++;
                 }
-                return curr->index;
+                return curr;
             }
 			break;
 	}
 
     APPLOG(APPLOG_DEBUG, "fail to send");
-    return (-1);
+	return NULL;
 }
 
 #ifdef OAUTH
