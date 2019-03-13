@@ -103,9 +103,6 @@ void https_echo_rx_to_tx(main_ctx_t *MAIN_CTX, ahif_ctx_t *ahif_ctx)
 	/* stat */
 	MAIN_CTX->https_recv_cnt ++;
 
-
-	fprintf(stderr, "scheme %s\n", ahif_ctx->ahif_pkt.head.scheme);
-
 	sprintf(ahif_ctx->ahif_pkt.head.magicByte, AHIF_MAGIC_BYTE);
     ahif_ctx->ahif_pkt.head.mtype = MTYPE_HTTP2_RESPONSE_AHIF_TO_HTTPS;
     ahif_ctx->ahif_pkt.head.respCode = 200;

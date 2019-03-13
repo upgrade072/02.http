@@ -106,12 +106,9 @@ void divide_string(char *input, int delim, char *head, ssize_t head_size, char *
 
     if ((delim_ptr = strchr(input, delim)) == NULL) {
         snprintf(head, head_size, "%s", input);
-		fprintf(stderr,"{DBG} !!! head [%s]\n\n\n\n", head);
         return;
     } else {
         snprintf(head, (delim_ptr + 1 - input) % head_size, "%s", input);
-		fprintf(stderr,"{DBG} !!! head [%s]\n\n\n\n", head);
         snprintf(tail, tail_size, "%s", delim_ptr + 1);
-		fprintf(stderr,"{DBG} !!! tail [%s]\n\n\n\n", tail);
     }
 }

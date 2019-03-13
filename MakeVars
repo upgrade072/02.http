@@ -18,7 +18,7 @@ CFLAGS		+= -DAUSF -DLOG_APP -DOAUTH
 else ifeq ($(TARGET),perf)
 CFLAGS		+= -DPERFORM -DLOG_PRINT
 else ifeq ($(TARGET),test)
-CFLAGS		+= -pg -DTEST -DLOG_PRINT
+CFLAGS		+= -pg -DTEST -DPERFORM
 endif
 
 ifeq ($(TARGET),epcf)
