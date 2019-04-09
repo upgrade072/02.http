@@ -534,6 +534,7 @@ static int on_begin_headers_callback(nghttp2_session *session,
 		https_ctx->occupied = 1;
 		https_ctx->user_ctx.head.ctx_id = idx;
 		stream_data->ctx_id = idx;
+		sprintf(https_ctx->user_ctx.head.magicByte, "%s", AHIF_MAGIC_BYTE);
 
 		assign_new_ctx_info(https_ctx, session_data, stream_data);
 		save_session_info(https_ctx, session_data->thrd_index, session_data->session_index, session_data->session_id, session_data->client_addr);

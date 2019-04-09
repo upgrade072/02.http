@@ -6,19 +6,15 @@
 // VH_START 와 VH_END 는 유지
 typedef enum {
 	VH_START,
-	VH_HELLO_WORLD,
-	VH_ARIEL_NETS,
-	VH_CACHE_CONTROLS,
-	VH_WRONG_HEADER,
+	VH_CONTENT_TYPE,
+	VH_LOCATION,
 	VH_END
 } http_vheader;
 #define HTTP_VHEADER "\
 VH_START\n\
-hdr-hello-world\n\
-hdr-ariel-nets\n\
-cache-controls\n\
-:wrong_header\n\
-VH_END\n\n"
+Content-Type\n\
+location\n\
+VH_END"
 
 #define MAX_HDR_RELAY_CNT 12
 #define MAX_HDR_NAME_LEN 32

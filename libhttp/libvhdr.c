@@ -6,7 +6,7 @@
 int set_relay_vhdr(hdr_index_t hdr_index[], int array_size)
 {
 	if (array_size < VH_START || array_size > VH_END) {
-		fprintf(stderr, "\ndbg} array size too long with [%d~%d]\n", VH_START, VH_END);
+		fprintf(stderr, "\ndbg} array size (%d) too long with [%d~%d]\n", array_size, VH_START, VH_END);
 		return (-1);
 	}
 
@@ -26,7 +26,7 @@ int set_relay_vhdr(hdr_index_t hdr_index[], int array_size)
 int print_relay_vhdr(hdr_index_t hdr_index[], int array_size)
 {
 	if (array_size < VH_START || array_size > VH_END) {
-		fprintf(stderr, "dbg} array size too long with [%d~%d]\n", VH_START, VH_END);
+		fprintf(stderr, "dbg} array size (%d) too long with [%d~%d]\n", array_size, VH_START, VH_END);
 		return (-1);
 	}
 

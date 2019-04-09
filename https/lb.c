@@ -96,7 +96,7 @@ void push_callback(evutil_socket_t fd, short what, void *arg)
     tcp_ctx_t *tcp_ctx = (tcp_ctx_t *)push_item->sender_tcp_ctx;
     sock_ctx_t *sock_ctx = search_node_by_ip(tcp_ctx, push_item->dest_ip);
 
-    //fprintf(stderr, "((%s)) called dest %s (mypid(%jd))\n", __func__, push_item->dest_ip, (intmax_t)util_gettid());
+    fprintf(stderr, "((%s)) called dest %s (mypid(%jd))\n", __func__, push_item->dest_ip, (intmax_t)util_gettid());
 
     if (sock_ctx == NULL) {
         fprintf(stderr, "((%s)) dest (%s) not exist, unset item\n", __func__, push_item->dest_ip);
@@ -110,15 +110,21 @@ void push_callback(evutil_socket_t fd, short what, void *arg)
     write_list_t *write_list = &sock_ctx->push_items;
 
     /* bundle packet by config ==> send by once */
+#if 0
+	fprintf(stderr, "{{{{dbg}}} item_cnt %d item_bytes %d config (%d %d)\n", 
+			write_list->item_cnt, write_list->item_bytes, LB_CONF.bundle_count, LB_CONF.bundle_bytes);
+#endif
     if (write_list->item_cnt >= LB_CONF.bundle_count || write_list->item_bytes >= LB_CONF.bundle_bytes) {
         ssize_t nwritten = push_write_item(sock_ctx->client_fd, write_list, LB_CONF.bundle_count, LB_CONF.bundle_bytes);
         if (nwritten > 0) {
 			unset_pushed_item(write_list, nwritten);
 			/* stat */
 			tcp_ctx->send_bytes += nwritten;
+			//fprintf(stderr, "{{{dbg}}} nwritten (%ld)\n", nwritten);
 		}
-		else if (errno != EINTR && errno != EAGAIN)
+		else if (errno != EINTR && errno != EAGAIN) {
 			fprintf(stderr, "there error! %d : %s\n", errno, strerror(errno));
+		}
     }
 }
 
@@ -137,8 +143,9 @@ int send_request_to_fep(https_ctx_t *https_ctx)
 	//fprintf(stderr, "{{{DBG}}} recv from httpc appVer(ctxId %s)\n", https_ctx->user_ctx.head.appVer);
 
     int sock_cnt = return_sock_num(fep_tcp_ctx);
-	if (sock_cnt <= 0) 
+	if (sock_cnt <= 0) {
 		return -1;
+	}
 
 	int loadshare_turn = fep_tcp_ctx->round_robin_index ++ % sock_cnt;
 	sock_ctx_t *sock_ctx = return_nth_sock(fep_tcp_ctx, loadshare_turn);

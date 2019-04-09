@@ -78,9 +78,11 @@ void save_session_info(httpc_ctx_t *httpc_ctx, int thrd_idx, int sess_idx, int s
 	if (conn_list->token_id > 0) 
 		token = get_access_token(conn_list->token_id);
 
+	/*
 	fprintf(stderr, "{{{dbg}}} conn list (list index: %d) (token id : %d)\n", 
 			conn_list->list_index, conn_list->token_id);
 	fprintf(stderr, "{{{dbg}}} token [%s]\n", token != NULL ? token : "");
+	*/
 
 	sprintf(httpc_ctx->access_token, "%s", token != NULL ? token : "");
 #endif

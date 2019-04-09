@@ -163,7 +163,9 @@ sock_ctx_t *assign_sock_ctx(tcp_ctx_t *tcp_ctx, evutil_socket_t fd, struct socka
 
 void sock_flush_callback(evutil_socket_t fd, short what, void *arg)
 {
+	/*
 	if (fd < 0) return;
+	*/
 
     sock_ctx_t *sock_ctx = (sock_ctx_t *)arg;
 	tcp_ctx_t *tcp_ctx = (tcp_ctx_t *)sock_ctx->tcp_ctx;
@@ -175,6 +177,7 @@ void sock_flush_callback(evutil_socket_t fd, short what, void *arg)
         unset_pushed_item(write_list, nwritten);
 		/* stat */
 		tcp_ctx->send_bytes += nwritten;
+		//fprintf(stderr, "{{{dbg}}} (%s) write %ld bytes\n", __func__, nwritten);
 	}
 }
 

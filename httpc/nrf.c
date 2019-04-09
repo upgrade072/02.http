@@ -87,7 +87,6 @@ void accuire_token(acc_token_list_t *token_list)
 
 		int pos = (token_list->token_pos + 1) % 2; // indicate [0] [1] [0] [1]
 		sprintf(token_list->access_token[pos], "%s", access_token_res.access_token);
-fprintf(stderr, "{{{dbg}}} pos [%d] token [%s]\n", pos, token_list->access_token[pos]);
 		token_list->due_date = access_token_res.expire_in;
 		token_list->last_request_time = time(NULL);
 

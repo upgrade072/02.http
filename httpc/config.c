@@ -29,7 +29,8 @@ int init_cfg()
 
     /* config path */
 #ifndef TEST
-    if ((char *env = getenv(IV_HOME)) == NULL) {
+	char *env = NULL;
+    if ((env = getenv(IV_HOME)) == NULL) {
         sprintf(CONFIG_PATH, "./%s",  CF_CLIENT_CONF);
     } else {
         sprintf(CONFIG_PATH, "%s/data/%s", env, CF_CLIENT_CONF);
