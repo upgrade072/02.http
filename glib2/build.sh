@@ -18,6 +18,8 @@ cd glib-${VERSION}
 
 export PATH=${HOME}/ac_install/bin:$PATH
 export PKG_CONFIG_PATH=${ROOTDIR}/../build/lib/pkgconfig:$PKG_CONFIG_PATH
+#for some stupid system
+#export PYTHON=$(python --version 2>&1 >/dev/null)
 
 ./autogen.sh
 ./configure \
@@ -27,7 +29,8 @@ export PKG_CONFIG_PATH=${ROOTDIR}/../build/lib/pkgconfig:$PKG_CONFIG_PATH
 	--with-pcre=internal \
 	--disable-man \
 	--enable-static \
-	--disable-shared
+	--disable-shared \
+	--disable-xattr --disable-selinux 
 
 make
 make install

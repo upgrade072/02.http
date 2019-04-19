@@ -208,6 +208,10 @@ typedef struct httpc_ctx {
 	char access_token[MAX_ACC_TOKEN_LEN];
 #endif
 	iovec_item_t push_req;
+
+	/* for lb-fep-peer */
+	int fep_tag;				// index of thread (fep 1 / 2 / 3)
+	pthread_t recv_thread_id;	// is it usefull ???? (may not use) 
 } httpc_ctx_t;
 
 typedef enum intl_req_mtype {
@@ -245,12 +249,17 @@ typedef struct http2_session_data {
 } http2_session_data_t;
 
 typedef struct lb_global {
-    int rxonly_port;
-    int txonly_port;
     int bundle_bytes;
     int bundle_count;
 	int flush_tmval;
-    config_setting_t *peer_list;
+
+	int total_fep_num;
+	int context_num;
+	config_setting_t *cf_fep_rx_listen_port;
+	config_setting_t *cf_fep_tx_listen_port;
+	config_setting_t *cf_peer_listen_port;
+	config_setting_t *cf_peer_connect_port;
+	const char *peer_lb_address;
 } lb_global_t;
 
 /* ------------------------- config.c --------------------------- */
@@ -329,20 +338,23 @@ char    *get_access_token(int token_id);
 #endif
 
 /* ------------------------- lb.c --------------------------- */
-httpc_ctx_t     *get_null_recv_ctx();
-httpc_ctx_t     *get_assembled_ctx(char *ptr);
-void    send_to_worker(conn_list_t *httpc_conn, httpc_ctx_t *recv_ctx, char *client_ip);
+httpc_ctx_t     *get_null_recv_ctx(tcp_ctx_t *tcp_ctx);
+httpc_ctx_t     *get_assembled_ctx(tcp_ctx_t *tcp_ctx, char *ptr);
+void    send_to_worker(conn_list_t *httpc_conn, httpc_ctx_t *recv_ctx);
 void    set_iovec(tcp_ctx_t *dest_tcp_ctx, httpc_ctx_t *recv_ctx, const char *dest_ip, iovec_item_t *push_req, void (*cbfunc)(), void *cbarg);
 void    push_callback(evutil_socket_t fd, short what, void *arg);
 void    iovec_push_req(tcp_ctx_t *dest_tcp_ctx, iovec_item_t *push_req);
-void    stp_err_to_fep(sock_ctx_t *sock_ctx, tcp_ctx_t *fep_tcp_ctx, httpc_ctx_t *recv_ctx);
+void    stp_err_to_fep(tcp_ctx_t *fep_tcp_ctx, httpc_ctx_t *recv_ctx);
 void    stp_snd_to_peer(const char *peer_addr, tcp_ctx_t *peer_tcp_ctx, httpc_ctx_t *recv_ctx);
 void    free_ctx_with_httpc_ctx(httpc_ctx_t *httpc_ctx);
+tcp_ctx_t       *search_dest_via_tag(httpc_ctx_t *httpc_ctx, GNode *root_node);
 void    send_response_to_fep(httpc_ctx_t *httpc_ctx);
 void    send_to_peerlb(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx);
-void    packet_process_res(sock_ctx_t *sock_ctx, char *process_ptr, size_t processed_len);
-void    check_and_send(sock_ctx_t *sock_ctx);
-void    httpc_lb_buff_readcb(struct bufferevent *bev, void *arg);
+void    send_to_remote(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx);
+void    check_and_send(tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx);
+void    lb_buff_readcb(struct bufferevent *bev, void *arg);
 void    load_lb_config(client_conf_t *cli_conf, lb_global_t *lb_conf);
+void    fep_stat_print(evutil_socket_t fd, short what, void *arg);
+void    *fep_stat_thread(void *arg);
 void    attach_lb_thread(lb_global_t *lb_conf, main_ctx_t *main_ctx);
 int     create_lb_thread();

@@ -76,26 +76,34 @@ typedef struct sock_ctx {
 	void *tcp_ctx;
 
     GNode *my_conn;
+
 } sock_ctx_t;
 
-typedef enum svr_type {
+typedef enum svc_type {
     TT_NONE = 0,
     TT_RX_ONLY,
-    TT_TX_ONLY
-} svr_type_t;
+    TT_TX_ONLY,
+    TT_PEER_SEND 
+} svc_type_t;
 
 typedef struct tcp_ctx {
-    pthread_t my_thread_id;
+    pthread_t thread_id;
+
+	int fep_tag;			// fep index
+	int buff_exist;			// buffer_exist or not
+	void *httpcs_ctx_buff;	// if receiver thread,  malloc & use own buffer
+	int context_num;
+
     struct event_base *evbase;
     struct evconnlistener *listener;
 
     /* used by listen thread */
-    int svr_type;
+    int svc_type;
     int listen_port;
     int connect_type;
     /* used by connect thread */
-    config_setting_t *peer_list;
     int peer_listen_port;
+	char peer_ip_addr[46];
 
 	int flush_tmval;
 
@@ -108,12 +116,14 @@ typedef struct tcp_ctx {
 	/* for stat */
 	int send_bytes;
 	int recv_bytes;
+	int tps;
 } tcp_ctx_t;
 
 typedef struct main_ctx {
-    tcp_ctx_t fep_rx_thrd;
-    tcp_ctx_t fep_tx_thrd;
-    tcp_ctx_t peer_tx_thrd;
+	GNode *fep_rx_thrd;
+	GNode *fep_tx_thrd;
+	GNode *peer_rx_thrd;
+	GNode *peer_tx_thrd;
 
 	pthread_t stat_thrd_id;
 } main_ctx_t;
@@ -132,10 +142,24 @@ void    print_write_item(write_list_t *write_list);
 ssize_t push_write_item(int fd, write_list_t *write_list, int bundle_cnt, int bundle_bytes);
 void    unset_pushed_item(write_list_t *write_list, ssize_t nwritten);
 
+/* ------------------------- util.c --------------------------- */
+char    *util_get_ip_from_sa(struct sockaddr *sa);
+int     util_get_port_from_sa(struct sockaddr *sa);
+int     util_set_linger(int fd, int onoff, int linger);
+int     util_set_rcvbuffsize(int fd, int byte);
+int     util_set_sndbuffsize(int fd, int byte);
+int     util_set_keepalive(int fd, int keepalive, int cnt, int idle, int intvl);
+pid_t   util_gettid(void);
+void    util_dumphex(const void* data, size_t size);
+char    *measure_print(int bytes, char *return_str);
+void    printf_config_list_int(char *annotation, config_setting_t *int_list);
+
 /* ------------------------- tcp.c --------------------------- */
 GNode   *new_node_conn(sock_ctx_t *sock_ctx);
-GNode   *add_node_conn(GNode *parent, GNode *child, GNode *looser_brother);
-void    remove_node_conn(GNode *node);
+GNode   *add_node(GNode *parent, GNode *child, GNode *looser_brother);
+void    remove_node(GNode *node);
+GNode   *new_tcp_ctx(tcp_ctx_t *tcp_ctx);
+void    add_tcp_ctx_to_main(tcp_ctx_t *tcp_ctx, GNode *where_to_add);
 sock_ctx_t      *search_node_by_ip(tcp_ctx_t *tcp_ctx, const char *ipaddr);
 sock_ctx_t      *return_nth_sock(tcp_ctx_t *tcp_ctx, int idx);
 int     return_sock_num(tcp_ctx_t *tcp_ctx);
@@ -152,16 +176,6 @@ void    cli_sock_eventcb(struct bufferevent *bev, short events, void *user_data)
 sock_ctx_t      *create_new_peer_sock(tcp_ctx_t *tcp_ctx, const char *peer_addr);
 void    check_peer_conn(evutil_socket_t fd, short what, void *arg);
 void    *fep_peer_thread(void *arg);
-
-/* ------------------------- util.c --------------------------- */
-char    *util_get_ip_from_sa(struct sockaddr *sa);
-int     util_get_port_from_sa(struct sockaddr *sa);
-int     util_set_linger(int fd, int onoff, int linger);
-int     util_set_rcvbuffsize(int fd, int byte);
-int     util_set_sndbuffsize(int fd, int byte);
-int     util_set_keepalive(int fd, int keepalive, int cnt, int idle, int intvl);
-pid_t   util_gettid(void);
-void    util_dumphex(const void* data, size_t size);
-char    *measure_print(int bytes, char *return_str);
+void    CREATE_LB_THREAD(GNode *root_node, size_t context_size, int context_num);
 
 #endif
