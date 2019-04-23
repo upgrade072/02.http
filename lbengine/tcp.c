@@ -39,6 +39,7 @@ void add_tcp_ctx_to_main(tcp_ctx_t *tcp_ctx, GNode *where_to_add)
 	}
 }
 
+// deprecated
 sock_ctx_t *search_node_by_ip(tcp_ctx_t *tcp_ctx, const char *ipaddr)
 {
     GNode *root = tcp_ctx->root_conn;
@@ -52,6 +53,17 @@ sock_ctx_t *search_node_by_ip(tcp_ctx_t *tcp_ctx, const char *ipaddr)
 		}
     }
     return (sock_ctx_t *)NULL;
+}
+
+sock_ctx_t *get_last_conn_sock(tcp_ctx_t *tcp_ctx)
+{
+    GNode *root = tcp_ctx->root_conn;
+	GNode *last_conn = g_node_last_child(root);
+	if (last_conn != NULL) {
+		return (sock_ctx_t *)last_conn->data;
+	} else {
+		return (sock_ctx_t *)NULL;
+	}
 }
 
 sock_ctx_t *return_nth_sock(tcp_ctx_t *tcp_ctx, int idx)

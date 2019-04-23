@@ -134,7 +134,11 @@ void push_callback(evutil_socket_t fd, short what, void *arg)
 {
     iovec_item_t *push_item = (iovec_item_t *)arg;
     tcp_ctx_t *tcp_ctx = (tcp_ctx_t *)push_item->sender_tcp_ctx;
+#if 0
     sock_ctx_t *sock_ctx = search_node_by_ip(tcp_ctx, push_item->dest_ip);
+#else
+	sock_ctx_t *sock_ctx = get_last_conn_sock(tcp_ctx);
+#endif
 
     //fprintf(stderr, "((%s)) called dest %s (mypid(%jd))\n", __func__, push_item->dest_ip, (intmax_t)util_gettid());
 
@@ -235,7 +239,9 @@ void send_response_to_fep(httpc_ctx_t *httpc_ctx)
 		return;
 	}
 
-	set_iovec(fep_tcp_ctx, httpc_ctx, httpc_ctx->user_ctx.head.fep_origin_addr, &httpc_ctx->push_req, free_ctx_with_httpc_ctx, httpc_ctx);
+	//set_iovec(fep_tcp_ctx, httpc_ctx, httpc_ctx->user_ctx.head.fep_origin_addr, &httpc_ctx->push_req, free_ctx_with_httpc_ctx, httpc_ctx);
+	// TODO!!!! check dest ip useless or not, if useless remove it
+	set_iovec(fep_tcp_ctx, httpc_ctx, NULL, &httpc_ctx->push_req, free_ctx_with_httpc_ctx, httpc_ctx);
 	
 	return iovec_push_req(fep_tcp_ctx, &httpc_ctx->push_req);
 }

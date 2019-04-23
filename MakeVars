@@ -1,6 +1,6 @@
 
 ### TARGET : epcf, udmr, ausf, perf, epcf_test, test
-TARGET      = epcf
+TARGET      = epcf_test
 
 ## HOLDSESS : do not close session in no more read/write exist
 CFLAGS      = -std=gnu99 -g -m64 -Wall -DHOLDSESS  -Wno-unused-label -Wno-missing-braces

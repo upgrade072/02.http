@@ -161,6 +161,7 @@ void    remove_node(GNode *node);
 GNode   *new_tcp_ctx(tcp_ctx_t *tcp_ctx);
 void    add_tcp_ctx_to_main(tcp_ctx_t *tcp_ctx, GNode *where_to_add);
 sock_ctx_t      *search_node_by_ip(tcp_ctx_t *tcp_ctx, const char *ipaddr);
+sock_ctx_t		*get_last_conn_sock(tcp_ctx_t *tcp_ctx);
 sock_ctx_t      *return_nth_sock(tcp_ctx_t *tcp_ctx, int idx);
 int     return_sock_num(tcp_ctx_t *tcp_ctx);
 int     check_conf_via_sock(tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx);

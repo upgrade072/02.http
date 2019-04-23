@@ -165,6 +165,9 @@ typedef struct https_ctx {
 	char access_token[MAX_ACC_TOKEN_LEN];
 #endif
     iovec_item_t push_req;
+
+	int fep_tag;
+	pthread_t recv_thread_id;
 } https_ctx_t;
 
 typedef enum intl_req_mtype {
@@ -182,11 +185,14 @@ typedef struct intl_req {
 } intl_req_t;
 
 typedef struct lb_global {
-    int rxonly_port;
-    int txonly_port;
     int bundle_bytes;
     int bundle_count;
     int flush_tmval;
+
+    int total_fep_num;
+    int context_num;
+    config_setting_t *cf_fep_rx_listen_port;
+    config_setting_t *cf_fep_tx_listen_port;
 } lb_global_t;
 
 /* ------------------------- config.c --------------------------- */
@@ -247,15 +253,21 @@ int     func_del_http_cli_ip(IxpcQMsgType *rxIxpcMsg);
 int     func_del_http_client(IxpcQMsgType *rxIxpcMsg);
 
 /* ------------------------- lb.c --------------------------- */
-https_ctx_t     *get_null_recv_ctx();
-https_ctx_t     *get_assembled_ctx(char *ptr);
+https_ctx_t     *get_null_recv_ctx(tcp_ctx_t *tcp_ctx);
+https_ctx_t     *get_assembled_ctx(tcp_ctx_t *tcp_ctx, char *ptr);
 void    set_iovec(tcp_ctx_t *dest_tcp_ctx, https_ctx_t *https_ctx, const char *dest_ip, iovec_item_t *push_req, void (*cbfunc)(), void *cbarg);
 void    push_callback(evutil_socket_t fd, short what, void *arg);
 void    iovec_push_req(tcp_ctx_t *dest_tcp_ctx, iovec_item_t *push_req);
+tcp_ctx_t       *get_loadshare_turn(https_ctx_t *https_ctx);
 int     send_request_to_fep(https_ctx_t *https_ctx);
 void    send_to_worker(https_ctx_t *recv_ctx);
-void    check_and_send(sock_ctx_t *sock_ctx);
+void    check_and_send(tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx);
 void    lb_buff_readcb(struct bufferevent *bev, void *arg);
+int     get_httpcs_buff_used(tcp_ctx_t *tcp_ctx);
+void    clear_context_stat(tcp_ctx_t *tcp_ctx);
+void    fep_stat_print(evutil_socket_t fd, short what, void *arg);
+void    *fep_stat_thread(void *arg);
 void    load_lb_config(server_conf *svr_conf, lb_global_t *lb_conf);
 void    attach_lb_thread(lb_global_t *lb_conf, main_ctx_t *main_ctx);
 int     create_lb_thread();
+

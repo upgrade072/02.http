@@ -5,15 +5,17 @@ extern thrd_context THRD_WORKER[MAX_THRD_NUM];
 
 lb_global_t LB_CONF;                /* lb config */
 main_ctx_t MAIN_CTX;                /* lb connection context */
-#define MAX_LB_CTX_NUM 10240
-https_ctx_t LB_RECV_CTX[MAX_LB_CTX_NUM];
 
-https_ctx_t *get_null_recv_ctx()
+https_ctx_t *get_null_recv_ctx(tcp_ctx_t *tcp_ctx)
 {
-	for (int i = 0; i < MAX_LB_CTX_NUM; i++) {
-		https_ctx_t *recv_ctx = &LB_RECV_CTX[i];
+	https_ctx_t *rcv_buff_ctx = (https_ctx_t *)tcp_ctx->httpcs_ctx_buff;
+
+	for (int i = 0; i < tcp_ctx->context_num; i++) {
+		https_ctx_t *recv_ctx = &rcv_buff_ctx[i];
 		if (recv_ctx->occupied == 0) {
 			memset(recv_ctx, 0x00, sizeof(https_ctx_t));
+			recv_ctx->fep_tag = tcp_ctx->fep_tag;
+			recv_ctx->recv_thread_id = tcp_ctx->thread_id;
 			recv_ctx->occupied = 1;
 			return recv_ctx;
 		}
@@ -21,7 +23,7 @@ https_ctx_t *get_null_recv_ctx()
 	return NULL;
 }
 
-https_ctx_t *get_assembled_ctx(char *ptr)
+https_ctx_t *get_assembled_ctx(tcp_ctx_t *tcp_ctx, char *ptr)
 {
     https_ctx_t *recv_ctx = NULL;
     AhifHttpCSMsgHeadType *head = (AhifHttpCSMsgHeadType *)ptr;
@@ -32,7 +34,7 @@ https_ctx_t *get_assembled_ctx(char *ptr)
     char *body = ptr + sizeof(AhifHttpCSMsgHeadType) + (sizeof(hdr_relay) * vheaderCnt);
     int bodyLen = head->bodyLen;
 
-    if((recv_ctx = get_null_recv_ctx()) == NULL)
+    if((recv_ctx = get_null_recv_ctx(tcp_ctx)) == NULL)
         return NULL;
 
     memcpy(&recv_ctx->user_ctx.head, ptr, sizeof(AhifHttpCSMsgHeadType));
@@ -94,7 +96,11 @@ void push_callback(evutil_socket_t fd, short what, void *arg)
 {
     iovec_item_t *push_item = (iovec_item_t *)arg;
     tcp_ctx_t *tcp_ctx = (tcp_ctx_t *)push_item->sender_tcp_ctx;
+#if 0
     sock_ctx_t *sock_ctx = search_node_by_ip(tcp_ctx, push_item->dest_ip);
+#else
+	sock_ctx_t *sock_ctx = get_last_conn_sock(tcp_ctx);
+#endif
 
     fprintf(stderr, "((%s)) called dest %s (mypid(%jd))\n", __func__, push_item->dest_ip, (intmax_t)util_gettid());
 
@@ -137,20 +143,47 @@ void iovec_push_req(tcp_ctx_t *dest_tcp_ctx, iovec_item_t *push_req)
     }
 }
 
-int send_request_to_fep(https_ctx_t *https_ctx)
+tcp_ctx_t *get_loadshare_turn(https_ctx_t *https_ctx)
 {
-    tcp_ctx_t *fep_tcp_ctx = &MAIN_CTX.fep_tx_thrd;
-	//fprintf(stderr, "{{{DBG}}} recv from httpc appVer(ctxId %s)\n", https_ctx->user_ctx.head.appVer);
+	GNode *root_node = MAIN_CTX.fep_tx_thrd;
+	unsigned int fep_num = g_node_n_children(root_node);
+	tcp_ctx_t *root_data = (tcp_ctx_t *)root_node->data;
 
-    int sock_cnt = return_sock_num(fep_tcp_ctx);
-	if (sock_cnt <= 0) {
-		return -1;
+	if (fep_num <= 0) {
+	   	return NULL;
 	}
 
-	int loadshare_turn = fep_tcp_ctx->round_robin_index ++ % sock_cnt;
-	sock_ctx_t *sock_ctx = return_nth_sock(fep_tcp_ctx, loadshare_turn);
+	root_data->round_robin_index = (root_data->round_robin_index + 1) % fep_num;
+	for (int i = 0; i < fep_num; i++) {
+		int loadshare_turn = (root_data->round_robin_index + 1) % fep_num;
+		GNode *nth_thread = g_node_nth_child(root_node, loadshare_turn);
+		if (nth_thread != NULL) {
+			tcp_ctx_t *fep_tcp_ctx = (tcp_ctx_t *)nth_thread->data;
+			int sock_num = g_node_n_children(fep_tcp_ctx->root_conn);
+			if (sock_num > 0) {
+				https_ctx->fep_tag = fep_tcp_ctx->fep_tag;
+				return fep_tcp_ctx;
+			}
+		}
+	}
 
-    set_iovec(fep_tcp_ctx, https_ctx, sock_ctx->client_ip, &https_ctx->push_req, NULL, NULL);
+	return NULL;
+}
+
+int send_request_to_fep(https_ctx_t *https_ctx)
+{
+	tcp_ctx_t *fep_tcp_ctx = get_loadshare_turn(https_ctx);
+	if (fep_tcp_ctx == NULL) {
+		APPLOG(APPLOG_ERR, "(%s) fail to decision RR. there is no FEP TX conn", __func__);
+		return -1; // http error response
+	} else {
+		fep_tcp_ctx->tps ++;
+	}
+
+    //set_iovec(fep_tcp_ctx, https_ctx, sock_ctx->client_ip, &https_ctx->push_req, NULL, NULL);
+	// TODO!!!! check dest ip useless or not, if useless remove it
+	// TODO!!!! where to get fep_tag
+    set_iovec(fep_tcp_ctx, https_ctx, NULL, &https_ctx->push_req, NULL, NULL);
 
     iovec_push_req(fep_tcp_ctx, &https_ctx->push_req);
 
@@ -179,6 +212,11 @@ void send_to_worker(https_ctx_t *recv_ctx)
 		goto STW_RET;
 	}   
 
+	// check have same fep tag
+	if (recv_ctx->fep_tag != https_ctx->fep_tag) {
+		APPLOG(APPLOG_ERR, "ERR] fep tag mismatch (ahif recv %d, orig ctx %d)", recv_ctx->fep_tag, https_ctx->fep_tag);
+	}
+
 	intl_req_t intl_req = {0,};
 	set_intl_req_msg(&intl_req, thrd_index, ctx_id, session_index, session_id, stream_id, HTTP_INTL_SND_REQ);
 
@@ -193,7 +231,7 @@ STW_RET:
 	return;
 }
 
-void check_and_send(sock_ctx_t *sock_ctx)
+void check_and_send(tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx)
 {   
     https_ctx_t *recv_ctx = NULL;
     
@@ -211,7 +249,7 @@ KEEP_PROCESS:
     if (sock_ctx->rcv_len < (processed_len + AHIF_TCP_MSG_LEN(head)))
         return packet_process_res(sock_ctx, process_ptr, processed_len);
     
-    if ((recv_ctx = get_assembled_ctx(process_ptr)) == NULL) {
+    if ((recv_ctx = get_assembled_ctx(tcp_ctx, process_ptr)) == NULL) {
         // TODO!!! it means blocked, all drain ???
         APPLOG(APPLOG_ERR, "cant process packet, will just dropped");
         return packet_process_res(sock_ctx, process_ptr, processed_len);
@@ -220,11 +258,6 @@ KEEP_PROCESS:
     process_ptr += AHIF_TCP_MSG_LEN(head);
     processed_len += AHIF_TCP_MSG_LEN(head);
     
-#if 0
-	fprintf(stderr, "{{{DBG}}} processed now %ld thrd %d ctx %d\n", 
-			processed_len, head->thrd_index, head->ctx_id);
-#endif
-
 	send_to_worker(recv_ctx);
 
     goto KEEP_PROCESS;
@@ -247,32 +280,58 @@ void lb_buff_readcb(struct bufferevent *bev, void *arg)
 		tcp_ctx->recv_bytes += rcv_len;
 	}
 
-    return check_and_send(sock_ctx);
+    return check_and_send(tcp_ctx, sock_ctx);
+}
+
+int get_httpcs_buff_used(tcp_ctx_t *tcp_ctx)
+{
+    if (tcp_ctx->buff_exist != 1)
+        return 0;
+
+    https_ctx_t *rcv_buff_ctx = (https_ctx_t *)tcp_ctx->httpcs_ctx_buff;
+    int used = 0;
+
+    for (int i = 0; i < tcp_ctx->context_num; i++) {
+        https_ctx_t *recv_ctx = &rcv_buff_ctx[i];
+        if (recv_ctx->occupied != 0)
+            used++;
+    }
+
+    return used;
+}
+
+void clear_context_stat(tcp_ctx_t *tcp_ctx)
+{
+    tcp_ctx->recv_bytes = 0;
+    tcp_ctx->send_bytes = 0;
+    tcp_ctx->tps = 0;
 }
 
 void fep_stat_print(evutil_socket_t fd, short what, void *arg)
 {
-	main_ctx_t *main_ctx = (main_ctx_t *)arg;
-	char fep_read[1024] = {0,};
-	char fep_write[1024] = {0,};
+    char fep_read[1024] = {0,};
+    char fep_write[1024] = {0,};
 
-	int used = 0, not_used = 0;
-	for (int i = 0; i < MAX_LB_CTX_NUM; i++) {
-		if (LB_RECV_CTX[i].occupied == 1)
-			used ++;
-		else
-			not_used ++;
-	}
+    for (int i = 0; i < LB_CONF.total_fep_num; i++) {
+        GNode *nth_fep_rx = g_node_nth_child(MAIN_CTX.fep_rx_thrd, i);
+        GNode *nth_fep_tx = g_node_nth_child(MAIN_CTX.fep_tx_thrd, i);
 
-	APPLOG(APPLOG_ERR, "FEP CTX [total: %5d used: %5d not used: %5d] FEP RX [%s] FEP TX [%s]",
-			MAX_LB_CTX_NUM,
-			used,
-			not_used,
-			measure_print(main_ctx->fep_rx_thrd.recv_bytes, fep_read),
-			measure_print(main_ctx->fep_tx_thrd.send_bytes, fep_write));
+        tcp_ctx_t *fep_rx = (nth_fep_rx == NULL ? NULL : (tcp_ctx_t *)nth_fep_rx->data);
+        tcp_ctx_t *fep_tx = (nth_fep_rx == NULL ? NULL : (tcp_ctx_t *)nth_fep_tx->data);
 
-	main_ctx->fep_rx_thrd.recv_bytes = 0;
-	main_ctx->fep_tx_thrd.send_bytes = 0;
+        int fep_rx_used = get_httpcs_buff_used(fep_rx);
+
+        APPLOG(APPLOG_ERR, "FEP [%2d] CTX [fep_rx %05d/%05d] FEP TX [%s] (TPS %d) FEP RX [%s]",
+                i,
+                fep_rx_used,
+                fep_rx->context_num,
+                measure_print(fep_tx->send_bytes, fep_write),
+                fep_rx->tps,
+                measure_print(fep_rx->recv_bytes, fep_read));
+
+        clear_context_stat(fep_rx);
+        clear_context_stat(fep_tx);
+    }
 }
 
 void *fep_stat_thread(void *arg)
@@ -299,19 +358,43 @@ void *fep_stat_thread(void *arg)
 void load_lb_config(server_conf *svr_conf, lb_global_t *lb_conf)
 {
     config_setting_t *lb_config = svr_conf->lb_config;
+	config_setting_t *setting = NULL;
 
-    if (config_setting_lookup_int(lb_config, "rxonly_port", &lb_conf->rxonly_port) == CONFIG_FALSE) {
-        APPLOG(APPLOG_ERR, "lb_config.fail to get rxonly_port");
+    /* check fep / peer config list */
+    setting = lb_conf->cf_fep_rx_listen_port = config_setting_get_member(lb_config, "fep_rx_listen_port");
+    if (setting == NULL) {
+        APPLOG(APPLOG_ERR, "fail to get lb_config.fep_rx_listen_port");
+        exit(0);
+    }
+    setting = lb_conf->cf_fep_tx_listen_port = config_setting_get_member(lb_config, "fep_tx_listen_port");
+    if (setting == NULL) {
+        APPLOG(APPLOG_ERR, "fail to get lb_config.fep_tx_listen_port");
+        exit(0);
+    }
+    /* check port num pair match, a == b == c == d */
+    if (config_setting_length(lb_conf->cf_fep_rx_listen_port) ==
+        config_setting_length(lb_conf->cf_fep_tx_listen_port)) {
+        printf_config_list_int("fep_rx_listen_port", lb_conf->cf_fep_rx_listen_port);
+        printf_config_list_int("fep_tx_listen_port", lb_conf->cf_fep_tx_listen_port);
+    } else {
+        APPLOG(APPLOG_ERR, "fep tx|rx port num not match!");
+        exit(0);
+    }
+    /* check fep num */
+    lb_conf->total_fep_num = config_setting_length(lb_conf->cf_fep_rx_listen_port);
+    if (lb_conf->total_fep_num >= MAX_THRD_NUM) {
+        APPLOG(APPLOG_ERR, "total_fep_num(%d) exceed max_thrd_num(%d)",
+                lb_conf->total_fep_num, MAX_THRD_NUM);
+    }
+
+    /* get context num for fep */
+    if (config_setting_lookup_int(lb_config, "context_num", &lb_conf->context_num) == CONFIG_FALSE) {
+        APPLOG(APPLOG_ERR, "lb_config.fail to get context_num");
         exit(0);
     } else {
-        APPLOG(APPLOG_ERR, "lb_config.rxonly_port = %d", lb_conf->rxonly_port);
+        APPLOG(APPLOG_ERR, "lb_config.context_num = %d", lb_conf->context_num);
     }
-    if (config_setting_lookup_int(lb_config, "txonly_port", &lb_conf->txonly_port) == CONFIG_FALSE) {
-        APPLOG(APPLOG_ERR, "lb_config.fail to get txonly_port");
-        exit(0);
-    } else {
-        APPLOG(APPLOG_ERR, "lb_config.txonly_port = %d", lb_conf->txonly_port);
-    }
+
     if (config_setting_lookup_int(lb_config, "bundle_bytes", &lb_conf->bundle_bytes) == CONFIG_FALSE) {
         APPLOG(APPLOG_ERR, "lb_config.fail to get bundle_bytes");
         exit(0);
@@ -330,38 +413,40 @@ void load_lb_config(server_conf *svr_conf, lb_global_t *lb_conf)
     } else {
         APPLOG(APPLOG_ERR, "lb_config.flush_tmval = %d", lb_conf->flush_tmval);
     }
+
+
 }
 
 void attach_lb_thread(lb_global_t *lb_conf, main_ctx_t *main_ctx)
 {
-    
-    /* rx thread ctx */
-    main_ctx->fep_rx_thrd.svr_type = TT_RX_ONLY;
-    main_ctx->fep_rx_thrd.listen_port = lb_conf->rxonly_port;
-    main_ctx->fep_rx_thrd.flush_tmval = lb_conf->flush_tmval;
-    main_ctx->fep_rx_thrd.main_ctx = main_ctx;
-    
-    /* tx thread ctx */
-    main_ctx->fep_tx_thrd.svr_type = TT_TX_ONLY;
-    main_ctx->fep_tx_thrd.listen_port = lb_conf->txonly_port;
-    main_ctx->fep_tx_thrd.flush_tmval = lb_conf->flush_tmval;
-    main_ctx->fep_tx_thrd.main_ctx = main_ctx;
-    
-    /* create rx thread */
-    if (pthread_create(&main_ctx->fep_rx_thrd.my_thread_id, NULL, &fep_conn_thread, &main_ctx->fep_rx_thrd) != 0) {
-        APPLOG(APPLOG_ERR, "fail to create thread\n");
-        exit(0);
-    } else {
-        pthread_detach(main_ctx->fep_rx_thrd.my_thread_id);
+    /* CAUTION!!! ALL UNDER THREAD USE THIS */
+    tcp_ctx_t tcp_ctx = {0,};
+    tcp_ctx.flush_tmval = lb_conf->flush_tmval;
+    tcp_ctx.main_ctx = main_ctx;
+
+    // create root node for thread
+    main_ctx->fep_tx_thrd = g_node_new(NULL);
+    main_ctx->fep_rx_thrd = g_node_new(NULL);
+
+    /* fep rx thread create */
+    for (int i = 0; i < lb_conf->total_fep_num; i++) {
+        tcp_ctx.fep_tag = i;
+        tcp_ctx.svc_type = TT_RX_ONLY;
+        config_setting_t *port = config_setting_get_elem(lb_conf->cf_fep_rx_listen_port, i);
+        tcp_ctx.listen_port = config_setting_get_int(port);
+        add_tcp_ctx_to_main(&tcp_ctx, main_ctx->fep_rx_thrd);
     }
-    
-    /* create tx thread */
-    if (pthread_create(&main_ctx->fep_tx_thrd.my_thread_id, NULL, &fep_conn_thread, &main_ctx->fep_tx_thrd) != 0) {
-        APPLOG(APPLOG_ERR, "fail to create thread\n");
-        exit(0);
-    } else {
-        pthread_detach(main_ctx->fep_tx_thrd.my_thread_id);
+    /* fep tx thread create */
+    for (int i = 0; i < lb_conf->total_fep_num; i++) {
+        tcp_ctx.fep_tag = i;
+        tcp_ctx.svc_type = TT_TX_ONLY;
+        config_setting_t *port = config_setting_get_elem(lb_conf->cf_fep_tx_listen_port, i);
+        tcp_ctx.listen_port = config_setting_get_int(port);
+        add_tcp_ctx_to_main(&tcp_ctx, main_ctx->fep_tx_thrd);
     }
+
+    CREATE_LB_THREAD(main_ctx->fep_rx_thrd, sizeof(https_ctx_t), lb_conf->context_num);
+    CREATE_LB_THREAD(main_ctx->fep_tx_thrd, 0, 0);
 
 	/* for stat print small thread */
 	if (pthread_create(&main_ctx->stat_thrd_id, NULL, &fep_stat_thread, main_ctx) != 0) {
