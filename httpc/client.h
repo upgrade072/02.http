@@ -291,7 +291,7 @@ void    order_list();
 conn_list_t *find_packet_index(char *host, int ls_mode);
 #ifdef OAUTH
 acc_token_list_t *get_token_list(int id, int used);
-void print_token_list_raw(acc_token_list_t token_list[]);
+void print_token_list_raw(acc_token_list_t input_token_list[]);
 #endif
 
 /* ------------------------- client.c --------------------------- */
@@ -345,7 +345,7 @@ void    set_iovec(tcp_ctx_t *dest_tcp_ctx, httpc_ctx_t *recv_ctx, const char *de
 void    push_callback(evutil_socket_t fd, short what, void *arg);
 void    iovec_push_req(tcp_ctx_t *dest_tcp_ctx, iovec_item_t *push_req);
 void    stp_err_to_fep(tcp_ctx_t *fep_tcp_ctx, httpc_ctx_t *recv_ctx);
-void    stp_snd_to_peer(const char *peer_addr, tcp_ctx_t *peer_tcp_ctx, httpc_ctx_t *recv_ctx);
+void    stp_snd_to_peer(tcp_ctx_t *peer_tcp_ctx, httpc_ctx_t *recv_ctx);
 void    free_ctx_with_httpc_ctx(httpc_ctx_t *httpc_ctx);
 tcp_ctx_t       *search_dest_via_tag(httpc_ctx_t *httpc_ctx, GNode *root_node);
 void    send_response_to_fep(httpc_ctx_t *httpc_ctx);

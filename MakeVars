@@ -10,7 +10,7 @@ LIB_PATH    = -L../../../lib
 ifeq ($(TARGET),epcf)
 CFLAGS		+= -DEPCF -DLOG_LIB -DOAUTH -DPERFORM
 else ifeq ($(TARGET),epcf_test)
-CFLAGS		+= -DEPCF -DLOG_PRINT -DOAUTH -DTEST
+CFLAGS		+= -DEPCF -DLOG_PRINT -DOAUTH -DTEST -DPERFORM
 else ifeq ($(TARGET),udmr)
 CFLAGS		+= -DUDMR -DLOG_APP
 else ifeq ($(TARGET),ausf)

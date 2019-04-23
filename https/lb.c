@@ -102,7 +102,7 @@ void push_callback(evutil_socket_t fd, short what, void *arg)
 	sock_ctx_t *sock_ctx = get_last_conn_sock(tcp_ctx);
 #endif
 
-    fprintf(stderr, "((%s)) called dest %s (mypid(%jd))\n", __func__, push_item->dest_ip, (intmax_t)util_gettid());
+    //fprintf(stderr, "((%s)) called dest %s (mypid(%jd))\n", __func__, push_item->dest_ip, (intmax_t)util_gettid());
 
     if (sock_ctx == NULL) {
         fprintf(stderr, "((%s)) dest (%s) not exist, unset item\n", __func__, push_item->dest_ip);
@@ -149,13 +149,14 @@ tcp_ctx_t *get_loadshare_turn(https_ctx_t *https_ctx)
 	unsigned int fep_num = g_node_n_children(root_node);
 	tcp_ctx_t *root_data = (tcp_ctx_t *)root_node->data;
 
-	if (fep_num <= 0) {
+	if (fep_num == 0 || root_data == NULL) {
 	   	return NULL;
 	}
 
-	root_data->round_robin_index = (root_data->round_robin_index + 1) % fep_num;
+	int turn_index = (root_data->round_robin_index[https_ctx->thrd_idx]++) % fep_num;
+
 	for (int i = 0; i < fep_num; i++) {
-		int loadshare_turn = (root_data->round_robin_index + 1) % fep_num;
+		int loadshare_turn = (turn_index + i) % fep_num;
 		GNode *nth_thread = g_node_nth_child(root_node, loadshare_turn);
 		if (nth_thread != NULL) {
 			tcp_ctx_t *fep_tcp_ctx = (tcp_ctx_t *)nth_thread->data;
@@ -319,6 +320,12 @@ void fep_stat_print(evutil_socket_t fd, short what, void *arg)
         tcp_ctx_t *fep_rx = (nth_fep_rx == NULL ? NULL : (tcp_ctx_t *)nth_fep_rx->data);
         tcp_ctx_t *fep_tx = (nth_fep_rx == NULL ? NULL : (tcp_ctx_t *)nth_fep_tx->data);
 
+        if (fep_rx == NULL ||
+            fep_tx == NULL) {
+            APPLOG(APPLOG_ERR, "ERR] some of fep thread is NULL !!!");
+            exit(0);
+        }
+
         int fep_rx_used = get_httpcs_buff_used(fep_rx);
 
         APPLOG(APPLOG_ERR, "FEP [%2d] CTX [fep_rx %05d/%05d] FEP TX [%s] (TPS %d) FEP RX [%s]",
@@ -326,7 +333,7 @@ void fep_stat_print(evutil_socket_t fd, short what, void *arg)
                 fep_rx_used,
                 fep_rx->context_num,
                 measure_print(fep_tx->send_bytes, fep_write),
-                fep_rx->tps,
+                fep_tx->tps,
                 measure_print(fep_rx->recv_bytes, fep_read));
 
         clear_context_stat(fep_rx);
@@ -392,26 +399,26 @@ void load_lb_config(server_conf *svr_conf, lb_global_t *lb_conf)
         APPLOG(APPLOG_ERR, "lb_config.fail to get context_num");
         exit(0);
     } else {
-        APPLOG(APPLOG_ERR, "lb_config.context_num = %d", lb_conf->context_num);
+        APPLOG(APPLOG_ERR, "}}  lb_config.context_num = %d", lb_conf->context_num);
     }
 
     if (config_setting_lookup_int(lb_config, "bundle_bytes", &lb_conf->bundle_bytes) == CONFIG_FALSE) {
         APPLOG(APPLOG_ERR, "lb_config.fail to get bundle_bytes");
         exit(0);
     } else {
-        APPLOG(APPLOG_ERR, "lb_config.bundle_bytes = %d", lb_conf->bundle_bytes);
+        APPLOG(APPLOG_ERR, "}}  lb_config.bundle_bytes = %d", lb_conf->bundle_bytes);
     }
     if (config_setting_lookup_int(lb_config, "bundle_count", &lb_conf->bundle_count) == CONFIG_FALSE) {
         APPLOG(APPLOG_ERR, "lb_config.fail to get bundle_count");
         exit(0);
     } else {
-        APPLOG(APPLOG_ERR, "lb_config.bundle_count = %d", lb_conf->bundle_count);
+        APPLOG(APPLOG_ERR, "}}  lb_config.bundle_count = %d", lb_conf->bundle_count);
     }
     if (config_setting_lookup_int(lb_config, "flush_tmval", &lb_conf->flush_tmval) == CONFIG_FALSE) {
         APPLOG(APPLOG_ERR, "lb_config.fail to get flush_tmval");
         exit(0);
     } else {
-        APPLOG(APPLOG_ERR, "lb_config.flush_tmval = %d", lb_conf->flush_tmval);
+        APPLOG(APPLOG_ERR, "}}  lb_config.flush_tmval = %d", lb_conf->flush_tmval);
     }
 
 
@@ -425,8 +432,8 @@ void attach_lb_thread(lb_global_t *lb_conf, main_ctx_t *main_ctx)
     tcp_ctx.main_ctx = main_ctx;
 
     // create root node for thread
-    main_ctx->fep_tx_thrd = g_node_new(NULL);
-    main_ctx->fep_rx_thrd = g_node_new(NULL);
+    main_ctx->fep_tx_thrd = new_tcp_ctx(&tcp_ctx);
+    main_ctx->fep_rx_thrd = new_tcp_ctx(&tcp_ctx);
 
     /* fep rx thread create */
     for (int i = 0; i < lb_conf->total_fep_num; i++) {

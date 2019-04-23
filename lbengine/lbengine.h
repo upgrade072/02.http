@@ -26,6 +26,8 @@
 #include <glib-2.0/gmodule.h>
 #include <libconfig.h>
 
+#include <http_comm.h>
+
 #define MAX_IOV_CNT 3 // header + vheader + body
 #define MAX_IOV_PUSH 256
 
@@ -108,7 +110,7 @@ typedef struct tcp_ctx {
 	int flush_tmval;
 
 	/* use by HTTPS for RR request */
-	int round_robin_index;
+	int round_robin_index[MAX_THRD_NUM];
 
     void *main_ctx;
     GNode *root_conn;

@@ -304,8 +304,8 @@ void *fep_conn_thread(void *arg)
     listen_addr.sin_family = AF_INET;
     listen_addr.sin_port = htons(tcp_ctx->listen_port);
 
-    fprintf(stderr, ">>>[ %-20s ] thread id [%jd] will listen [%s:%5d]<<<\n",
-            __func__, (intmax_t)util_gettid(), tcp_ctx->svc_type == TT_RX_ONLY ? "rx only" : "tx only", tcp_ctx->listen_port);
+    fprintf(stderr, ">>>[ %s / for FEP %02d] thread id [%jd] will listen [%s:%5d]<<<\n",
+            __func__, tcp_ctx->fep_tag, (intmax_t)util_gettid(), tcp_ctx->svc_type == TT_RX_ONLY ? "rx only" : "tx only", tcp_ctx->listen_port);
 
     // EVUTIL_SOCK_NONBLOCK default setted
     // backlog setted to 16
@@ -454,8 +454,8 @@ void *fep_peer_thread(void *arg)
         exit(0);
     }
 
-    fprintf(stderr, ">>>[ %-20s ] thread id [%jd] connect to  [peer(s):%5d]<<<\n",
-            __func__, (intmax_t)util_gettid(), tcp_ctx->listen_port);
+    fprintf(stderr, ">>>[ %s / for FEP %02d] thread id [%jd] connect to  [peer(s): %s:%5d]<<<\n",
+            __func__, tcp_ctx->fep_tag, (intmax_t)util_gettid(), tcp_ctx->peer_ip_addr, tcp_ctx->listen_port);
 
     struct timeval tm_interval = {1, 0}; // 1sec interval
     struct event *ev_tmr;
@@ -474,8 +474,6 @@ void *fep_peer_thread(void *arg)
 
 void CREATE_LB_THREAD(GNode *root_node, size_t context_size, int context_num)
 {   
-	fprintf(stderr, "{{{dbg}}} %s called!\n", __func__);
-
     unsigned int thrd_num = g_node_n_children(root_node);
     for (int i = 0; i < thrd_num; i++) {
         GNode *nth_thrd = g_node_nth_child(root_node, i);
@@ -484,7 +482,7 @@ void CREATE_LB_THREAD(GNode *root_node, size_t context_size, int context_num)
 		if (context_size != 0 && context_num != 0) {
 			tcp_ctx->buff_exist = 1; // it use malloc buffer
 			if ((tcp_ctx->httpcs_ctx_buff = calloc(context_num, context_size)) == NULL) {
-				fprintf(stderr, "ERR} fail to malloc for recv ctx ( %ld x %d ) !!!\n",
+				fprintf(stderr, "ERR} fail to malloc for recv ctx ( %lu x %d ) !!!\n",
 						context_size, context_num);
 				exit(0);
 			}	
