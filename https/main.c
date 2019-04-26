@@ -487,7 +487,9 @@ static int on_header_callback(nghttp2_session *session,
 #endif
 			} else {
 				/* vHeader relay */
-				set_defined_header(VHDR_INDEX[1], header_name, header_value, &https_ctx->user_ctx);
+				if (set_defined_header(VHDR_INDEX[1], header_name, header_value, &https_ctx->user_ctx) != -1) {
+					https_ctx->user_ctx.head.vheaderCnt ++;
+				}
 			}
 			break;
 	}
@@ -1358,9 +1360,6 @@ int initialize()
 	/* create recv-mq */
 #ifndef TEST
     sprintf(fname,"%s/%s", env, SYSCONF_FILE);
-#else
-	sprintf(fname, "%s", "../dev_check/temp.conf");
-#endif
     if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", myProcName, 3, tmp) < 0)
         return (-1);
     key = strtol(tmp,0,0);
@@ -1383,6 +1382,7 @@ int initialize()
         APPLOG(APPLOG_ERR, "[%s] msgget fail; key=0x%x,err=%d(%s)", __func__, key, errno, strerror(errno));
         return -1;
     }
+#endif
 
 	/* alloc context memory */
 	for ( i = 0; i < SERVER_CONF.worker_num; i++) {
@@ -1466,11 +1466,13 @@ static void main_loop(const char *key_file, const char *cert_file) {
     ev_status = event_new(evbase, -1, EV_PERSIST, send_status_to_omp, NULL);
     event_add(ev_status, &tm_status);
 
+#ifndef TEST
 	/* system message handle */
     struct timeval tm_milisec = {0, 100000}; // 100 ms
     struct event *ev_main;
     ev_main = event_new(evbase, -1, EV_PERSIST, message_handle, NULL);
     event_add(ev_main, &tm_milisec);
+#endif
 
 	/* start loop */
 	event_base_loop(evbase, EVLOOP_NO_EXIT_ON_EMPTY);

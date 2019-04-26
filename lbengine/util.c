@@ -128,3 +128,11 @@ char *measure_print(int bytes, char *return_str)
     return return_str;
 }
 
+void printf_config_list_int(char *annotation, config_setting_t *int_list)
+{
+	int item_count = config_setting_length(int_list);
+	for (int i = 0; i < item_count; i++) {
+		config_setting_t *item = config_setting_get_elem(int_list, i);
+		fprintf(stderr, "}} %2d st %s: %d\n", i, annotation, config_setting_get_int(item));
+	}
+}

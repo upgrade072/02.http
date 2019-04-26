@@ -155,7 +155,9 @@ static int on_header_callback(nghttp2_session *session,
 				sprintf(httpc_ctx->user_ctx.head.contentEncoding, "%s", header_value);
 			} else {
 				/* vHeader relay */
-				set_defined_header(VHDR_INDEX[1], header_name, header_value, &httpc_ctx->user_ctx);
+				if (set_defined_header(VHDR_INDEX[1], header_name, header_value, &httpc_ctx->user_ctx) != -1) {
+					httpc_ctx->user_ctx.head.vheaderCnt ++;
+				}
 			}
 			break;
 	}
@@ -1124,11 +1126,13 @@ void main_loop()
     ev_status = event_new(evbase, -1, EV_PERSIST, send_status_to_omp, NULL);
     event_add(ev_status, &tm_status);
 
+#ifndef TEST
 	/* system message handle */
 	struct timeval tm_milisec = {0, 100000}; // 100 ms
 	struct event *ev_main;
 	ev_main = event_new(evbase, -1, EV_PERSIST, message_handle, NULL);
 	event_add(ev_main, &tm_milisec);
+#endif
 
 	/* start loop */
 	event_base_loop(evbase, EVLOOP_NO_EXIT_ON_EMPTY);
@@ -1228,9 +1232,6 @@ int initialize()
 	/* create recv-mq */
 #ifndef TEST
 	sprintf(fname,"%s/%s", env, SYSCONF_FILE);
-#else
-	sprintf(fname,"%s", "../dev_check/temp.conf");
-#endif
 	if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", myProcName, 3, tmp) < 0) {
 		APPLOG(APPLOG_ERR, "configlib get token APPLICATIONS fail");
 		return -1;
@@ -1255,6 +1256,7 @@ int initialize()
 		APPLOG(APPLOG_ERR, "[%s] msgget fail; key=0x%x,err=%d(%s)", __func__, key, errno, strerror(errno));
 		return -1;
 	}
+#endif
 
 	/* alloc context memory */
 	for ( i = 0; i < CLIENT_CONF.worker_num; i++) {

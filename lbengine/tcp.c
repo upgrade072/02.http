@@ -9,17 +9,37 @@ GNode *new_node_conn(sock_ctx_t *sock_ctx)
     return g_node_new(data);
 }
 
-GNode *add_node_conn(GNode *parent, GNode *child, GNode *looser_brother)
+GNode *add_node(GNode *parent, GNode *child, GNode *looser_brother)
 {
     return g_node_insert_before(parent, looser_brother, child);
 }
 
-void remove_node_conn(GNode *node)
+void remove_node(GNode *node)
 {
 	free(node->data);
     return g_node_destroy(node);
 }
 
+GNode *new_tcp_ctx(tcp_ctx_t *tcp_ctx)
+{
+	tcp_ctx_t *data = malloc(sizeof(tcp_ctx_t));
+	memcpy(data, tcp_ctx, sizeof(tcp_ctx_t));
+
+	return g_node_new(data);
+}
+
+void add_tcp_ctx_to_main(tcp_ctx_t *tcp_ctx, GNode *where_to_add)
+{   
+	GNode *new_tcp = new_tcp_ctx(tcp_ctx);
+	if (new_tcp != NULL)  {
+		add_node(where_to_add, new_tcp, NULL);
+	} else {
+		fprintf(stderr, "fail to create thread ctx!!!\n");
+		exit(0);
+	}
+}
+
+// deprecated
 sock_ctx_t *search_node_by_ip(tcp_ctx_t *tcp_ctx, const char *ipaddr)
 {
     GNode *root = tcp_ctx->root_conn;
@@ -33,6 +53,17 @@ sock_ctx_t *search_node_by_ip(tcp_ctx_t *tcp_ctx, const char *ipaddr)
 		}
     }
     return (sock_ctx_t *)NULL;
+}
+
+sock_ctx_t *get_last_conn_sock(tcp_ctx_t *tcp_ctx)
+{
+    GNode *root = tcp_ctx->root_conn;
+	GNode *last_conn = g_node_last_child(root);
+	if (last_conn != NULL) {
+		return (sock_ctx_t *)last_conn->data;
+	} else {
+		return (sock_ctx_t *)NULL;
+	}
 }
 
 sock_ctx_t *return_nth_sock(tcp_ctx_t *tcp_ctx, int idx)
@@ -54,16 +85,10 @@ int return_sock_num(tcp_ctx_t *tcp_ctx)
 
 int check_conf_via_sock(tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx)
 {
-    config_setting_t *peer_list = tcp_ctx->peer_list;
-    int peer_cnt = config_setting_length(peer_list);
-
-    for (int i = 0; i < peer_cnt; i++) {
-        config_setting_t *list = config_setting_get_elem(peer_list, i);
-        const char *peer_addr = config_setting_get_string(list);
-        if (!strcmp(sock_ctx->client_ip, peer_addr))
-            return 1; // find
-    }
-    return 0; // not find
+	if (!strcmp(sock_ctx->client_ip, tcp_ctx->peer_ip_addr))
+		return 1; // find
+	else
+		return 0; // not find
 }
 
 void unexpect_readcb(struct bufferevent *bev, void *arg)
@@ -101,7 +126,7 @@ void release_conncb(sock_ctx_t *sock_ctx)
     // remove whole push item, unset caller ctx
     unset_pushed_item(&sock_ctx->push_items, sock_ctx->push_items.item_bytes);
     // remove conn info 
-    remove_node_conn(sock_ctx->my_conn);
+    remove_node(sock_ctx->my_conn);
 }
 
 void svr_sock_eventcb(struct bufferevent *bev, short events, void *user_data)
@@ -151,7 +176,7 @@ sock_ctx_t *assign_sock_ctx(tcp_ctx_t *tcp_ctx, evutil_socket_t fd, struct socka
 
     GNode *new_conn = new_node_conn(&sock_ctx);
     if (new_conn != NULL) {
-        add_node_conn(tcp_ctx->root_conn, new_conn, NULL);
+        add_node(tcp_ctx->root_conn, new_conn, NULL);
         sock_ctx_t *sock_ctx = (sock_ctx_t *)new_conn->data;
         sock_ctx->my_conn = new_conn;
         return sock_ctx;
@@ -189,11 +214,27 @@ int sock_add_flushcb(tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx)
     return event_add(sock_ctx->event, &tm_interval);
 }
 
+void release_older_sock(tcp_ctx_t *tcp_ctx)
+{
+	fprintf(stderr, "LB-ENGINE] new sock connected release olds conn!\n");
+
+    GNode *root = tcp_ctx->root_conn;
+    unsigned int conn_num = g_node_n_children(root);
+
+    for (int i = 0; i < conn_num; i++) {
+        GNode *nth_conn = g_node_nth_child(root, i);
+        sock_ctx_t *sock_ctx = (sock_ctx_t *)nth_conn->data;
+		release_conncb(sock_ctx);
+    }
+}
+
 void lb_listener_cb(struct evconnlistener *listener, evutil_socket_t fd,
         struct sockaddr *sa, int socklen, void *user_data)
 {
     tcp_ctx_t *tcp_ctx = (tcp_ctx_t *)user_data;
     struct event_base *evbase = tcp_ctx->evbase;
+
+	release_older_sock(tcp_ctx);
 
     sock_ctx_t *sock_ctx = assign_sock_ctx(tcp_ctx, fd, sa);
     if (sock_ctx == NULL) {
@@ -217,7 +258,7 @@ void lb_listener_cb(struct evconnlistener *listener, evutil_socket_t fd,
         return;
     }
 
-    switch (tcp_ctx->svr_type) {
+    switch (tcp_ctx->svc_type) {
         case TT_RX_ONLY:
             fprintf(stderr, "LB-ENGINE] {dbg} rx only connected!\n");
             bufferevent_setcb(bev, lb_buff_readcb, NULL, svr_sock_eventcb, sock_ctx);
@@ -263,15 +304,15 @@ void *fep_conn_thread(void *arg)
     listen_addr.sin_family = AF_INET;
     listen_addr.sin_port = htons(tcp_ctx->listen_port);
 
-    fprintf(stderr, ">>>[ %-20s ] thread id [%jd] will listen [%s:%5d]<<<\n",
-            __func__, (intmax_t)util_gettid(), tcp_ctx->svr_type == TT_RX_ONLY ? "rx only" : "tx only", tcp_ctx->listen_port);
+    fprintf(stderr, ">>>[ %s / for FEP %02d] thread id [%jd] will listen [%s:%5d]<<<\n",
+            __func__, tcp_ctx->fep_tag, (intmax_t)util_gettid(), tcp_ctx->svc_type == TT_RX_ONLY ? "rx only" : "tx only", tcp_ctx->listen_port);
 
     // EVUTIL_SOCK_NONBLOCK default setted
     // backlog setted to 16
     if ((listener = tcp_ctx->listener = evconnlistener_new_bind(evbase, lb_listener_cb, (void *)tcp_ctx,
             LEV_OPT_REUSEABLE|LEV_OPT_CLOSE_ON_FREE|LEV_OPT_THREADSAFE, 
             16, (struct sockaddr*)&listen_addr, sizeof(listen_addr))) == NULL) {
-        fprintf(stderr, "LB-ENGINE] Could not create a listener!\n");
+        fprintf(stderr, "LB-ENGINE] Could not create a listener! (port : %d)\n", tcp_ctx->listen_port);
         return (void *)NULL;
     }
 
@@ -378,16 +419,11 @@ void check_peer_conn(evutil_socket_t fd, short what, void *arg)
     sock_ctx_t *sock_ctx = NULL;
 
     // config --> sock check --> create new
-    int peer_cnt = config_setting_length(tcp_ctx->peer_list);
-    for (int i = 0; i < peer_cnt; i++) {
-        config_setting_t *list = config_setting_get_elem(tcp_ctx->peer_list, i);
-        const char *peer_addr = config_setting_get_string(list);
-        if (search_node_by_ip(tcp_ctx, peer_addr) == NULL) {
-            sock_ctx = create_new_peer_sock(tcp_ctx, peer_addr);
-            fprintf(stderr, "LB-ENGINE] peer %s not exist create new one ... %s\n", 
-                    peer_addr, sock_ctx == NULL ?  "failed" : "success");
+	if (search_node_by_ip(tcp_ctx, tcp_ctx->peer_ip_addr) == NULL) {
+		sock_ctx = create_new_peer_sock(tcp_ctx, tcp_ctx->peer_ip_addr);
+		fprintf(stderr, "LB-ENGINE] peer %s not exist create new one ... %s\n", 
+				tcp_ctx->peer_ip_addr, sock_ctx == NULL ?  "failed" : "success");
 		}
-    }
 
     // sock --> config check --> remove one
     int sock_cnt = return_sock_num(tcp_ctx);
@@ -418,8 +454,8 @@ void *fep_peer_thread(void *arg)
         exit(0);
     }
 
-    fprintf(stderr, ">>>[ %-20s ] thread id [%jd] connect to  [peer(s):%5d]<<<\n",
-            __func__, (intmax_t)util_gettid(), tcp_ctx->listen_port);
+    fprintf(stderr, ">>>[ %s / for FEP %02d] thread id [%jd] connect to  [peer(s): %s:%5d]<<<\n",
+            __func__, tcp_ctx->fep_tag, (intmax_t)util_gettid(), tcp_ctx->peer_ip_addr, tcp_ctx->listen_port);
 
     struct timeval tm_interval = {1, 0}; // 1sec interval
     struct event *ev_tmr;
@@ -436,3 +472,44 @@ void *fep_peer_thread(void *arg)
 	return (void *)NULL;
 }
 
+void CREATE_LB_THREAD(GNode *root_node, size_t context_size, int context_num)
+{   
+    unsigned int thrd_num = g_node_n_children(root_node);
+    for (int i = 0; i < thrd_num; i++) {
+        GNode *nth_thrd = g_node_nth_child(root_node, i);
+        tcp_ctx_t *tcp_ctx = (tcp_ctx_t *)nth_thrd->data;
+
+		if (context_size != 0 && context_num != 0) {
+			tcp_ctx->buff_exist = 1; // it use malloc buffer
+			if ((tcp_ctx->httpcs_ctx_buff = calloc(context_num, context_size)) == NULL) {
+				fprintf(stderr, "ERR} fail to malloc for recv ctx ( %lu x %d ) !!!\n",
+						context_size, context_num);
+				exit(0);
+			}	
+		}
+		tcp_ctx->context_num = context_num;
+
+        switch (tcp_ctx->svc_type) {
+            case TT_RX_ONLY:
+            case TT_TX_ONLY:
+                if (pthread_create(&tcp_ctx->thread_id, NULL, &fep_conn_thread, tcp_ctx) != 0) {
+                    fprintf(stderr, "ERR} cant invoke thread type %d, %d th\n", tcp_ctx->svc_type, i);
+                    exit(0);
+                } else {
+                    pthread_detach(tcp_ctx->thread_id);
+                }
+                break;
+            case TT_PEER_SEND:
+                if (pthread_create(&tcp_ctx->thread_id, NULL, &fep_peer_thread, tcp_ctx) != 0) {
+                    fprintf(stderr, "ERR} cant invoke thread type %d, %d th\n", tcp_ctx->svc_type, i);
+                    exit(0);
+                } else {
+                    pthread_detach(tcp_ctx->thread_id);
+                }
+                break;
+            default:
+                fprintf(stderr, "ERR} in func (%s) unknown svc_type (%d)\n", __func__, tcp_ctx->svc_type);
+                break;
+        }
+    }
+}

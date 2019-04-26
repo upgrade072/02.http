@@ -5,16 +5,18 @@
 /* 사용 virtual 헤더에 대한 enum/string 을 정의 */
 // VH_START 와 VH_END 는 유지
 typedef enum {
-	VH_START,
-	VH_CONTENT_TYPE,
-	VH_LOCATION,
-	VH_END
+VH_START,
+VH_CONTENT_TYPE,
+VH_LOCATION,
+VH_ACCEPT,
+VH_END
 } http_vheader;
 #define HTTP_VHEADER "\
 VH_START\n\
-Content-Type\n\
+content-type\n\
 location\n\
-VH_END"
+accept\n\
+VH_END\n"
 
 #define MAX_HDR_RELAY_CNT 12
 #define MAX_HDR_NAME_LEN 32
