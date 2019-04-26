@@ -69,11 +69,14 @@ void set_iovec(tcp_ctx_t *dest_tcp_ctx, https_ctx_t *https_ctx, const char *dest
     }
     // vheader
     if (user_ctx->head.vheaderCnt) {
+		//fprintf(stderr, "{{{{dbg}}} vheader cnt %d\n", user_ctx->head.vheaderCnt);
         push_req->iov[item_cnt].iov_base = user_ctx->vheader;
         push_req->iov[item_cnt].iov_len = user_ctx->head.vheaderCnt * sizeof(hdr_relay);
         item_cnt++;
         total_bytes += user_ctx->head.vheaderCnt * sizeof(hdr_relay);
-    }
+    } else {
+		//fprintf(stderr, "{{{{dbg}}} vheader cnt 0!!!!\n");
+	}
     // body
     if (user_ctx->head.bodyLen) {
         push_req->iov[item_cnt].iov_base = user_ctx->body;
@@ -153,7 +156,7 @@ tcp_ctx_t *get_loadshare_turn(https_ctx_t *https_ctx)
 	   	return NULL;
 	}
 
-	int turn_index = (root_data->round_robin_index[https_ctx->thrd_idx]++) % fep_num;
+	int turn_index = (root_data->round_robin_index[https_ctx->thrd_idx]) % fep_num;
 
 	for (int i = 0; i < fep_num; i++) {
 		int loadshare_turn = (turn_index + i) % fep_num;
@@ -163,12 +166,21 @@ tcp_ctx_t *get_loadshare_turn(https_ctx_t *https_ctx)
 			int sock_num = g_node_n_children(fep_tcp_ctx->root_conn);
 			if (sock_num > 0) {
 				https_ctx->fep_tag = fep_tcp_ctx->fep_tag;
+				root_data->round_robin_index[https_ctx->thrd_idx] = (fep_tcp_ctx->fep_tag + 1);
 				return fep_tcp_ctx;
 			}
 		}
 	}
 
 	return NULL;
+}
+
+void gb_clean_ctx(https_ctx_t *https_ctx)
+{
+	//fprintf(stderr, "{{{dbg}}} %s called!\n", __func__);
+
+    memset(https_ctx->user_ctx.vheader, 0x00, sizeof(hdr_relay) * https_ctx->user_ctx.head.vheaderCnt);
+    https_ctx->user_ctx.head.vheaderCnt = 0;
 }
 
 int send_request_to_fep(https_ctx_t *https_ctx)
@@ -184,7 +196,8 @@ int send_request_to_fep(https_ctx_t *https_ctx)
     //set_iovec(fep_tcp_ctx, https_ctx, sock_ctx->client_ip, &https_ctx->push_req, NULL, NULL);
 	// TODO!!!! check dest ip useless or not, if useless remove it
 	// TODO!!!! where to get fep_tag
-    set_iovec(fep_tcp_ctx, https_ctx, NULL, &https_ctx->push_req, NULL, NULL);
+    //set_iovec(fep_tcp_ctx, https_ctx, NULL, &https_ctx->push_req, NULL, NULL);
+    set_iovec(fep_tcp_ctx, https_ctx, NULL, &https_ctx->push_req, gb_clean_ctx, https_ctx);
 
     iovec_push_req(fep_tcp_ctx, &https_ctx->push_req);
 
@@ -222,6 +235,7 @@ void send_to_worker(https_ctx_t *recv_ctx)
 	set_intl_req_msg(&intl_req, thrd_index, ctx_id, session_index, session_id, stream_id, HTTP_INTL_SND_REQ);
 
 	assign_rcv_ctx_info(https_ctx, &recv_ctx->user_ctx);
+	//fprintf(stderr, "{{{dbg}}} in fep response vheader cnt %d\n", https_ctx->user_ctx.head.vheaderCnt);
 
 	if (msgsnd(THRD_WORKER[thrd_index].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0) == -1) {
 		APPLOG(APPLOG_DEBUG, "(%s) internal msgsnd to worker [%d] failed", __func__, thrd_index);

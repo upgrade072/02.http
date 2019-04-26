@@ -487,7 +487,9 @@ static int on_header_callback(nghttp2_session *session,
 #endif
 			} else {
 				/* vHeader relay */
-				set_defined_header(VHDR_INDEX[1], header_name, header_value, &https_ctx->user_ctx);
+				if (set_defined_header(VHDR_INDEX[1], header_name, header_value, &https_ctx->user_ctx) != -1) {
+					https_ctx->user_ctx.head.vheaderCnt ++;
+				}
 			}
 			break;
 	}

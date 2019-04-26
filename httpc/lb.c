@@ -35,6 +35,8 @@ httpc_ctx_t *get_assembled_ctx(tcp_ctx_t *tcp_ctx, char *ptr)
 	char *body = ptr + sizeof(AhifHttpCSMsgHeadType) + (sizeof(hdr_relay) * vheaderCnt);
 	int bodyLen = head->bodyLen;
 
+	//fprintf(stderr, "{{{dbg}}} recv tcp ctx fep_tag %d\n", tcp_ctx->fep_tag);
+
 	if((recv_ctx = get_null_recv_ctx(tcp_ctx)) == NULL)
 		return NULL;
 
@@ -68,6 +70,7 @@ void send_to_worker(conn_list_t *httpc_conn, httpc_ctx_t *recv_ctx)
 	//
 	httpc_ctx->recv_time_index = THRD_WORKER[thrd_idx].time_index;
 	save_session_info(httpc_ctx, thrd_idx, sess_idx, session_id, ctx_idx, httpc_conn);
+	httpc_ctx->fep_tag = recv_ctx->fep_tag;
 	httpc_ctx->occupied = 1; /* after time set */
 
 	memcpy(&httpc_ctx->user_ctx.head, &recv_ctx->user_ctx.head, AHIF_HTTPCS_MSG_HEAD_LEN);
@@ -137,6 +140,7 @@ void push_callback(evutil_socket_t fd, short what, void *arg)
 #if 0
     sock_ctx_t *sock_ctx = search_node_by_ip(tcp_ctx, push_item->dest_ip);
 #else
+	//fprintf(stderr, "{{{{dbg}}} %s fep tag %d\n", __func__, tcp_ctx->fep_tag);
 	sock_ctx_t *sock_ctx = get_last_conn_sock(tcp_ctx);
 #endif
 
@@ -235,12 +239,17 @@ tcp_ctx_t *search_dest_via_tag(httpc_ctx_t *httpc_ctx, GNode *root_node)
 
 void send_response_to_fep(httpc_ctx_t *httpc_ctx)
 {
+	//fprintf(stderr, "{{{dbg}}} in %s httpc ctx fep_tag %d\n", __func__, httpc_ctx->fep_tag);
+
 	// TODO!!!! check connect is exist or not !!!
 	tcp_ctx_t *fep_tcp_ctx = search_dest_via_tag(httpc_ctx, MAIN_CTX.fep_tx_thrd);
+
 	if (fep_tcp_ctx == NULL) {
 		APPLOG(APPLOG_ERR, "(%s) fail to search origin fep (%d)", __func__, httpc_ctx->fep_tag);
 		return;
 	}
+
+	//fprintf(stderr, "{{{dbg}}} in %s vheader cnt %d\n", __func__, httpc_ctx->user_ctx.head.vheaderCnt);
 
 	//set_iovec(fep_tcp_ctx, httpc_ctx, httpc_ctx->user_ctx.head.fep_origin_addr, &httpc_ctx->push_req, free_ctx_with_httpc_ctx, httpc_ctx);
 	// TODO!!!! check dest ip useless or not, if useless remove it
@@ -256,7 +265,7 @@ void send_to_peerlb(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx)
 
 	if (recv_ctx->user_ctx.head.hopped_cnt != 0 ||
 			peer_tcp_ctx == NULL) {
-		fprintf(stderr, "{{{{dbg}}} hopped cnt exist or peer ctx NULL !!!!!\n");
+		//fprintf(stderr, "{{{{dbg}}} hopped cnt exist or peer ctx NULL !!!!!\n");
 		return stp_err_to_fep(fep_tcp_ctx, recv_ctx); /* send err to fep */
 	}
 

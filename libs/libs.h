@@ -70,7 +70,7 @@ void	json_delimiter(char *string);
 char    *replaceAll(char *s, const char *olds, const char *news) ;
 
 /* ------------------------- libhdr.c --------------------------- */
-void    set_defined_header(hdr_index_t HDR_INDEX[], char *name, char *val, AhifHttpCSMsgType *appData);
+int     set_defined_header(hdr_index_t HDR_INDEX[], char *name, char *val, AhifHttpCSMsgType *appData);
 int		assign_more_headers(hdr_index_t HDR_INDEX[], nghttp2_nv *hdrs, int size, int cur_len, AhifHttpCSMsgType *appData);
 void    print_header(FILE *f, const uint8_t *name, size_t namelen, const uint8_t *value, size_t valuelen);
 void    print_headers(FILE *f, nghttp2_nv *nva, size_t nvlen);

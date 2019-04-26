@@ -13,7 +13,7 @@ VH_END
 } http_vheader;
 #define HTTP_VHEADER "\
 VH_START\n\
-Content-Type\n\
+content-type\n\
 location\n\
 accept\n\
 VH_END\n"

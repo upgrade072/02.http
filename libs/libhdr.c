@@ -4,34 +4,45 @@
 
 /* httpc/s global */
 
-void set_defined_header(hdr_index_t HDR_INDEX[], char *name, char *val, AhifHttpCSMsgType *appData)
+int set_defined_header(hdr_index_t HDR_INDEX[], char *name, char *val, AhifHttpCSMsgType *appData)
 {
 	hdr_relay *vheader = appData->vheader;
 
+	//fprintf(stderr, "{{{dbg}}} %s called!!! with name [%s] val [%s]\n", __func__, name, val);
+
 	/* check header content length */
-	if (strlen(val) >= MAX_HDR_BODY_LEN)
-		return;
+	if (strlen(val) >= MAX_HDR_BODY_LEN) {
+		//fprintf(stderr, "{{{dbg}}} %s over MAX_HDR_BODY_LEN(256)\n", __func__);
+		return (-1);
+	}
 
 	/* get empty slot */
 	int index = 0;
 	for (; index < MAX_HDR_RELAY_CNT; index++) {
-		if (vheader[index].vheader_id == 0)
+		if (vheader[index].vheader_id == 0) {
+			//fprintf(stderr, "{{{dbg}}} %s find empty slod %d\n", __func__, index);
 			break;
+		}
 	}
 
 	/* if all slot full we cant */
-	if (index == MAX_HDR_RELAY_CNT)
-		return;
+	if (index == MAX_HDR_RELAY_CNT) {
+		//fprintf(stderr, "{{{dbg}}} %s over MAX_HDR_RELAY_CNT (12?)\n", __func__);
+		return (-1);
+	}
 
 	/* search header-enum and set to appData */
 	hdr_index_t *ptr = search_vhdr(HDR_INDEX, VH_END, name);
 
 	if (ptr != NULL) {
 		vheader[index].vheader_id = ptr->vheader_id;
+		//fprintf(stderr, "{{{dbg}}} success all done id [%d]\n", vheader[index].vheader_id);
 		sprintf(vheader[index].vheader_body, "%s", val);
+		return 0;
 	}
 
-	return;
+	//fprintf(stderr, "{{{dbg}}} fail ptr != NULL all done\n");
+	return (-1);
 }
 
 int assign_more_headers(hdr_index_t HDR_INDEX[], nghttp2_nv *hdrs, int size, int cur_len, AhifHttpCSMsgType *appData)

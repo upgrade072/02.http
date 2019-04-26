@@ -155,7 +155,9 @@ static int on_header_callback(nghttp2_session *session,
 				sprintf(httpc_ctx->user_ctx.head.contentEncoding, "%s", header_value);
 			} else {
 				/* vHeader relay */
-				set_defined_header(VHDR_INDEX[1], header_name, header_value, &httpc_ctx->user_ctx);
+				if (set_defined_header(VHDR_INDEX[1], header_name, header_value, &httpc_ctx->user_ctx) != -1) {
+					httpc_ctx->user_ctx.head.vheaderCnt ++;
+				}
 			}
 			break;
 	}
