@@ -9,6 +9,10 @@
 #define CF_KEY_FILE         "server_cfg.oauth_config.key_file"
 #define CF_CREDENTIAL       "server_cfg.oauth_config.credential"
 #define CF_LB_CONFIG        "server_cfg.lb_config"
+#define CF_DRELAY_CONFIG	"server_cfg.direct_relay"
+#define CF_DRELAY_ENABLE	"server_cfg.direct_relay.enable"
+#define CF_CALLBACK_IP		"server_cfg.direct_relay.callback_ip"
+#define CF_CALLBACK_PORT	"server_cfg.direct_relay.callback_port"
 #define CF_ALLOW_LIST		"allow_list"
 
 extern server_conf SERVER_CONF;
@@ -121,6 +125,41 @@ int config_load()
 		}
     }
 	APPLOG(APPLOG_ERR, "\n");
+
+	/* direct relay cfg loading */
+	if ((setting = config_lookup(&CFG, CF_DRELAY_CONFIG)) == NULL ||
+			config_lookup_int(&CFG, CF_DRELAY_ENABLE, &SERVER_CONF.dr_enabled) == CONFIG_FALSE ||
+			SERVER_CONF.dr_enabled == 0) {
+		APPLOG(APPLOG_ERR, "direct_replay section not exist or .enabled not exist or .enabled == 0");
+		APPLOG(APPLOG_ERR, "\n");
+	} else {
+		if (config_lookup_string(&CFG, CF_CALLBACK_IP, &SERVER_CONF.callback_ip) == CONFIG_FALSE) {
+			APPLOG(APPLOG_ERR, "direct_relay section .callback_ip not exist");
+			goto CF_LOAD_ERR;
+		} else {
+			APPLOG(APPLOG_ERR, "direct_relay section .callback_ip [%s]", SERVER_CONF.callback_ip);
+		}
+		if ((setting = config_lookup(&CFG, CF_CALLBACK_PORT)) == NULL) {
+			APPLOG(APPLOG_ERR, "direct_relay section .callback_port not exist");
+			goto CF_LOAD_ERR;
+		} else {
+			int count = config_setting_length(setting);
+
+			APPLOG(APPLOG_ERR, "direct relay ports ars ... (%d)", count);
+			for (int i = 0; i < count; i++) {
+				int port = config_setting_get_int_elem(setting, i);
+				if (i >= MAX_PORT_NUM) {
+					APPLOG(APPLOG_ERR, "direct relay section .callback_port exceed max[%d]", MAX_PORT_NUM);
+					break;
+				} else {
+					SERVER_CONF.callback_port[i] = port;
+					APPLOG(APPLOG_ERR, "  listen [%s:%d] direct relay to fep [%02d]",
+							SERVER_CONF.callback_ip, SERVER_CONF.callback_port[i], i);
+				}
+			}
+		}
+		APPLOG(APPLOG_ERR, "\n");
+	}
 
     /* worker num cfg loading */
     int worker_num;

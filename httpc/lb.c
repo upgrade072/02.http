@@ -16,7 +16,7 @@ httpc_ctx_t *get_null_recv_ctx(tcp_ctx_t *tcp_ctx)
 		if (recv_ctx->occupied == 0) {
 			memset(recv_ctx, 0x00, sizeof(httpc_ctx_t));
 			recv_ctx->fep_tag = tcp_ctx->fep_tag;
-			recv_ctx->recv_thread_id = tcp_ctx->thread_id;
+			//recv_ctx->recv_thread_id = tcp_ctx->thread_id;
 			recv_ctx->occupied = 1;
 			return recv_ctx;
 		}

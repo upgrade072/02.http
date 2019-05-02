@@ -67,6 +67,11 @@ typedef struct server_conf {
 	char key_file[128];
 	char credential[MAX_ACC_TOKEN_LEN];
 
+	/* for direct relay to fep */
+	int	dr_enabled;							// 0 (not) 1 (true)
+	const char *callback_ip;				// for callback uri ipaddr 
+	int callback_port[MAX_PORT_NUM];		// for callback uri port
+
     config_setting_t *lb_config;
 } server_conf;
 
@@ -104,6 +109,10 @@ typedef enum conn_status {
 typedef struct app_context {
 	SSL_CTX *ssl_ctx;
 	struct event_base *evbase;
+
+	// for fep direct relay
+	int is_direct_sock;
+	int relay_fep_tag;
 } app_context;
 
 typedef struct thrd_context {
@@ -147,6 +156,10 @@ typedef struct http2_session_data {
 #ifdef OAUTH
 	int auth_act;
 #endif
+
+	// for direct relay
+	int is_direct_session;
+	int relay_fep_tag;
 } http2_session_data;
 
 typedef struct https_ctx {
@@ -167,7 +180,10 @@ typedef struct https_ctx {
     iovec_item_t push_req;
 
 	int fep_tag;
-	pthread_t recv_thread_id;
+	//pthread_t recv_thread_id;
+
+	int is_direct_ctx;
+	int relay_fep_tag;
 } https_ctx_t;
 
 typedef enum intl_req_mtype {

@@ -211,7 +211,7 @@ typedef struct httpc_ctx {
 
 	/* for lb-fep-peer */
 	int fep_tag;				// index of thread (fep 1 / 2 / 3)
-	pthread_t recv_thread_id;	// is it usefull ???? (may not use) 
+	//pthread_t recv_thread_id;	// is it usefull ???? (may not use) 
 } httpc_ctx_t;
 
 typedef enum intl_req_mtype {

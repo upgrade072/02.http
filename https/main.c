@@ -248,6 +248,12 @@ static http2_session_data *create_http2_session_data(app_context *app_ctx,
 	session_data->client_addr = strdup(host);
 	session_data->client_port = ntohs(get_in_port(addr));
 
+	/* for direct relay */
+	if (app_ctx->is_direct_sock) {
+		session_data->is_direct_session = 1;
+		session_data->relay_fep_tag = app_ctx->relay_fep_tag;
+	}
+
     /* schlee, if evhandler not assigned, it cause send_ping core error */
     bufferevent_setcb(session_data->bev, readcb, writecb, eventcb, session_data);
 
@@ -380,6 +386,8 @@ static ssize_t ptr_read_callback_ctx(nghttp2_session *session, int32_t stream_id
 	https_ctx_t *https_ctx = (https_ctx_t *)source->ptr;
 	int len = https_ctx->user_ctx.head.bodyLen;
 
+	//fprintf(stderr, "{{{dbg}}} in %s bodyLen %d\n", __func__, len);
+
 	if (len >= length) {
 		APPLOG(APPLOG_ERR, "%s) length(%d) exceed maximum val(%zu)",
 				__func__, len, length);
@@ -399,7 +407,12 @@ static int send_response_by_ctx(nghttp2_session *session, int32_t stream_id,
 	data_prd.source.ptr = https_ctx;
 	data_prd.read_callback = ptr_read_callback_ctx;
 
+	//fprintf(stderr, "{{{dbg}}} to response %s called\n", __func__);
+
 	rv = nghttp2_submit_response(session, stream_id, nva, nvlen, &data_prd);
+
+	//fprintf(stderr, "{{{dbg}}} in %s rv is %d\n", __func__, rv);
+
 	if (rv != 0) {
 		warnx("Fatal error: %s", nghttp2_strerror(rv));
 		return (-1);
@@ -950,10 +963,13 @@ static void start_listen(struct event_base *evbase, const char *service,
 }
 
 static void initialize_app_context(app_context *app_ctx, SSL_CTX *ssl_ctx,
-		struct event_base *evbase) {
+		struct event_base *evbase, int is_direct_sock, int relay_fep_tag) {
 	memset(app_ctx, 0, sizeof(app_context));
 	app_ctx->ssl_ctx = ssl_ctx;
 	app_ctx->evbase = evbase;
+
+	app_ctx->is_direct_sock = is_direct_sock;
+	app_ctx->relay_fep_tag = relay_fep_tag;
 }
 
 #define MAX_THRD_WAIT_NUM 5
@@ -1052,6 +1068,8 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 
 		switch(msg_type) {
 			case HTTP_INTL_SND_REQ:
+				//fprintf(stderr, "{{{dbg}}} in %s switch INTL_SEND_REQ called\n", __func__);
+
 				if (session_data == NULL) {
 					/* legacy session expired and new one already created case */
 					APPLOG(APPLOG_DEBUG, "%s)%d) get_session fail", __func__, __LINE__);
@@ -1423,7 +1441,8 @@ int initialize()
 
 static void main_loop(const char *key_file, const char *cert_file) {
 	SSL_CTX *ssl_ctx;
-	app_context app_ctx;
+	app_context comm_app_ctx;
+	app_context direct_app_ctx[MAX_PORT_NUM];
 	struct event_base *evbase;
 	char port_str[12] = {0,};
 	int i;
@@ -1432,13 +1451,22 @@ static void main_loop(const char *key_file, const char *cert_file) {
 
 	/* create event base */
 	evbase = event_base_new();
-	initialize_app_context(&app_ctx, ssl_ctx, evbase);
 
 	/* initialize listen ports */
+	initialize_app_context(&comm_app_ctx, ssl_ctx, evbase, 0, 0);
 	for (i = 0; i < MAX_PORT_NUM; i++) {
 		if (SERVER_CONF.listen_port[i]) {
 			sprintf(port_str, "%d", SERVER_CONF.listen_port[i]);
-			start_listen(evbase, port_str, &app_ctx);
+			start_listen(evbase, port_str, &comm_app_ctx);
+		}
+	}
+
+	/* initial direct relay listen ports */
+	for (i = 0; i < MAX_PORT_NUM; i++) {
+		initialize_app_context(&direct_app_ctx[i], ssl_ctx, evbase, 1, i);
+		if (SERVER_CONF.callback_port[i]) {
+			sprintf(port_str, "%d", SERVER_CONF.callback_port[i]);
+			start_listen(evbase, port_str, &direct_app_ctx[i]);
 		}
 	}
 

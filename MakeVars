@@ -1,6 +1,6 @@
 
 ### TARGET : epcf, udmr, ausf, perf, epcf_test, test
-TARGET      = epcf
+TARGET      = ausf
 
 ## HOLDSESS : do not close session in no more read/write exist
 CFLAGS      = -std=gnu99 -g -m64 -Wall -DHOLDSESS  -Wno-unused-label -Wno-missing-braces
@@ -18,7 +18,7 @@ CFLAGS		+= -DAUSF -DLOG_APP -DOAUTH
 else ifeq ($(TARGET),perf)
 CFLAGS		+= -DPERFORM -DLOG_PRINT
 else ifeq ($(TARGET),test)
-CFLAGS		+= -pg -DTEST -DPERFORM
+CFLAGS		+= -pg -DTEST -DLOG_PRINT
 endif
 
 ifeq ($(TARGET),epcf)
