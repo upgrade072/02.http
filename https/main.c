@@ -380,6 +380,8 @@ static ssize_t ptr_read_callback_ctx(nghttp2_session *session, int32_t stream_id
 	https_ctx_t *https_ctx = (https_ctx_t *)source->ptr;
 	int len = https_ctx->user_ctx.head.bodyLen;
 
+	fprintf(stderr, "{{{dbg}}} in %s bodyLen %d\n", __func__, len);
+
 	if (len >= length) {
 		APPLOG(APPLOG_ERR, "%s) length(%d) exceed maximum val(%zu)",
 				__func__, len, length);
@@ -399,7 +401,12 @@ static int send_response_by_ctx(nghttp2_session *session, int32_t stream_id,
 	data_prd.source.ptr = https_ctx;
 	data_prd.read_callback = ptr_read_callback_ctx;
 
+	fprintf(stderr, "{{{dbg}}} to response %s called\n", __func__);
+
 	rv = nghttp2_submit_response(session, stream_id, nva, nvlen, &data_prd);
+
+	fprintf(stderr, "{{{dbg}}} in %s rv is %d\n", __func__, rv);
+
 	if (rv != 0) {
 		warnx("Fatal error: %s", nghttp2_strerror(rv));
 		return (-1);
@@ -1052,6 +1059,8 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 
 		switch(msg_type) {
 			case HTTP_INTL_SND_REQ:
+				fprintf(stderr, "{{{dbg}}} in %s switch INTL_SEND_REQ called\n", __func__);
+
 				if (session_data == NULL) {
 					/* legacy session expired and new one already created case */
 					APPLOG(APPLOG_DEBUG, "%s)%d) get_session fail", __func__, __LINE__);

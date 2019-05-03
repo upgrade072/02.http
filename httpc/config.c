@@ -449,18 +449,6 @@ int addcfg_server_ipaddr(int id, char *ipaddr, int port, int conn_cnt)
 		 	APPLOG(APPLOG_ERR, "\n%s have %d item\n", group->name, list_count);
 		}
 
-		config_setting_t *item = config_setting_add(list, NULL,  CONFIG_TYPE_GROUP);
-		config_setting_t *val;
-
-		val = config_setting_add(item, "ip", CONFIG_TYPE_STRING);
-		config_setting_set_string(val, ipaddr);
-		val = config_setting_add(item, "port", CONFIG_TYPE_INT);
-		config_setting_set_int(val, port);
-		val = config_setting_add(item, "cnt", CONFIG_TYPE_INT);
-		config_setting_set_int(val, conn_cnt);
-		val = config_setting_add(item, "act", CONFIG_TYPE_STRING);
-		config_setting_set_string(val, "DACT");
-
 		if ((list_index = get_list(group->name)) < 0)
 			goto CF_ADD_SVR_IPADDR_ERR;
 		if ((item_index = new_item(list_index, ipaddr, port)) < 0)
@@ -482,6 +470,21 @@ int addcfg_server_ipaddr(int id, char *ipaddr, int port, int conn_cnt)
 				}
 			}
 		}
+
+		config_setting_t *item = config_setting_add(list, NULL,  CONFIG_TYPE_GROUP);
+		config_setting_t *val;
+
+		val = config_setting_add(item, "ip", CONFIG_TYPE_STRING);
+		config_setting_set_string(val, ipaddr);
+		val = config_setting_add(item, "port", CONFIG_TYPE_INT);
+		config_setting_set_int(val, port);
+		val = config_setting_add(item, "cnt", CONFIG_TYPE_INT);
+		config_setting_set_int(val, conn_cnt);
+		val = config_setting_add(item, "act", CONFIG_TYPE_STRING);
+		config_setting_set_string(val, "DACT");
+		val = config_setting_add(item, "token_id", CONFIG_TYPE_INT);
+		config_setting_set_int(val, 0);
+
 		for (i = 1; i < MAX_SVR_NUM; i++) {
 			if (CONN_LIST[i].used == 0) {
 				CONN_LIST[i].index = i;

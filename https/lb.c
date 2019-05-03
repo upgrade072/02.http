@@ -34,6 +34,8 @@ https_ctx_t *get_assembled_ctx(tcp_ctx_t *tcp_ctx, char *ptr)
     char *body = ptr + sizeof(AhifHttpCSMsgHeadType) + (sizeof(hdr_relay) * vheaderCnt);
     int bodyLen = head->bodyLen;
 
+	fprintf(stderr, "{{{dbg}}} in %s bodyLen is %d\n", __func__, bodyLen);
+
     if((recv_ctx = get_null_recv_ctx(tcp_ctx)) == NULL)
         return NULL;
 
