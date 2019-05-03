@@ -34,6 +34,11 @@ void assign_new_ctx_info(https_ctx_t *https_ctx, http2_session_data *session_dat
 	https_ctx->user_ctx.head.stream_id = stream_data->stream_id;
 	sprintf(https_ctx->user_ctx.head.destHost, "%s", session_data->hostname);
 	sprintf(https_ctx->user_ctx.head.destType, "%s", session_data->type);
+
+	if (session_data->is_direct_session) {
+		https_ctx->is_direct_ctx = 1;
+		https_ctx->relay_fep_tag = session_data->relay_fep_tag;
+	}
 }
 
 void assign_rcv_ctx_info(https_ctx_t *https_ctx, AhifHttpCSMsgType *ResMsg)

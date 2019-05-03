@@ -15,7 +15,7 @@ https_ctx_t *get_null_recv_ctx(tcp_ctx_t *tcp_ctx)
 		if (recv_ctx->occupied == 0) {
 			memset(recv_ctx, 0x00, sizeof(https_ctx_t));
 			recv_ctx->fep_tag = tcp_ctx->fep_tag;
-			recv_ctx->recv_thread_id = tcp_ctx->thread_id;
+			//recv_ctx->recv_thread_id = tcp_ctx->thread_id;
 			recv_ctx->occupied = 1;
 			return recv_ctx;
 		}
@@ -34,7 +34,7 @@ https_ctx_t *get_assembled_ctx(tcp_ctx_t *tcp_ctx, char *ptr)
     char *body = ptr + sizeof(AhifHttpCSMsgHeadType) + (sizeof(hdr_relay) * vheaderCnt);
     int bodyLen = head->bodyLen;
 
-	fprintf(stderr, "{{{dbg}}} in %s bodyLen is %d\n", __func__, bodyLen);
+	//fprintf(stderr, "{{{dbg}}} in %s bodyLen is %d\n", __func__, bodyLen);
 
     if((recv_ctx = get_null_recv_ctx(tcp_ctx)) == NULL)
         return NULL;
@@ -177,6 +177,33 @@ tcp_ctx_t *get_loadshare_turn(https_ctx_t *https_ctx)
 	return NULL;
 }
 
+tcp_ctx_t *get_direct_dest(https_ctx_t *https_ctx)
+{
+	GNode *root_node = MAIN_CTX.fep_tx_thrd;
+	unsigned int fep_num = g_node_n_children(root_node);
+	tcp_ctx_t *root_data = (tcp_ctx_t *)root_node->data;
+
+	if (fep_num == 0 || root_data == NULL) {
+	   	return NULL;
+	}
+
+	for (int i = 0; i < fep_num; i++) {
+		GNode *nth_thread = g_node_nth_child(root_node, i);
+		if (nth_thread != NULL) {
+			tcp_ctx_t *fep_tcp_ctx = (tcp_ctx_t *)nth_thread->data;
+			if (fep_tcp_ctx->fep_tag == https_ctx->relay_fep_tag) {
+				int sock_num = g_node_n_children(fep_tcp_ctx->root_conn);
+				if (sock_num > 0) {
+					https_ctx->fep_tag = fep_tcp_ctx->fep_tag;
+					return fep_tcp_ctx;
+				}
+			}
+		}
+	}
+
+	return NULL;
+}
+
 void gb_clean_ctx(https_ctx_t *https_ctx)
 {
 	//fprintf(stderr, "{{{dbg}}} %s called!\n", __func__);
@@ -185,13 +212,34 @@ void gb_clean_ctx(https_ctx_t *https_ctx)
     https_ctx->user_ctx.head.vheaderCnt = 0;
 }
 
+void set_callback_tag(https_ctx_t *https_ctx, tcp_ctx_t *fep_tcp_ctx)
+{
+	if (https_ctx->is_direct_ctx)
+		return;
+
+	if (fep_tcp_ctx->fep_tag < 0 || fep_tcp_ctx->fep_tag >= MAX_PORT_NUM) {
+		APPLOG(APPLOG_ERR, "err} fep_tcp_ctx->fep_tag num wrong [%d]", fep_tcp_ctx->fep_tag);
+		return;
+	} else {
+		https_ctx->user_ctx.head.callback_port = SERVER_CONF.callback_port[fep_tcp_ctx->fep_tag];
+		sprintf(https_ctx->user_ctx.head.callback_ip, "%s", SERVER_CONF.callback_ip);
+	}
+}
+
 int send_request_to_fep(https_ctx_t *https_ctx)
 {
-	tcp_ctx_t *fep_tcp_ctx = get_loadshare_turn(https_ctx);
+	tcp_ctx_t *fep_tcp_ctx = NULL;
+
+	if (https_ctx->is_direct_ctx) 
+		fep_tcp_ctx = get_direct_dest(https_ctx);
+	else
+		fep_tcp_ctx = get_loadshare_turn(https_ctx);
+
 	if (fep_tcp_ctx == NULL) {
-		APPLOG(APPLOG_ERR, "(%s) fail to decision RR. there is no FEP TX conn", __func__);
+		APPLOG(APPLOG_ERR, "ERR} (%s) fail to decision dest", __func__);
 		return -1; // http error response
 	} else {
+		set_callback_tag(https_ctx, fep_tcp_ctx);
 		fep_tcp_ctx->tps ++;
 	}
 
