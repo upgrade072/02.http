@@ -448,16 +448,6 @@ int addcfg_client_ipaddr(int id, char *ipaddr, int max)
 		 	APPLOG(APPLOG_ERR, "%s have %d item", group->name, list_count);
 		}
 
-		config_setting_t *item = config_setting_add(list, NULL,  CONFIG_TYPE_GROUP);
-		config_setting_t *val;
-
-		val = config_setting_add(item, "ip", CONFIG_TYPE_STRING);
-		config_setting_set_string(val, ipaddr);
-		val = config_setting_add(item, "max", CONFIG_TYPE_INT);
-		config_setting_set_int(val, max);
-		val = config_setting_add(item, "act", CONFIG_TYPE_STRING);
-		config_setting_set_string(val, "DACT");
-
 		if ((list_index = get_list(group->name)) < 0)
 			goto CF_ADD_CLI_IPADDR_ERR;
 		if ((item_index = new_item(list_index, ipaddr, 0)) < 0)
@@ -479,6 +469,19 @@ int addcfg_client_ipaddr(int id, char *ipaddr, int max)
 				}
 			}
 		}
+
+		config_setting_t *item = config_setting_add(list, NULL,  CONFIG_TYPE_GROUP);
+		config_setting_t *val;
+
+		val = config_setting_add(item, "ip", CONFIG_TYPE_STRING);
+		config_setting_set_string(val, ipaddr);
+		val = config_setting_add(item, "max", CONFIG_TYPE_INT);
+		config_setting_set_int(val, max);
+		val = config_setting_add(item, "act", CONFIG_TYPE_STRING);
+		config_setting_set_string(val, "DACT");
+		val = config_setting_add(item, "auth_act", CONFIG_TYPE_INT);
+		config_setting_set_int(val, 0);
+
 		for (i = 1; i < MAX_LIST_NUM; i++) {
 			if (ALLOW_LIST[i].used == 0) {
 				ALLOW_LIST[i].index = i;
