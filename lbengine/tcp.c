@@ -83,9 +83,56 @@ int return_sock_num(tcp_ctx_t *tcp_ctx)
     return sock_cnt;
 }
 
+/*
+	return 0 --> no it is ipaddr
+	return 1 --> yes and converted to ipaddr
+	return -1 --> yes but fail to resolv, don't use buff_val
+*/
+int is_host_if_cnvt(char *host_or_addr, char *cnvt_to_buff)
+{
+	/* gethostbyname() not work in container, try another way */
+	FILE *fp = NULL;
+
+	char cmd[1024] = {0,};
+	char buff[1024] = {0,};
+    struct sockaddr_in sa = {0,};
+
+    if (inet_pton(AF_INET, host_or_addr, &(sa.sin_addr))) {
+		return 0; // input is ipaddr
+    }
+
+	sprintf(cmd, "getent ahostsv4 %s | grep STREAM | awk '{print $1}'", host_or_addr);
+	if ((fp = popen(cmd, "r")) == NULL) {
+		return -1;
+	}
+
+	if (fgets(buff, 1024, fp) != NULL) {
+		strtok(buff, "\n");
+		if (inet_pton(AF_INET, buff, &(sa.sin_addr))) {
+			sprintf(cnvt_to_buff, "%s", buff);
+			pclose(fp);
+			return 1; // get cnvt address
+		}
+	}
+	pclose(fp);
+	return -1;
+}
+
 int check_conf_via_sock(tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx)
 {
-	if (!strcmp(sock_ctx->client_ip, tcp_ctx->peer_ip_addr))
+	char converted_ip[128] = {0,};
+	char *peer_ip_addr = NULL;
+	int is_host = 0;
+
+	if ((is_host = is_host_if_cnvt(tcp_ctx->peer_ip_addr, converted_ip)) == 0) {
+		peer_ip_addr = tcp_ctx->peer_ip_addr;
+	} else if (is_host == 1) {
+		peer_ip_addr = converted_ip;
+	} else {
+		return 0;
+	}
+
+	if (!strcmp(sock_ctx->client_ip, peer_ip_addr))
 		return 1; // find
 	else
 		return 0; // not find
@@ -116,11 +163,11 @@ void release_conncb(sock_ctx_t *sock_ctx)
     struct bufferevent *bev = sock_ctx->bev;
 
 	// CHECK event first? bev first?
-    if (sock_ctx->event)
+    if (sock_ctx->event) 
         event_del(sock_ctx->event);
 
     // remove event, close sock
-	if (sock_ctx->bev)
+	if (sock_ctx->bev) 
 		bufferevent_free(bev);
 
     // remove whole push item, unset caller ctx
@@ -159,10 +206,10 @@ void svr_sock_eventcb(struct bufferevent *bev, short events, void *user_data)
 
 void packet_process_res(sock_ctx_t *sock_ctx, char *process_ptr, size_t processed_len)
 {
-
     // if sock recv 10, process 3 ==> move remain 7 byte to front
-    memmove(sock_ctx->buff, process_ptr, sock_ctx->rcv_len - (sock_ctx->rcv_len - processed_len));
+    memmove(sock_ctx->buff, process_ptr, sock_ctx->rcv_len - processed_len);
     sock_ctx->rcv_len = sock_ctx->rcv_len - processed_len;
+
     return;
 }
 
@@ -418,11 +465,25 @@ void check_peer_conn(evutil_socket_t fd, short what, void *arg)
     tcp_ctx_t *tcp_ctx = (tcp_ctx_t *)arg;
     sock_ctx_t *sock_ctx = NULL;
 
+	char converted_ip[128] = {0,};
+	char *peer_ip_addr = NULL;
+	int is_host = 0;
+
+	if ((is_host = is_host_if_cnvt(tcp_ctx->peer_ip_addr, converted_ip)) == 0) {
+		peer_ip_addr = tcp_ctx->peer_ip_addr;
+	} else if (is_host == 1) {
+		peer_ip_addr = converted_ip;
+	} else {
+		/* it is host but fail to resolv */
+		fprintf(stderr, "LB-ENGINE] can't resolv peer_ip_addr conf (%s)\n", tcp_ctx->peer_ip_addr);
+		return;
+	}
+
     // config --> sock check --> create new
-	if (search_node_by_ip(tcp_ctx, tcp_ctx->peer_ip_addr) == NULL) {
-		sock_ctx = create_new_peer_sock(tcp_ctx, tcp_ctx->peer_ip_addr);
+	if (search_node_by_ip(tcp_ctx, peer_ip_addr) == NULL) {
+		sock_ctx = create_new_peer_sock(tcp_ctx, peer_ip_addr);
 		fprintf(stderr, "LB-ENGINE] peer %s not exist create new one ... %s\n", 
-				tcp_ctx->peer_ip_addr, sock_ctx == NULL ?  "failed" : "success");
+				peer_ip_addr, sock_ctx == NULL ?  "failed" : "success");
 		}
 
     // sock --> config check --> remove one

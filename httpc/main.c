@@ -232,7 +232,7 @@ static ssize_t ptr_read_callback(nghttp2_session *session, int32_t stream_id,
 static int submit_request(http2_session_data_t *session_data, httpc_ctx_t *httpc_ctx, http2_stream_data *stream_data) {
 	int32_t stream_id;
 
-    char request_path[AHIF_MAX_RESOURCE_URI_LEN + 1 + AHIF_MAX_RESOURCE_URI_LEN] = {0,}; // rsrc ? query
+    char request_path[AHIF_MAX_RESOURCE_URI_LEN + 1 + AHIF_MAX_QUERY_PARAMETER_LEN] = {0,}; // rsrc ? query
     if (strlen(httpc_ctx->user_ctx.head.queryParam)) {
         sprintf(request_path, "%s?%s", httpc_ctx->user_ctx.head.rsrcUri, httpc_ctx->user_ctx.head.queryParam);
     } else {
@@ -266,7 +266,7 @@ static int submit_request(http2_session_data_t *session_data, httpc_ctx_t *httpc
 	nghttp2_data_provider data_prd;
 	if (httpc_ctx->user_ctx.head.bodyLen > 0) {
 		data_prd.source.ptr = httpc_ctx;
-		data_prd.read_callback = ptr_read_callback;
+		data_prd.read_callback = ptr_read_callback; // clear ctx after body send
 #ifndef PERFORM
 		fwrite(httpc_ctx->user_ctx.body, 1, httpc_ctx->user_ctx.head.bodyLen, stderr);
 		fprintf(stderr, "\n");
@@ -276,6 +276,7 @@ static int submit_request(http2_session_data_t *session_data, httpc_ctx_t *httpc
 	} else {
 		stream_id = nghttp2_submit_request(session_data->session, NULL, hdrs, 
 				hdrs_len, NULL, stream_data);
+		clear_send_ctx(httpc_ctx); // clear now
 	}
 
 	if (stream_id < 0) {

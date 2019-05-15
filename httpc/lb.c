@@ -307,13 +307,13 @@ void check_and_send(tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx)
 	size_t processed_len = 0;
 
 KEEP_PROCESS:
-	if (sock_ctx->rcv_len < (processed_len + AHIF_HTTPCS_MSG_HEAD_LEN))
+	if (sock_ctx->rcv_len < (processed_len + AHIF_HTTPCS_MSG_HEAD_LEN)) 
 		return packet_process_res(sock_ctx, process_ptr, processed_len);
 
 	head = (AhifHttpCSMsgHeadType *)&sock_ctx->buff[processed_len];
 	process_ptr = (char *)head;
 
-	if (sock_ctx->rcv_len < (processed_len + AHIF_TCP_MSG_LEN(head)))
+	if (sock_ctx->rcv_len < (processed_len + AHIF_TCP_MSG_LEN(head))) 
 		return packet_process_res(sock_ctx, process_ptr, processed_len);
 
 	if ((recv_ctx = get_assembled_ctx(tcp_ctx, process_ptr)) == NULL) {

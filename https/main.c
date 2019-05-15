@@ -618,6 +618,11 @@ static int on_request_recv(nghttp2_session *session,
 		return 0;
 	}
 
+#ifndef PERFORM
+	fwrite(https_ctx->user_ctx.body, 1, https_ctx->user_ctx.head.bodyLen, stderr);
+	fprintf(stderr, "\n");
+#endif
+
 	if (!https_ctx->user_ctx.head.rsrcUri[0]) {
 		if (error_reply(session, stream_data, 400, ERROR_BADREQ) != 0)
 			return NGHTTP2_ERR_CALLBACK_FAILURE;
@@ -1461,12 +1466,14 @@ static void main_loop(const char *key_file, const char *cert_file) {
 		}
 	}
 
-	/* initial direct relay listen ports */
-	for (i = 0; i < MAX_PORT_NUM; i++) {
-		initialize_app_context(&direct_app_ctx[i], ssl_ctx, evbase, 1, i);
-		if (SERVER_CONF.callback_port[i]) {
-			sprintf(port_str, "%d", SERVER_CONF.callback_port[i]);
-			start_listen(evbase, port_str, &direct_app_ctx[i]);
+	/* if enabled, initial direct relay listen ports */
+	if (SERVER_CONF.dr_enabled) {
+		for (i = 0; i < MAX_PORT_NUM; i++) {
+			initialize_app_context(&direct_app_ctx[i], ssl_ctx, evbase, 1, i);
+			if (SERVER_CONF.callback_port[i]) {
+				sprintf(port_str, "%d", SERVER_CONF.callback_port[i]);
+				start_listen(evbase, port_str, &direct_app_ctx[i]);
+			}
 		}
 	}
 

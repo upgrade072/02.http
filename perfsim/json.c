@@ -193,3 +193,42 @@ void recurse_obj(json_object *input_obj, parse_res_t *parse, int action)
         }
     }
 }
+
+void recurse_obj_single(json_object *input_obj, const char *farg, char *buff, size_t buff_len, int *find)
+{
+	if (strlen(farg) == 0) return;
+
+    json_object_object_foreach(input_obj, key, val) {
+
+        json_object *obj = json_object_object_get(input_obj, key);
+        if (obj == NULL) continue;
+
+        enum json_type o_type = json_object_get_type(obj);
+
+		if (!strcmp(key, farg)) {
+			//strncpy(buff, json_object_to_json_string(obj), buff_len);
+			// --> https:\/\/192.168.70.56:9000
+			strncpy(buff, json_object_get_string(obj), buff_len);
+			// --> https://192.168.70.56:9000
+			*find = 1;
+			return;
+		}
+
+        switch (o_type) {
+            case json_type_array:
+                for (int i = 0; i < json_object_array_length(obj); i++) {
+                    json_object *list = json_object_array_get_idx(obj, i);
+                    json_type l_type = json_object_get_type(list);
+                    if (l_type == json_type_array || l_type == json_type_object) {
+                        recurse_obj_single(list, farg, buff, buff_len, find);
+                    }
+                }
+                break;
+            case json_type_object:
+                recurse_obj_single(obj, farg, buff, buff_len, find);
+                break;
+            default:
+                break;
+        }
+    }
+}

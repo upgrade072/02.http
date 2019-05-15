@@ -214,8 +214,8 @@ void gb_clean_ctx(https_ctx_t *https_ctx)
 
 void set_callback_tag(https_ctx_t *https_ctx, tcp_ctx_t *fep_tcp_ctx)
 {
-	if (https_ctx->is_direct_ctx)
-		return;
+    if (SERVER_CONF.dr_enabled == 0)
+        return;
 
 	if (fep_tcp_ctx->fep_tag < 0 || fep_tcp_ctx->fep_tag >= MAX_PORT_NUM) {
 		APPLOG(APPLOG_ERR, "err} fep_tcp_ctx->fep_tag num wrong [%d]", fep_tcp_ctx->fep_tag);

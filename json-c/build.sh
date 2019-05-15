@@ -23,6 +23,7 @@ export PKG_CONFIG_PATH=${ROOTDIR}/../build/lib/pkgconfig:$PKG_CONFIG_PATH
 ./configure \
 	--prefix=${ROOTDIR}/../build \
     --with-gnu-ld \
+	--enable-threading \
 	--enable-static \
 	--disable-shared
 
