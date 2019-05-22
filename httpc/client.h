@@ -46,7 +46,7 @@
 #if 0
 #define TMOUT_NORSP		200     // 20ms * 200 = 4 sec timeout
 #else
-#define TMOUT_VECTOR    50      // CLIENT_CONF.tmout_sec * TMOUT_VECTOR = N sec
+#define TMOUT_VECTOR    100      // CLIENT_CONF.tmout_sec * TMOUT_VECTOR = N sec
 #endif
 
 /* For LOG */
@@ -212,6 +212,9 @@ typedef struct httpc_ctx {
 	/* for lb-fep-peer */
 	int fep_tag;				// index of thread (fep 1 / 2 / 3)
 	//pthread_t recv_thread_id;	// is it usefull ???? (may not use) 
+	
+	// if iovec pushed into tcp queue, worker can't cancel this
+	char tcp_wait;
 } httpc_ctx_t;
 
 typedef enum intl_req_mtype {
@@ -340,7 +343,7 @@ char    *get_access_token(int token_id);
 /* ------------------------- lb.c --------------------------- */
 httpc_ctx_t     *get_null_recv_ctx(tcp_ctx_t *tcp_ctx);
 httpc_ctx_t     *get_assembled_ctx(tcp_ctx_t *tcp_ctx, char *ptr);
-void    send_to_worker(conn_list_t *httpc_conn, httpc_ctx_t *recv_ctx);
+void    send_to_worker(tcp_ctx_t *tcp_ctx, conn_list_t *httpc_conn, httpc_ctx_t *recv_ctx);
 void    set_iovec(tcp_ctx_t *dest_tcp_ctx, httpc_ctx_t *recv_ctx, const char *dest_ip, iovec_item_t *push_req, void (*cbfunc)(), void *cbarg);
 void    push_callback(evutil_socket_t fd, short what, void *arg);
 void    iovec_push_req(tcp_ctx_t *dest_tcp_ctx, iovec_item_t *push_req);
@@ -354,7 +357,10 @@ void    send_to_remote(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx);
 void    check_and_send(tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx);
 void    lb_buff_readcb(struct bufferevent *bev, void *arg);
 void    load_lb_config(client_conf_t *cli_conf, lb_global_t *lb_conf);
+int     get_httpcs_buff_used(tcp_ctx_t *tcp_ctx);
+void    clear_context_stat(tcp_ctx_t *tcp_ctx);
 void    fep_stat_print(evutil_socket_t fd, short what, void *arg);
 void    *fep_stat_thread(void *arg);
 void    attach_lb_thread(lb_global_t *lb_conf, main_ctx_t *main_ctx);
 int     create_lb_thread();
+

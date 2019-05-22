@@ -14,9 +14,8 @@ https_ctx_t *get_null_recv_ctx(tcp_ctx_t *tcp_ctx)
 		https_ctx_t *recv_ctx = &rcv_buff_ctx[i];
 		if (recv_ctx->occupied == 0) {
 			memset(recv_ctx, 0x00, sizeof(https_ctx_t));
-			recv_ctx->fep_tag = tcp_ctx->fep_tag;
-			//recv_ctx->recv_thread_id = tcp_ctx->thread_id;
 			recv_ctx->occupied = 1;
+			recv_ctx->fep_tag = tcp_ctx->fep_tag;
 			return recv_ctx;
 		}
 	}
@@ -34,7 +33,7 @@ https_ctx_t *get_assembled_ctx(tcp_ctx_t *tcp_ctx, char *ptr)
     char *body = ptr + sizeof(AhifHttpCSMsgHeadType) + (sizeof(hdr_relay) * vheaderCnt);
     int bodyLen = head->bodyLen;
 
-	//fprintf(stderr, "{{{dbg}}} in %s bodyLen is %d\n", __func__, bodyLen);
+	//APPLOG(APPLOG_ERR, "{{{dbg}}} in %s bodyLen is %d\n", __func__, bodyLen);
 
     if((recv_ctx = get_null_recv_ctx(tcp_ctx)) == NULL)
         return NULL;
@@ -44,7 +43,7 @@ https_ctx_t *get_assembled_ctx(tcp_ctx_t *tcp_ctx, char *ptr)
     memcpy(&recv_ctx->user_ctx.body, body, bodyLen);
 
 #if 0
-	fprintf(stderr, "{{{DBG}}} GET TEMP CTX ASSIGN IT TH %d CTX %d\n", 
+	APPLOG(APPLOG_ERR, "{{{DBG}}} GET TEMP CTX ASSIGN IT TH %d CTX %d\n", 
 			recv_ctx->user_ctx.head.thrd_index, recv_ctx->user_ctx.head.ctx_id);
 #endif
 
@@ -71,13 +70,13 @@ void set_iovec(tcp_ctx_t *dest_tcp_ctx, https_ctx_t *https_ctx, const char *dest
     }
     // vheader
     if (user_ctx->head.vheaderCnt) {
-		//fprintf(stderr, "{{{{dbg}}} vheader cnt %d\n", user_ctx->head.vheaderCnt);
+		//APPLOG(APPLOG_ERR, "{{{{dbg}}} vheader cnt %d\n", user_ctx->head.vheaderCnt);
         push_req->iov[item_cnt].iov_base = user_ctx->vheader;
         push_req->iov[item_cnt].iov_len = user_ctx->head.vheaderCnt * sizeof(hdr_relay);
         item_cnt++;
         total_bytes += user_ctx->head.vheaderCnt * sizeof(hdr_relay);
     } else {
-		//fprintf(stderr, "{{{{dbg}}} vheader cnt 0!!!!\n");
+		//APPLOG(APPLOG_ERR, "{{{{dbg}}} vheader cnt 0!!!!\n");
 	}
     // body
     if (user_ctx->head.bodyLen) {
@@ -107,10 +106,11 @@ void push_callback(evutil_socket_t fd, short what, void *arg)
 	sock_ctx_t *sock_ctx = get_last_conn_sock(tcp_ctx);
 #endif
 
-    //fprintf(stderr, "((%s)) called dest %s (mypid(%jd))\n", __func__, push_item->dest_ip, (intmax_t)util_gettid());
+    //APPLOG(APPLOG_ERR, "((%s)) called dest %s (mypid(%jd))\n", __func__, push_item->dest_ip, (intmax_t)util_gettid());
 
     if (sock_ctx == NULL) {
-        fprintf(stderr, "((%s)) dest (%s) not exist, unset item\n", __func__, push_item->dest_ip);
+		if (push_item->unset_cb_func != NULL)
+			push_item->unset_cb_func(push_item->unset_cb_arg);
 		if (push_item->ctx_unset_ptr != NULL)
 			*push_item->ctx_unset_ptr = 0;
         return;
@@ -120,21 +120,17 @@ void push_callback(evutil_socket_t fd, short what, void *arg)
 
     write_list_t *write_list = &sock_ctx->push_items;
 
-    /* bundle packet by config ==> send by once */
-#if 0
-	fprintf(stderr, "{{{{dbg}}} item_cnt %d item_bytes %d config (%d %d)\n", 
-			write_list->item_cnt, write_list->item_bytes, LB_CONF.bundle_count, LB_CONF.bundle_bytes);
-#endif
     if (write_list->item_cnt >= LB_CONF.bundle_count || write_list->item_bytes >= LB_CONF.bundle_bytes) {
-        ssize_t nwritten = push_write_item(sock_ctx->client_fd, write_list, LB_CONF.bundle_count, LB_CONF.bundle_bytes);
+        ssize_t nwritten = push_write_item(sock_ctx->client_fd, write_list, INT_MAX, INT_MAX);
         if (nwritten > 0) {
-			unset_pushed_item(write_list, nwritten);
+			unset_pushed_item(write_list, nwritten, __func__);
 			/* stat */
 			tcp_ctx->send_bytes += nwritten;
-			//fprintf(stderr, "{{{dbg}}} nwritten (%ld)\n", nwritten);
 		}
 		else if (errno != EINTR && errno != EAGAIN) {
-			fprintf(stderr, "there error! %d : %s\n", errno, strerror(errno));
+			APPLOG(APPLOG_ERR, "fep sock there(%s) error! %d : %s\n", __func__, errno, strerror(errno));
+			release_conncb(sock_ctx);
+			return;
 		}
     }
 }
@@ -144,7 +140,7 @@ void iovec_push_req(tcp_ctx_t *dest_tcp_ctx, iovec_item_t *push_req)
     struct event_base *peer_evbase = dest_tcp_ctx->evbase;
 
     if (event_base_once(peer_evbase, -1, EV_TIMEOUT, push_callback, push_req, NULL) < 0) {
-        fprintf(stderr, "TODO!!! (%s) fail to add callback to dest evbase", __func__);
+        APPLOG(APPLOG_ERR, "TODO!!! (%s) fail to add callback to dest evbase", __func__);
     }
 }
 
@@ -206,7 +202,7 @@ tcp_ctx_t *get_direct_dest(https_ctx_t *https_ctx)
 
 void gb_clean_ctx(https_ctx_t *https_ctx)
 {
-	//fprintf(stderr, "{{{dbg}}} %s called!\n", __func__);
+	//APPLOG(APPLOG_ERR, "{{{dbg}}} %s called!\n", __func__);
 
     memset(https_ctx->user_ctx.vheader, 0x00, sizeof(hdr_relay) * https_ctx->user_ctx.head.vheaderCnt);
     https_ctx->user_ctx.head.vheaderCnt = 0;
@@ -236,17 +232,16 @@ int send_request_to_fep(https_ctx_t *https_ctx)
 		fep_tcp_ctx = get_loadshare_turn(https_ctx);
 
 	if (fep_tcp_ctx == NULL) {
-		APPLOG(APPLOG_ERR, "ERR} (%s) fail to decision dest", __func__);
+		// TODO !!! count this and log stat
 		return -1; // http error response
 	} else {
 		set_callback_tag(https_ctx, fep_tcp_ctx);
 		fep_tcp_ctx->tps ++;
 	}
 
-    //set_iovec(fep_tcp_ctx, https_ctx, sock_ctx->client_ip, &https_ctx->push_req, NULL, NULL);
-	// TODO!!!! check dest ip useless or not, if useless remove it
-	// TODO!!!! where to get fep_tag
-    //set_iovec(fep_tcp_ctx, https_ctx, NULL, &https_ctx->push_req, NULL, NULL);
+	// this (worker) ctx will push to tcp queue, don't timeout this
+	https_ctx->tcp_wait = 1;
+
     set_iovec(fep_tcp_ctx, https_ctx, NULL, &https_ctx->push_req, gb_clean_ctx, https_ctx);
 
     iovec_push_req(fep_tcp_ctx, &https_ctx->push_req);
@@ -254,7 +249,7 @@ int send_request_to_fep(https_ctx_t *https_ctx)
 	return 0;
 }
 
-void send_to_worker(https_ctx_t *recv_ctx)
+void send_to_worker(tcp_ctx_t *tcp_ctx, https_ctx_t *recv_ctx)
 {
 	int thrd_index = recv_ctx->user_ctx.head.thrd_index;
 	int session_index = recv_ctx->user_ctx.head.session_index;
@@ -265,16 +260,16 @@ void send_to_worker(https_ctx_t *recv_ctx)
 	https_ctx_t *https_ctx = NULL;
 	http2_session_data *session_data = NULL;
 
-	//fprintf(stderr, "{{{DBG}}} %s TRY GET ORG CTX TH %d CTX %d\n", __func__, thrd_index, ctx_id);
-
 	if ((https_ctx = get_context(thrd_index, ctx_id, 1)) == NULL) {
-		fprintf(stderr, "{{{DBG}}} %s get context FAILED\n", __func__);
+		tcp_ctx->ctx_assign_fail++;
 		if ((session_data = get_session(thrd_index, session_index, session_id)) == NULL) 
 			http_stat_inc(0, 0, HTTP_STRM_N_FOUND); 
 		else
 			http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_STRM_N_FOUND);
 		goto STW_RET;
-	}   
+	} else {
+		https_ctx->tcp_wait = 0; // not in tcp queue
+	}
 
 	// check have same fep tag
 	if (recv_ctx->fep_tag != https_ctx->fep_tag) {
@@ -285,10 +280,11 @@ void send_to_worker(https_ctx_t *recv_ctx)
 	set_intl_req_msg(&intl_req, thrd_index, ctx_id, session_index, session_id, stream_id, HTTP_INTL_SND_REQ);
 
 	assign_rcv_ctx_info(https_ctx, &recv_ctx->user_ctx);
-	//fprintf(stderr, "{{{dbg}}} in fep response vheader cnt %d\n", https_ctx->user_ctx.head.vheaderCnt);
+	//APPLOG(APPLOG_ERR, "{{{dbg}}} in fep response vheader cnt %d\n", https_ctx->user_ctx.head.vheaderCnt);
 
 	if (msgsnd(THRD_WORKER[thrd_index].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0) == -1) {
-		APPLOG(APPLOG_DEBUG, "(%s) internal msgsnd to worker [%d] failed", __func__, thrd_index);
+		APPLOG(APPLOG_ERR, "(%s) internal msgsnd to worker [%d] failed", __func__, thrd_index);
+		clear_and_free_ctx(https_ctx);
 	}
 
 STW_RET:
@@ -310,6 +306,12 @@ KEEP_PROCESS:
     
     head = (AhifHttpCSMsgHeadType *)&sock_ctx->buff[processed_len];
     process_ptr = (char *)head;
+
+	if (strncmp(process_ptr, AHIF_MAGIC_BYTE, AHIF_MAGIC_BYTE_LEN)) {
+		APPLOG(APPLOG_ERR, "ahif rcv pkt wrong, it start with %8s\n", process_ptr);
+		release_conncb(sock_ctx);
+		return;
+	}
     
     if (sock_ctx->rcv_len < (processed_len + AHIF_TCP_MSG_LEN(head)))
         return packet_process_res(sock_ctx, process_ptr, processed_len);
@@ -323,7 +325,7 @@ KEEP_PROCESS:
     process_ptr += AHIF_TCP_MSG_LEN(head);
     processed_len += AHIF_TCP_MSG_LEN(head);
     
-	send_to_worker(recv_ctx);
+	send_to_worker(tcp_ctx, recv_ctx);
 
     goto KEEP_PROCESS;
 }
@@ -336,16 +338,19 @@ void lb_buff_readcb(struct bufferevent *bev, void *arg)
             sock_ctx->buff + sock_ctx->rcv_len,
             MAX_RCV_BUFF_LEN - sock_ctx->rcv_len);
 
-    // TODO !!! check strerror() & if critical, call relese_conn()
-    if (rcv_len <= 0) {
-        return;
+	if (rcv_len <= 0) {
+		if (errno != EINTR && errno != EAGAIN) {
+			APPLOG(APPLOG_ERR, "fep sock there(%s) error! %d : %s\n", __func__, errno, strerror(errno));
+			release_conncb(sock_ctx);
+			return;
+		}
 	} else {
-        sock_ctx->rcv_len += rcv_len;
+		sock_ctx->rcv_len += rcv_len;
 		/* stat */
 		tcp_ctx->recv_bytes += rcv_len;
 	}
 
-    return check_and_send(tcp_ctx, sock_ctx);
+	return check_and_send(tcp_ctx, sock_ctx);
 }
 
 int get_httpcs_buff_used(tcp_ctx_t *tcp_ctx)
@@ -370,6 +375,7 @@ void clear_context_stat(tcp_ctx_t *tcp_ctx)
     tcp_ctx->recv_bytes = 0;
     tcp_ctx->send_bytes = 0;
     tcp_ctx->tps = 0;
+	tcp_ctx->ctx_assign_fail = 0;
 }
 
 void fep_stat_print(evutil_socket_t fd, short what, void *arg)
@@ -392,13 +398,14 @@ void fep_stat_print(evutil_socket_t fd, short what, void *arg)
 
         int fep_rx_used = get_httpcs_buff_used(fep_rx);
 
-        APPLOG(APPLOG_ERR, "FEP [%2d] CTX [fep_rx %05d/%05d] FEP TX [%s] (TPS %d) FEP RX [%s]",
+        APPLOG(APPLOG_ERR, "FEP [%2d] CTX [fep_rx %05d/%05d] FEP TX [%s] (TPS %d) FEP RX [%s] DBG {{{ assign fail[%d] }}}",
                 i,
                 fep_rx_used,
                 fep_rx->context_num,
                 measure_print(fep_tx->send_bytes, fep_write),
                 fep_tx->tps,
-                measure_print(fep_rx->recv_bytes, fep_read));
+                measure_print(fep_rx->recv_bytes, fep_read),
+				fep_tx->ctx_assign_fail);
 
         clear_context_stat(fep_rx);
         clear_context_stat(fep_tx);

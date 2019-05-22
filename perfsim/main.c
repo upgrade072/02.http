@@ -500,7 +500,7 @@ void recv_action(int recv_thrd_idx, AhifAppMsgType *recvMsg)
             pf_recv_stat_inc(recv_thrd_idx, ctx->thrd_idx, PF_FAIL);
             goto END_CALL;
         }
-    }
+	}
 
 PARSE_JSON_FROM_MSG:
 
@@ -547,6 +547,14 @@ PARSE_JSON_FROM_MSG:
         goto END_CALL;
     }
 
+	/* set next step function with func_arg */
+	if (check_func_arg(resp_obj, ctx) < 0) {
+        /* this call fail */
+        pf_recv_stat_inc(recv_thrd_idx, ctx->thrd_idx, PF_RCV_CAUSE_FAIL);
+        pf_recv_stat_inc(recv_thrd_idx, ctx->thrd_idx, PF_FAIL);
+        goto END_CALL;
+	}
+
 
 DONT_CHECK_RESULT:
 
@@ -563,16 +571,13 @@ DONT_CHECK_RESULT:
 
 MOVE_TO_NEXT:
 
+	if (recvMsg->head.respCode < 200 || recvMsg->head.respCode >= 300) {
+		goto END_CALL;
+	}
+
     if (resp_obj) {
         /* check forward obj exist */
         check_fwd_field(resp_obj, ctx);
-
-		if (check_func_arg(resp_obj, ctx) < 0) {
-			/* test code */
-			fprintf(stderr, "{{{dbg}}} ERROR!!!! ARG NOT EXIST!!!\n");
-			fprintf(stderr, "\nRESP DUMP RES[%d] BODYLEN[%d] ]\n", recvMsg->head.respCode, recvMsg->head.bodyLen);
-			DumpHex(recvMsg->body, recvMsg->head.bodyLen);
-		}
 
 		// RELEASE json object
         json_object_put(resp_obj);

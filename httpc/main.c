@@ -21,15 +21,13 @@ shm_http_t *SHM_HTTP_PTR;
 client_conf_t CLIENT_CONF;
 thrd_context_t THRD_WORKER[MAX_THRD_NUM];
 http2_session_data_t SESS[MAX_THRD_NUM][MAX_SVR_NUM];
-//pthread_mutex_t ONLY_CRT_SESS_LOCK = PTHREAD_MUTEX_INITIALIZER; // TODO!!! we want remove this 
+pthread_mutex_t ONLY_CRT_SESS_LOCK = PTHREAD_MUTEX_INITIALIZER; // TODO!!! we want remove this 
 
 httpc_ctx_t *HttpcCtx[MAX_THRD_NUM];
 
 conn_list_t CONN_LIST[MAX_SVR_NUM];
 conn_list_status_t CONN_STATUS[MAX_CON_NUM];
 http_stat_t HTTP_STAT;
-
-extern int     CTX_NUM_FREEIDS[MAX_THRD_NUM];
 
 hdr_index_t VHDR_INDEX[2][MAX_HDR_RELAY_CNT];
 
@@ -76,7 +74,7 @@ static void delete_http2_session_data(http2_session_data_t *session_data)
 	/* stat HTTP_DISCONN */
 	http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_DISCONN);
 
-	//pthread_mutex_lock(&ONLY_CRT_SESS_LOCK);
+	pthread_mutex_lock(&ONLY_CRT_SESS_LOCK);
 	SSL *ssl = bufferevent_openssl_get_ssl(session_data->bev);
 
 	THRD_WORKER[session_data->thrd_index].server_num--;
@@ -97,7 +95,7 @@ static void delete_http2_session_data(http2_session_data_t *session_data)
 	session_data->session_index = 0;
 	session_data->session_id = 0;
 	session_data->used = 0;
-	//pthread_mutex_unlock(&ONLY_CRT_SESS_LOCK);
+	pthread_mutex_unlock(&ONLY_CRT_SESS_LOCK);
 }
 
 /* nghttp2_send_callback. Here we transmit the |data|, |length| bytes,
@@ -217,15 +215,13 @@ static ssize_t ptr_read_callback(nghttp2_session *session, int32_t stream_id,
 	int len = httpc_ctx->user_ctx.head.bodyLen;
 
 	if (len >= length) {
-		APPLOG(APPLOG_ERR, "%s) length(%d) exceed maximum val(%zu)",
-				__func__, len, length);
-		return 0;
+		APPLOG(APPLOG_ERR, "%s) ctx_id (%d) body_len(%d) exceed maximum data_prd_len(%zu) body is [%s]",
+				__func__, httpc_ctx->ctx_idx, len, length, httpc_ctx->user_ctx.body);
+		len = length;
 	}
 	memcpy(buf, httpc_ctx->user_ctx.body, len);
 	clear_send_ctx(httpc_ctx);
-
 	*data_flags |= NGHTTP2_DATA_FLAG_EOF;
-
 	return len;
 }
 
@@ -510,6 +506,9 @@ static void initialize_nghttp2_session(http2_session_data_t *session_data) {
 
 	nghttp2_session_client_new(&session_data->session, callbacks, session_data);
 
+	// schlee test code, set session buff 10MB
+	nghttp2_session_set_local_window_size(session_data->session, NGHTTP2_FLAG_NONE, 0, 1 << 30);
+
 	nghttp2_session_callbacks_del(callbacks);
 }
 
@@ -619,7 +618,7 @@ static void eventcb(struct bufferevent *bev, short events, void *ptr) {
 		}
 
 		/* session connected */
-		//pthread_mutex_lock(&ONLY_CRT_SESS_LOCK);
+		pthread_mutex_lock(&ONLY_CRT_SESS_LOCK);
 		CONN_LIST[session_data->conn_index].conn = CN_CONNECTED;
 		session_data->connected = 1;
 		APPLOG(APPLOG_ERR, "%s) Connected conn_index %5d thrd_index %2d session_index %5d ip %s port %d",
@@ -633,7 +632,7 @@ static void eventcb(struct bufferevent *bev, short events, void *ptr) {
 		CONN_LIST[session_data->conn_index].thrd_index = session_data->thrd_index;
 		CONN_LIST[session_data->conn_index].session_index = session_data->session_index;
 		CONN_LIST[session_data->conn_index].session_id = session_data->session_id;
-		//pthread_mutex_unlock(&ONLY_CRT_SESS_LOCK);
+		pthread_mutex_unlock(&ONLY_CRT_SESS_LOCK);
 
 		return;
 	}
@@ -728,8 +727,9 @@ void chk_tmout_callback(evutil_socket_t fd, short what, void *arg)
             /* normal case */
             if ((httpc_ctx = get_context(index, i, 1)) == NULL) 
                 continue;
-
-			// TODO!!! if in TCP queue (wait send) how to ???
+			/* this ctx queued in tcp, don't release this */
+			if (httpc_ctx->tcp_wait == 1)
+				continue;
 
             /* timed out case */
             if ((THRD_WORKER[index].time_index - httpc_ctx->recv_time_index) >= 
@@ -748,9 +748,11 @@ void chk_tmout_callback(evutil_socket_t fd, short what, void *arg)
                 if (snd ++ > MAX_TMOUT_SEND) break;
             }
         }
+#if 0
 		if (snd) {
 			APPLOG(APPLOG_ERR, "%s) thrd[%2d] try clear timeout [%5d]",  __func__, index, snd);
 		}
+#endif
     }
 }
 
@@ -990,7 +992,7 @@ void conn_func(evutil_socket_t fd, short what, void *arg)
 	http2_session_data_t *session_data;
 	int i;
 
-	//pthread_mutex_lock(&ONLY_CRT_SESS_LOCK);
+	pthread_mutex_lock(&ONLY_CRT_SESS_LOCK);
 	for (i = 0; i < MAX_SVR_NUM; i++) {
 		if (CONN_LIST[i].used == 0 || CONN_LIST[i].act != 1 || CONN_LIST[i].conn > CN_NOT_CONNECTED)
 			continue;
@@ -1018,7 +1020,7 @@ void conn_func(evutil_socket_t fd, short what, void *arg)
 		initiate_connection(THRD_WORKER[session_data->thrd_index].evbase, 
 				ssl_ctx, CONN_LIST[i].ip, CONN_LIST[i].port, session_data);
 	}
-	//pthread_mutex_unlock(&ONLY_CRT_SESS_LOCK);
+	pthread_mutex_unlock(&ONLY_CRT_SESS_LOCK);
 }
 
 #define MAX_THRD_WAIT_NUM 5
@@ -1075,10 +1077,9 @@ void main_tick_callback(evutil_socket_t fd, short what, void *arg)
 	keepalivelib_increase();
 #endif
 	monitor_worker();
-#ifdef TEST
-	IxpcQMsgType Ixpc;
+
+	IxpcQMsgType Ixpc = {0,};
 	stat_function(&Ixpc, CLIENT_CONF.worker_num, 1, 0, MSGID_HTTPC_STATISTICS_REPORT);
-#endif
 }
 
 void main_loop()

@@ -386,18 +386,13 @@ static ssize_t ptr_read_callback_ctx(nghttp2_session *session, int32_t stream_id
 	https_ctx_t *https_ctx = (https_ctx_t *)source->ptr;
 	int len = https_ctx->user_ctx.head.bodyLen;
 
-	//fprintf(stderr, "{{{dbg}}} in %s bodyLen %d\n", __func__, len);
-
-	if (len >= length) {
-		APPLOG(APPLOG_ERR, "%s) length(%d) exceed maximum val(%zu)",
-				__func__, len, length);
-		return 0;
-	} else {
-		memcpy(buf, https_ctx->user_ctx.body, len);
-		//DumpHex(https_ctx->user_ctx.body, len);
-	}
+    if (len >= length) {
+        APPLOG(APPLOG_ERR, "%s) body_len(%d) exceed maximum data_prd_len(%zu) body is [%s]",
+                __func__, len, length, https_ctx->user_ctx.body);
+        len = length;
+    }
+    memcpy(buf, https_ctx->user_ctx.body, len);
     *data_flags |= NGHTTP2_DATA_FLAG_EOF;
-
     return len;
 }
 static int send_response_by_ctx(nghttp2_session *session, int32_t stream_id,
@@ -783,6 +778,9 @@ static void initialize_nghttp2_session(http2_session_data *session_data) {
 
 	nghttp2_session_server_new(&session_data->session, callbacks, session_data);
 
+	// schlee test code, set session buff 10MB
+	nghttp2_session_set_local_window_size(session_data->session, NGHTTP2_FLAG_NONE, 0, 1 << 30);
+
 	nghttp2_session_callbacks_del(callbacks);
 }
 
@@ -1029,10 +1027,9 @@ void main_tick_callback(evutil_socket_t fd, short what, void *arg)
 	keepalivelib_increase();
 #endif
 	monitor_worker();
-#ifdef TEST
-	IxpcQMsgType Ixpc;
+
+	IxpcQMsgType Ixpc = {0,};
 	stat_function(&Ixpc, SERVER_CONF.worker_num, 0, 1, MSGID_HTTPS_STATISTICS_REPORT);
-#endif
 }
 
 void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
@@ -1181,6 +1178,9 @@ void chk_tmout_callback(evutil_socket_t fd, short what, void *arg)
 
 			/* normal case */
 			if ((https_ctx = get_context(index, i, 1)) == NULL) 
+				continue;
+			/* this ctx queued in tcp, don't release this */
+			if (https_ctx->tcp_wait == 1)
 				continue;
 
 			/* timeout case */
@@ -1411,14 +1411,13 @@ int initialize()
 	for ( i = 0; i < SERVER_CONF.worker_num; i++) {
 		HttpsCtx[i] = calloc (SIZEID, sizeof(https_ctx_t));
 	}
-    /* &initialize */
-    for (i = 0; i < SERVER_CONF.worker_num; i++) {
-        Init_CtxId(i);
-        for (j = 0; j < SIZEID; j++) {
-            HttpsCtx[i][j].occupied = 0;
-        }
-    }
-
+	/* &initialize */
+	for (i = 0; i < SERVER_CONF.worker_num; i++) {
+		Init_CtxId(i);
+		for (j = 0; j < SIZEID; j++) {
+			HttpsCtx[i][j].occupied = 0;
+		}
+	}
 
     /* create header enum:string list for bsearch and relay */
     if (set_relay_vhdr(VHDR_INDEX[0], VH_END) < 0) {

@@ -30,7 +30,6 @@ static void remove_write_item(write_list_t *write_list, write_item_t *write_item
         write_list->last = write_item->prev;
  
     write_list->item_cnt--;
-    //write_list->item_bytes -= write_item->iovec_item->remain_bytes;
 }
 
 write_item_t *create_write_item(write_list_t *write_list, iovec_item_t *iovec_item)
@@ -52,7 +51,7 @@ static void delete_write_item(write_list_t *write_list, write_item_t *write_item
 
 void print_write_item(write_list_t *write_list)
 {
-    fprintf(stderr, "%s cnt (%d) bytes (%d),\n", 
+    APPLOG(APPLOG_ERR, "%s cnt (%d) bytes (%d)", 
             __func__, write_list->item_cnt, write_list->item_bytes);
 
     write_item_t *write_item = write_list->root;
@@ -61,9 +60,9 @@ void print_write_item(write_list_t *write_list)
 
         iovec_item_t *iovec_item = write_item->iovec_item;
         if (iovec_item != NULL) {
-            fprintf(stderr, "have iovec cnt [%d]\n", iovec_item->iov_cnt);
+            APPLOG(APPLOG_ERR, "have iovec cnt [%d]", iovec_item->iov_cnt);
             for (int i = 0; i < iovec_item->iov_cnt; i++) {
-                fprintf(stderr, "iovec[%d]\n", i);
+                APPLOG(APPLOG_ERR, "iovec[%d]", i);
                 util_dumphex(iovec_item->iov[i].iov_base, iovec_item->iov[i].iov_len);
             }
         }
@@ -79,15 +78,18 @@ ssize_t push_write_item(int fd, write_list_t *write_list, int bundle_cnt, int bu
 		return 0;
 
 	if (bundle_cnt < 0 || bundle_bytes < 0) {
-		fprintf(stderr, "{dbg} wrong input in %s %d\n", __func__, __LINE__);
+		APPLOG(APPLOG_ERR, "{dbg} wrong input in (%s:%d) bundle cnt (%d) bundle bytes (%d)", __func__, __LINE__,
+				bundle_cnt, bundle_bytes);
 		return -1;
 	}
     if (write_list->item_cnt <= 0 || write_list->item_bytes <= 0) {
-		fprintf(stderr, "{dbg} wrong input in %s %d\n", __func__, __LINE__);
+		APPLOG(APPLOG_ERR, "{dbg} wrong input in (%s:%d) write_list->item_cnt %d, write_list->item_bytes %d", 
+				__func__, __LINE__,
+				write_list->item_cnt, write_list->item_bytes);
 		return -1;
 	}
 	if (fd < 0) {
-		fprintf(stderr, "{dbg} wrong input in %s %d\n", __func__, __LINE__);
+		APPLOG(APPLOG_ERR, "{dbg} wrong input in (%s:%d) (-) fd", __func__, __LINE__);
 		return -1;
 	}
 
@@ -108,6 +110,8 @@ ssize_t push_write_item(int fd, write_list_t *write_list, int bundle_cnt, int bu
 
             if (bytes >= bundle_bytes)
                 goto PUSH_SEND;
+			if (slot_cnt >= MAX_IOV_PUSH)
+				goto PUSH_SEND;
         }
 
         write_item_t *next = write_item->next;
@@ -118,7 +122,7 @@ PUSH_SEND:
     return writev(fd, iov, slot_cnt);
 }
 
-void unset_pushed_item(write_list_t *write_list, ssize_t nwritten)
+void unset_pushed_item(write_list_t *write_list, ssize_t nwritten, const char *caller)
 {
     write_list->item_bytes -= nwritten;
     write_item_t *write_item = write_list->root;
@@ -137,10 +141,10 @@ void unset_pushed_item(write_list_t *write_list, ssize_t nwritten)
             iovec_item->remain_bytes = 0;
 
 			/* unset ctx */
-			if (iovec_item->ctx_unset_ptr != NULL)
-				*iovec_item->ctx_unset_ptr = 0;
 			if (iovec_item->unset_cb_func != NULL) 
 				iovec_item->unset_cb_func(iovec_item->unset_cb_arg);
+			if (iovec_item->ctx_unset_ptr != NULL)
+				*iovec_item->ctx_unset_ptr = 0;
 
             /* remove from list */
             delete_write_item(write_list, write_item);

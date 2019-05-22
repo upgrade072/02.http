@@ -15,9 +15,8 @@ httpc_ctx_t *get_null_recv_ctx(tcp_ctx_t *tcp_ctx)
 		httpc_ctx_t *recv_ctx = &rcv_buff_ctx[i];
 		if (recv_ctx->occupied == 0) {
 			memset(recv_ctx, 0x00, sizeof(httpc_ctx_t));
-			recv_ctx->fep_tag = tcp_ctx->fep_tag;
-			//recv_ctx->recv_thread_id = tcp_ctx->thread_id;
 			recv_ctx->occupied = 1;
+			recv_ctx->fep_tag = tcp_ctx->fep_tag;
 			return recv_ctx;
 		}
 	}
@@ -47,10 +46,11 @@ httpc_ctx_t *get_assembled_ctx(tcp_ctx_t *tcp_ctx, char *ptr)
 	return recv_ctx;
 }
 
-void send_to_worker(conn_list_t *httpc_conn, httpc_ctx_t *recv_ctx)
+void send_to_worker(tcp_ctx_t *tcp_ctx, conn_list_t *httpc_conn, httpc_ctx_t *recv_ctx)
 {
 	httpc_ctx_t *httpc_ctx = NULL;
 	intl_req_t intl_req = {0,};
+	tcp_ctx_t *fep_tcp_ctx = NULL; // if error
 
 	int thrd_idx = httpc_conn->thrd_index;
 	int sess_idx = httpc_conn->session_index;
@@ -58,12 +58,14 @@ void send_to_worker(conn_list_t *httpc_conn, httpc_ctx_t *recv_ctx)
 	int ctx_idx = Get_CtxId(thrd_idx);
 
 	if (ctx_idx < 0) {
-		APPLOG(APPLOG_DEBUG, "(%s) assign context fail in worker [%d]", __func__, thrd_idx);
-		goto STW_RET;
+		tcp_ctx->ctx_assign_fail++;
+		//APPLOG(APPLOG_ERR, "(%s) assign context fail in worker [%d]", __func__, thrd_idx);
+		goto STW_ERR;
 	}
 	if ((httpc_ctx = get_context(thrd_idx, ctx_idx, 0)) == NULL) {
-		APPLOG(APPLOG_DEBUG, "(%s) get contexx fail in worker [%d]", __func__, thrd_idx);
-		goto STW_RET;
+		tcp_ctx->ctx_assign_fail++;
+		//APPLOG(APPLOG_ERR, "(%s) get contexx fail in worker [%d]", __func__, thrd_idx);
+		goto STW_ERR;
 	}
 	// TODO!!! maybe memset context ... or not
 	//
@@ -82,11 +84,17 @@ void send_to_worker(conn_list_t *httpc_conn, httpc_ctx_t *recv_ctx)
 	set_intl_req_msg(&intl_req, thrd_idx, ctx_idx, sess_idx, session_id, 0, HTTP_INTL_SND_REQ);
 
 	if (msgsnd(THRD_WORKER[thrd_idx].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0) == -1) {
-		APPLOG(APPLOG_DEBUG, "(%s) internal msgsnd to worker [%d] failed", __func__, thrd_idx);
+		APPLOG(APPLOG_ERR, "(%s) internal msgsnd to worker [%d] failed", __func__, thrd_idx);
+		clear_and_free_ctx(httpc_ctx);
 	}
 
 STW_RET:
 	recv_ctx->occupied = 0;
+	return;
+
+STW_ERR:
+	fep_tcp_ctx = search_dest_via_tag(recv_ctx, MAIN_CTX.fep_tx_thrd);
+	stp_err_to_fep(fep_tcp_ctx, recv_ctx); /* send err to fep */
 	return;
 }
 
@@ -133,6 +141,7 @@ void set_iovec(tcp_ctx_t *dest_tcp_ctx, httpc_ctx_t *recv_ctx, const char *dest_
 	}
 }
 
+
 void push_callback(evutil_socket_t fd, short what, void *arg)
 {
     iovec_item_t *push_item = (iovec_item_t *)arg;
@@ -144,10 +153,9 @@ void push_callback(evutil_socket_t fd, short what, void *arg)
 	sock_ctx_t *sock_ctx = get_last_conn_sock(tcp_ctx);
 #endif
 
-    //fprintf(stderr, "((%s)) called dest %s (mypid(%jd))\n", __func__, push_item->dest_ip, (intmax_t)util_gettid());
-
     if (sock_ctx == NULL) {
-        fprintf(stderr, "((%s)) dest (%s) not exist, unset item\n", __func__, push_item->dest_ip);
+		if (push_item->unset_cb_func != NULL)
+			push_item->unset_cb_func(push_item->unset_cb_arg);
 		if (push_item->ctx_unset_ptr != NULL)
 			*push_item->ctx_unset_ptr = 0;
         return;
@@ -159,14 +167,16 @@ void push_callback(evutil_socket_t fd, short what, void *arg)
 
 	/* bundle packet by config ==> send by once */
     if (write_list->item_cnt >= LB_CONF.bundle_count || write_list->item_bytes >= LB_CONF.bundle_bytes) {
-        ssize_t nwritten = push_write_item(sock_ctx->client_fd, write_list, LB_CONF.bundle_count, LB_CONF.bundle_bytes);
-        if (nwritten > 0) {
-            unset_pushed_item(write_list, nwritten);
+        ssize_t nwritten = push_write_item(sock_ctx->client_fd, write_list, INT_MAX, INT_MAX);
+        if (nwritten >= 0) {
+            unset_pushed_item(write_list, nwritten, __func__);
 			/* stat */
 			tcp_ctx->send_bytes += nwritten;
+		} else if (errno != EINTR && errno != EAGAIN) {
+			APPLOG(APPLOG_ERR, "fep sock there(%s) error! %d : %s\n", __func__, errno, strerror(errno));
+			release_conncb(sock_ctx);
+			return;
 		}
-		else if (errno != EINTR && errno != EAGAIN)
-			fprintf(stderr, "there error! %d : %s\n", errno, strerror(errno));
     }
 }
 
@@ -175,7 +185,7 @@ void iovec_push_req(tcp_ctx_t *dest_tcp_ctx, iovec_item_t *push_req)
     struct event_base *peer_evbase = dest_tcp_ctx->evbase;
 
     if (event_base_once(peer_evbase, -1, EV_TIMEOUT, push_callback, push_req, NULL) < 0) {
-        fprintf(stderr, "TODO!!! (%s) fail to add callback to dest evbase", __func__);
+        APPLOG(APPLOG_ERR, "TODO!!! (%s) fail to add callback to dest evbase", __func__);
     }
 }
 
@@ -249,10 +259,9 @@ void send_response_to_fep(httpc_ctx_t *httpc_ctx)
 		return;
 	}
 
-	//fprintf(stderr, "{{{dbg}}} in %s vheader cnt %d\n", __func__, httpc_ctx->user_ctx.head.vheaderCnt);
+	// this (worker) ctx will push to tcp queue, don't timeout this
+	httpc_ctx->tcp_wait = 1;
 
-	//set_iovec(fep_tcp_ctx, httpc_ctx, httpc_ctx->user_ctx.head.fep_origin_addr, &httpc_ctx->push_req, free_ctx_with_httpc_ctx, httpc_ctx);
-	// TODO!!!! check dest ip useless or not, if useless remove it
 	set_iovec(fep_tcp_ctx, httpc_ctx, NULL, &httpc_ctx->push_req, free_ctx_with_httpc_ctx, httpc_ctx);
 	
 	return iovec_push_req(fep_tcp_ctx, &httpc_ctx->push_req);
@@ -269,16 +278,6 @@ void send_to_peerlb(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx)
 		return stp_err_to_fep(fep_tcp_ctx, recv_ctx); /* send err to fep */
 	}
 
-#if 0 // TODO!!! check conn exist
-	sock_ctx_t *target_sock_ctx = search_node_by_ip(peer_tcp_ctx, peer_addr);
-	if (target_sock_ctx == NULL || target_sock_ctx->connected != 1)  {
-		fprintf(stderr, "{{{DBG}}} target sock %s\n", 
-				target_sock_ctx == NULL ? "[target sock null]" : 
-				target_sock_ctx != NULL && target_sock_ctx->connected != 1 ? "[not connected]" :  "[wtf]");
-		return stp_err_to_fep(sock_ctx, fep_tcp_ctx, recv_ctx); /* send err to fep */
-	}
-#endif
-
 	//return stp_snd_to_peer(LB_CONF.peer_lb_address, peer_tcp_ctx, recv_ctx); /* send relay to peer */
 	return stp_snd_to_peer(peer_tcp_ctx, recv_ctx); /* send relay to peer */
 }
@@ -286,15 +285,18 @@ void send_to_peerlb(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx)
 void send_to_remote(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx)
 {
 	conn_list_t *httpc_conn = 0;
+	tcp_ctx_t *tcp_ctx = (tcp_ctx_t *)sock_ctx->tcp_ctx;
 
 	/* save fep origin address */
 	if (recv_ctx->user_ctx.head.hopped_cnt == 0) 
 		sprintf(recv_ctx->user_ctx.head.fep_origin_addr, "%s", sock_ctx->client_ip);
 
 	if ((httpc_conn = find_packet_index(recv_ctx->user_ctx.head.destHost, LSMODE_LS)) == NULL) {
+		tcp_ctx->send_to_peer++;
 		send_to_peerlb(sock_ctx, recv_ctx);
 	} else {
-		send_to_worker(httpc_conn, recv_ctx);
+		tcp_ctx->send_to_fep++;
+		send_to_worker(tcp_ctx, httpc_conn, recv_ctx);
 	}
 }
 
@@ -313,6 +315,12 @@ KEEP_PROCESS:
 	head = (AhifHttpCSMsgHeadType *)&sock_ctx->buff[processed_len];
 	process_ptr = (char *)head;
 
+	if (strncmp(process_ptr, AHIF_MAGIC_BYTE, AHIF_MAGIC_BYTE_LEN)) {
+		APPLOG(APPLOG_ERR, "ahif rcv pkt wrong, it start with %8s\n", process_ptr);
+		release_conncb(sock_ctx);
+		return;
+	}
+
 	if (sock_ctx->rcv_len < (processed_len + AHIF_TCP_MSG_LEN(head))) 
 		return packet_process_res(sock_ctx, process_ptr, processed_len);
 
@@ -327,7 +335,10 @@ KEEP_PROCESS:
 	process_ptr += AHIF_TCP_MSG_LEN(head);
 	processed_len += AHIF_TCP_MSG_LEN(head);
 
+	// for log stat
+	tcp_ctx->send_to_remote_called++;
 	send_to_remote(sock_ctx, recv_ctx);
+	tcp_ctx->send_to_remote_success++;
 
 	goto KEEP_PROCESS;
 }
@@ -342,7 +353,11 @@ void lb_buff_readcb(struct bufferevent *bev, void *arg)
 
 	// TODO !!! check strerror() & if critical, call relese_conn()
 	if (rcv_len <= 0) {
-		return;
+		if (errno != EINTR && errno != EAGAIN) {
+			APPLOG(APPLOG_ERR, "fep sock there(%s) error! %d : %s\n", __func__, errno, strerror(errno));
+			release_conncb(sock_ctx);
+			return;
+		}
 	} else {
 		sock_ctx->rcv_len += rcv_len;
 		/* stat */
@@ -457,6 +472,11 @@ void clear_context_stat(tcp_ctx_t *tcp_ctx)
 	tcp_ctx->recv_bytes = 0;
 	tcp_ctx->send_bytes = 0;
 	tcp_ctx->tps = 0;
+	tcp_ctx->send_to_remote_called = 0;
+	tcp_ctx->send_to_remote_success = 0;
+	tcp_ctx->send_to_peer = 0;
+	tcp_ctx->send_to_fep = 0;
+	tcp_ctx->ctx_assign_fail = 0;
 }
 
 void fep_stat_print(evutil_socket_t fd, short what, void *arg)
@@ -488,7 +508,7 @@ void fep_stat_print(evutil_socket_t fd, short what, void *arg)
 		int fep_rx_used = get_httpcs_buff_used(fep_rx);
 		int peer_rx_used = get_httpcs_buff_used(peer_rx);
 
-		APPLOG(APPLOG_ERR, "FEP [%2d] CTX [fep_rx %05d/%05d peer_rx %05d/%05d] FEP RX [%s] (TPS %d) FEP TX [%s] ( PEER_RX [%s] PEER TX [%s] )",
+		APPLOG(APPLOG_ERR, "FEP [%2d] CTX [fep_rx %05d/%05d peer_rx %05d/%05d] FEP RX [%s] (TPS %d) FEP TX [%s] ( PEER_RX [%s] PEER TX [%s] ), DBG {{{ called[%d] succ[%d] peer[%d] fep[%d] assign fail[%d] }}}",
 				i,
 				fep_rx_used,
 				fep_rx->context_num,
@@ -498,7 +518,12 @@ void fep_stat_print(evutil_socket_t fd, short what, void *arg)
 				fep_rx->tps,
 				measure_print(fep_tx->send_bytes, fep_write),
 				measure_print(peer_rx->recv_bytes, peer_read),
-				measure_print(peer_tx->send_bytes, peer_write));
+				measure_print(peer_tx->send_bytes, peer_write),
+				fep_rx->send_to_remote_called,
+				fep_rx->send_to_remote_success,
+				fep_rx->send_to_peer,
+				fep_rx->send_to_fep,
+				fep_rx->ctx_assign_fail);
 
 		clear_context_stat(fep_rx);
 		clear_context_stat(fep_tx);

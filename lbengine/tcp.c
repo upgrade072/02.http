@@ -34,7 +34,7 @@ void add_tcp_ctx_to_main(tcp_ctx_t *tcp_ctx, GNode *where_to_add)
 	if (new_tcp != NULL)  {
 		add_node(where_to_add, new_tcp, NULL);
 	} else {
-		fprintf(stderr, "fail to create thread ctx!!!\n");
+		APPLOG(APPLOG_ERR, "fail to create thread ctx!!!");
 		exit(0);
 	}
 }
@@ -142,13 +142,13 @@ void unexpect_readcb(struct bufferevent *bev, void *arg)
 {
     sock_ctx_t *sock_ctx = (sock_ctx_t *)arg;
 
-    fprintf(stderr, "LB-ENGINE] ((%s)) called\n", __func__);
+    APPLOG(APPLOG_ERR, "LB-ENGINE] ((%s)) called", __func__);
 
     char buff[10240] = {0,};
     ssize_t rsize = bufferevent_read(bev, buff, sizeof(buff));
 
     buff[rsize + 1] = '\0';
-    fprintf(stderr, "LB-ENGINE] recv unexpected (%ld byte)\n", rsize);
+    APPLOG(APPLOG_ERR, "LB-ENGINE] recv unexpected (%ld byte)", rsize);
     util_dumphex(buff, rsize);
 
     release_conncb(sock_ctx);
@@ -156,11 +156,14 @@ void unexpect_readcb(struct bufferevent *bev, void *arg)
 
 void release_conncb(sock_ctx_t *sock_ctx)
 {
-    fprintf(stderr, "LB-ENGINE] sock %s:%d fd(%d) (%.19s ~ ) closed\n",
+    APPLOG(APPLOG_ERR, "LB-ENGINE] sock %s:%d fd(%d) (%.19s ~ ) closed",
             sock_ctx->client_ip, sock_ctx->client_port, sock_ctx->client_fd,
             ctime(&sock_ctx->create_time));
 
     struct bufferevent *bev = sock_ctx->bev;
+
+    // remove whole push item, unset caller ctx
+    unset_pushed_item(&sock_ctx->push_items, sock_ctx->push_items.item_bytes, __func__);
 
 	// CHECK event first? bev first?
     if (sock_ctx->event) 
@@ -170,8 +173,6 @@ void release_conncb(sock_ctx_t *sock_ctx)
 	if (sock_ctx->bev) 
 		bufferevent_free(bev);
 
-    // remove whole push item, unset caller ctx
-    unset_pushed_item(&sock_ctx->push_items, sock_ctx->push_items.item_bytes);
     // remove conn info 
     remove_node(sock_ctx->my_conn);
 }
@@ -180,25 +181,25 @@ void svr_sock_eventcb(struct bufferevent *bev, short events, void *user_data)
 {
     sock_ctx_t *sock_ctx = (sock_ctx_t *)user_data;
 
-    fprintf(stderr, "LB-ENGINE] ((%s)) called in conn(%s:%d)\n", __func__, sock_ctx->client_ip, sock_ctx->client_port);
+    APPLOG(APPLOG_ERR, "LB-ENGINE] ((%s)) called in conn(%s:%d)", __func__, sock_ctx->client_ip, sock_ctx->client_port);
 
     // client sock conneted
     if(events & BEV_EVENT_CONNECTED) {
 
         int fd = bufferevent_getfd(bev);
-        fprintf(stderr, "LB-ENGINE] connected fd is (%d)\n", fd);
+        APPLOG(APPLOG_ERR, "LB-ENGINE] connected fd is (%d)", fd);
 
         if (util_set_linger(fd, 1, 0) != 0) 
-            fprintf(stderr, "LB-ENGINE] fail to set SO_LINGER (ABORT) to fd\n");
+            APPLOG(APPLOG_ERR, "LB-ENGINE] fail to set SO_LINGER (ABORT) to fd");
 
 		sock_ctx->connected = 1;
         return;
     }
 
     if (events & BEV_EVENT_EOF) {
-        fprintf(stderr, "LB-ENGINE] Connection closed.\n");
+        APPLOG(APPLOG_ERR, "LB-ENGINE] Connection closed.");
     } else if (events & BEV_EVENT_ERROR) {
-        fprintf(stderr, "LB-ENGINE] Got an error on the connection: %s\n", strerror(errno));
+        APPLOG(APPLOG_ERR, "LB-ENGINE] Got an error on the connection: %s", strerror(errno));
     }
 
     release_conncb(sock_ctx);
@@ -228,28 +229,31 @@ sock_ctx_t *assign_sock_ctx(tcp_ctx_t *tcp_ctx, evutil_socket_t fd, struct socka
         sock_ctx->my_conn = new_conn;
         return sock_ctx;
     } else {
-        fprintf(stderr, "LB-ENGINE] fail to create sock ctx!\n");
+        APPLOG(APPLOG_ERR, "LB-ENGINE] fail to create sock ctx!");
         return NULL;
     }
 }
 
 void sock_flush_callback(evutil_socket_t fd, short what, void *arg)
 {
-	/*
-	if (fd < 0) return;
-	*/
-
     sock_ctx_t *sock_ctx = (sock_ctx_t *)arg;
 	tcp_ctx_t *tcp_ctx = (tcp_ctx_t *)sock_ctx->tcp_ctx;
     write_list_t *write_list = &sock_ctx->push_items;
 
+	if (sock_ctx->connected != 1) {
+		unset_pushed_item(&sock_ctx->push_items, sock_ctx->push_items.item_bytes, __func__);
+		return;
+	}
+
     /* push all remain item */
-    ssize_t nwritten = push_write_item(sock_ctx->client_fd, write_list, 1024, 1024*1024);
-    if (nwritten > 0) {
-        unset_pushed_item(write_list, nwritten);
+    ssize_t nwritten = push_write_item(sock_ctx->client_fd, write_list, INT_MAX, INT_MAX);
+    if (nwritten >= 0) {
+        unset_pushed_item(write_list, nwritten, __func__);
 		/* stat */
 		tcp_ctx->send_bytes += nwritten;
-		//fprintf(stderr, "{{{dbg}}} (%s) write %ld bytes\n", __func__, nwritten);
+	} else if (errno != EINTR && errno != EAGAIN) {
+		APPLOG(APPLOG_ERR, "LB-ENGINE] something wrong (%d : %s), release sock\n", errno, strerror(errno));
+		release_conncb(sock_ctx);
 	}
 }
 
@@ -263,7 +267,7 @@ int sock_add_flushcb(tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx)
 
 void release_older_sock(tcp_ctx_t *tcp_ctx)
 {
-	fprintf(stderr, "LB-ENGINE] new sock connected release olds conn!\n");
+	APPLOG(APPLOG_ERR, "LB-ENGINE] new sock connected release olds conn!");
 
     GNode *root = tcp_ctx->root_conn;
     unsigned int conn_num = g_node_n_children(root);
@@ -285,47 +289,48 @@ void lb_listener_cb(struct evconnlistener *listener, evutil_socket_t fd,
 
     sock_ctx_t *sock_ctx = assign_sock_ctx(tcp_ctx, fd, sa);
     if (sock_ctx == NULL) {
-        fprintf(stderr, "LB-ENGINE] something wrong (%s)\n", __func__);
+        APPLOG(APPLOG_ERR, "LB-ENGINE] something wrong (%s)", __func__);
         exit(0);
     } else {
 		sock_ctx->tcp_ctx = tcp_ctx;
+		sock_ctx->connected = 1;
 	}
 
     if (util_set_linger(fd, 1, 0) != 0) 
-        fprintf(stderr, "LB-ENGINE] fail to set SO_LINGER (ABORT) to fd\n");
+        APPLOG(APPLOG_ERR, "LB-ENGINE] fail to set SO_LINGER (ABORT) to fd");
 	if (util_set_rcvbuffsize(fd, INT_MAX) != 0)
-        fprintf(stderr, "LB-ENGINE] fail to set SO_RCVBUF (size INT_MAX) to fd\n");
+        APPLOG(APPLOG_ERR, "LB-ENGINE] fail to set SO_RCVBUF (size INT_MAX) to fd");
 	if (util_set_sndbuffsize(fd, INT_MAX) != 0)
-        fprintf(stderr, "LB-ENGINE] fail to set SO_SNDBUF (size INT_MAX) to fd\n");
+        APPLOG(APPLOG_ERR, "LB-ENGINE] fail to set SO_SNDBUF (size INT_MAX) to fd");
 
     struct bufferevent *bev = sock_ctx->bev = bufferevent_socket_new(evbase, fd, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);
     if (!bev) {
-        fprintf(stderr, "LB-ENGINE] Error constructing bufferevent!");
+        APPLOG(APPLOG_ERR, "LB-ENGINE] Error constructing bufferevent!");
         event_base_loopbreak(evbase);
         return;
     }
 
     switch (tcp_ctx->svc_type) {
         case TT_RX_ONLY:
-            fprintf(stderr, "LB-ENGINE] {dbg} rx only connected!\n");
+            APPLOG(APPLOG_ERR, "LB-ENGINE] {dbg} rx only connected!");
             bufferevent_setcb(bev, lb_buff_readcb, NULL, svr_sock_eventcb, sock_ctx);
             bufferevent_enable(bev, EV_READ);
             break;
         case TT_TX_ONLY:
-            fprintf(stderr, "LB-ENGINE] {dbg} tx only connected!\n");
+            APPLOG(APPLOG_ERR, "LB-ENGINE] {dbg} tx only connected!");
             int res = sock_add_flushcb(tcp_ctx, sock_ctx); // TODO res < 0 ???
 			if (res < 0) {
-				// TODO!!!
+				APPLOG(APPLOG_ERR, "LB-ENGINE] {dbg} fail to add flushcb!");
 			}
             bufferevent_setcb(bev, unexpect_readcb, NULL, svr_sock_eventcb, sock_ctx);
             bufferevent_enable(bev, EV_READ);
             break;
         default:
-            fprintf(stderr, "LB-ENGINE] {dbg} wrong context received\n");
+            APPLOG(APPLOG_ERR, "LB-ENGINE] {dbg} wrong context received");
             exit(0);
     }
 
-    fprintf(stderr, "LB-ENGINE] accepted fd (%d) addr %s port %d\n",
+    APPLOG(APPLOG_ERR, "LB-ENGINE] accepted fd (%d) addr %s port %d",
             sock_ctx->client_fd, sock_ctx->client_ip, sock_ctx->client_port);
 }
 
@@ -344,14 +349,14 @@ void *fep_conn_thread(void *arg)
     struct evconnlistener *listener = NULL;
 
     if ((evbase = tcp_ctx->evbase = event_base_new()) == NULL) {
-        fprintf(stderr, "LB-ENGINE] ERR}} could not init event!\n");
+        APPLOG(APPLOG_ERR, "LB-ENGINE] ERR}} could not init event!");
         exit(0);
     }
 
     listen_addr.sin_family = AF_INET;
     listen_addr.sin_port = htons(tcp_ctx->listen_port);
 
-    fprintf(stderr, ">>>[ %s / for FEP %02d] thread id [%jd] will listen [%s:%5d]<<<\n",
+    APPLOG(APPLOG_ERR, ">>>[ %s / for FEP %02d] thread id [%jd] will listen [%s:%5d]<<<",
             __func__, tcp_ctx->fep_tag, (intmax_t)util_gettid(), tcp_ctx->svc_type == TT_RX_ONLY ? "rx only" : "tx only", tcp_ctx->listen_port);
 
     // EVUTIL_SOCK_NONBLOCK default setted
@@ -359,7 +364,7 @@ void *fep_conn_thread(void *arg)
     if ((listener = tcp_ctx->listener = evconnlistener_new_bind(evbase, lb_listener_cb, (void *)tcp_ctx,
             LEV_OPT_REUSEABLE|LEV_OPT_CLOSE_ON_FREE|LEV_OPT_THREADSAFE, 
             16, (struct sockaddr*)&listen_addr, sizeof(listen_addr))) == NULL) {
-        fprintf(stderr, "LB-ENGINE] Could not create a listener! (port : %d)\n", tcp_ctx->listen_port);
+        APPLOG(APPLOG_ERR, "LB-ENGINE] Could not create a listener! (port : %d)", tcp_ctx->listen_port);
         return (void *)NULL;
     }
 
@@ -371,7 +376,7 @@ void *fep_conn_thread(void *arg)
     evconnlistener_free(listener);
     event_base_free(evbase);
 
-    fprintf(stderr, "reach here~!\n");
+    APPLOG(APPLOG_ERR, "reach here~!");
 
 	return (void *)NULL;
 }
@@ -380,7 +385,7 @@ void cli_sock_eventcb(struct bufferevent *bev, short events, void *user_data)
 {
     sock_ctx_t *sock_ctx = (sock_ctx_t *)user_data;
 
-    fprintf(stderr, "LB-ENGINE] ((%s)) called in conn(%s:%d)\n", __func__, sock_ctx->client_ip, sock_ctx->client_port);
+    APPLOG(APPLOG_ERR, "LB-ENGINE] ((%s)) called in conn(%s:%d)", __func__, sock_ctx->client_ip, sock_ctx->client_port);
 
     // normal connected
     if(events & BEV_EVENT_CONNECTED) {
@@ -388,10 +393,10 @@ void cli_sock_eventcb(struct bufferevent *bev, short events, void *user_data)
 		bufferevent_set_timeouts(bev, NULL, NULL); // remove SYN timeout 
 
         int fd = bufferevent_getfd(bev);
-        fprintf(stderr, "LB-ENGINE] connected fd is (%d)\n", fd);
+        APPLOG(APPLOG_ERR, "LB-ENGINE] connected fd is (%d)", fd);
 
         if (util_set_linger(fd, 1, 0) != 0) 
-            fprintf(stderr, "LB-ENGINE] fail to set SO_LINGER (ABORT) to fd\n");
+            APPLOG(APPLOG_ERR, "LB-ENGINE] fail to set SO_LINGER (ABORT) to fd");
 
 		sock_ctx->connected = 1;
         return;
@@ -399,11 +404,11 @@ void cli_sock_eventcb(struct bufferevent *bev, short events, void *user_data)
 
     // error event
     if (events & BEV_EVENT_EOF) {
-        fprintf(stderr, "LB-ENGINE] Connection closed.\n");
+        APPLOG(APPLOG_ERR, "LB-ENGINE] Connection closed.");
     } else if (events & BEV_EVENT_ERROR) {
-        fprintf(stderr, "LB-ENGINE] Got an error on the connection: %s\n", strerror(errno));
+        APPLOG(APPLOG_ERR, "LB-ENGINE] Got an error on the connection: %s", strerror(errno));
 	} else {
-		fprintf(stderr, "LB-ENGINE] We occured event 0x%x\n", events);
+		APPLOG(APPLOG_ERR, "LB-ENGINE] We occured event 0x%x", events);
 	}
 
     release_conncb(sock_ctx);
@@ -420,12 +425,12 @@ sock_ctx_t *create_new_peer_sock(tcp_ctx_t *tcp_ctx, const char *peer_addr)
 
     int fd = socket(AF_INET, SOCK_STREAM, 0);
 	if (evutil_make_socket_nonblocking(fd) == -1) {
-		fprintf(stderr, "LB-ENGINE] peer sock set nonblock failed\n");
+		APPLOG(APPLOG_ERR, "LB-ENGINE] peer sock set nonblock failed");
 	}
 
     sock_ctx_t *sock_ctx = assign_sock_ctx(tcp_ctx, fd, (struct sockaddr *)&sin);
     if (sock_ctx == NULL) {
-        fprintf(stderr, "LB-ENGINE] something wrong (%s)\n", __func__);
+        APPLOG(APPLOG_ERR, "LB-ENGINE] something wrong (%s)", __func__);
         exit(0);
     } else {
 		sock_ctx->tcp_ctx = tcp_ctx;
@@ -437,14 +442,14 @@ sock_ctx_t *create_new_peer_sock(tcp_ctx_t *tcp_ctx, const char *peer_addr)
 			BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);
 
     if (!bev) {
-        fprintf(stderr, "LB-ENGINE] Error constructing bufferevent!");
+        APPLOG(APPLOG_ERR, "LB-ENGINE] Error constructing bufferevent!");
         event_base_loopbreak(evbase);
         return NULL;
     }
 
     int res = sock_add_flushcb(tcp_ctx, sock_ctx); // TODO res < 0 ???
 	if (res < 0) {
-		fprintf(stderr, "LB-ENGINE] fail to add flush cb in (%s)\n", __func__);
+		APPLOG(APPLOG_ERR, "LB-ENGINE] fail to add flush cb in (%s)", __func__);
 		release_conncb(sock_ctx);
 		return NULL;
 	}
@@ -475,14 +480,14 @@ void check_peer_conn(evutil_socket_t fd, short what, void *arg)
 		peer_ip_addr = converted_ip;
 	} else {
 		/* it is host but fail to resolv */
-		fprintf(stderr, "LB-ENGINE] can't resolv peer_ip_addr conf (%s)\n", tcp_ctx->peer_ip_addr);
+		APPLOG(APPLOG_ERR, "LB-ENGINE] can't resolv peer_ip_addr conf (%s)", tcp_ctx->peer_ip_addr);
 		return;
 	}
 
     // config --> sock check --> create new
 	if (search_node_by_ip(tcp_ctx, peer_ip_addr) == NULL) {
 		sock_ctx = create_new_peer_sock(tcp_ctx, peer_ip_addr);
-		fprintf(stderr, "LB-ENGINE] peer %s not exist create new one ... %s\n", 
+		APPLOG(APPLOG_ERR, "LB-ENGINE] peer %s not exist create new one ... %s", 
 				peer_ip_addr, sock_ctx == NULL ?  "failed" : "success");
 		}
 
@@ -491,7 +496,7 @@ void check_peer_conn(evutil_socket_t fd, short what, void *arg)
     for (int i = 0; i < sock_cnt; i++) {
         sock_ctx = return_nth_sock(tcp_ctx, i);
         if (check_conf_via_sock(tcp_ctx, sock_ctx) == 0) {
-            fprintf(stderr, "LB-ENGINE] peer %s not exist in config delete this one ...\n", 
+            APPLOG(APPLOG_ERR, "LB-ENGINE] peer %s not exist in config delete this one ...", 
                     sock_ctx->client_ip);
             release_conncb(sock_ctx);
         }
@@ -511,11 +516,11 @@ void *fep_peer_thread(void *arg)
     struct event_base *evbase = NULL;
 
     if ((evbase = tcp_ctx->evbase = event_base_new()) == NULL) {
-        fprintf(stderr, "LB-ENGINE] ERR}} could not init event!\n");
+        APPLOG(APPLOG_ERR, "LB-ENGINE] ERR}} could not init event!");
         exit(0);
     }
 
-    fprintf(stderr, ">>>[ %s / for FEP %02d] thread id [%jd] connect to  [peer(s): %s:%5d]<<<\n",
+    APPLOG(APPLOG_ERR, ">>>[ %s / for FEP %02d] thread id [%jd] connect to  [peer(s): %s:%5d]<<<",
             __func__, tcp_ctx->fep_tag, (intmax_t)util_gettid(), tcp_ctx->peer_ip_addr, tcp_ctx->listen_port);
 
     struct timeval tm_interval = {1, 0}; // 1sec interval
@@ -528,7 +533,7 @@ void *fep_peer_thread(void *arg)
 
     event_base_free(evbase);
 
-    fprintf(stderr, "reach here~!\n");
+    APPLOG(APPLOG_ERR, "reach here~!");
 
 	return (void *)NULL;
 }
@@ -543,7 +548,7 @@ void CREATE_LB_THREAD(GNode *root_node, size_t context_size, int context_num)
 		if (context_size != 0 && context_num != 0) {
 			tcp_ctx->buff_exist = 1; // it use malloc buffer
 			if ((tcp_ctx->httpcs_ctx_buff = calloc(context_num, context_size)) == NULL) {
-				fprintf(stderr, "ERR} fail to malloc for recv ctx ( %lu x %d ) !!!\n",
+				APPLOG(APPLOG_ERR, "ERR} fail to malloc for recv ctx ( %lu x %d ) !!!",
 						context_size, context_num);
 				exit(0);
 			}	
@@ -554,7 +559,7 @@ void CREATE_LB_THREAD(GNode *root_node, size_t context_size, int context_num)
             case TT_RX_ONLY:
             case TT_TX_ONLY:
                 if (pthread_create(&tcp_ctx->thread_id, NULL, &fep_conn_thread, tcp_ctx) != 0) {
-                    fprintf(stderr, "ERR} cant invoke thread type %d, %d th\n", tcp_ctx->svc_type, i);
+                    APPLOG(APPLOG_ERR, "ERR} cant invoke thread type %d, %d th", tcp_ctx->svc_type, i);
                     exit(0);
                 } else {
                     pthread_detach(tcp_ctx->thread_id);
@@ -562,14 +567,14 @@ void CREATE_LB_THREAD(GNode *root_node, size_t context_size, int context_num)
                 break;
             case TT_PEER_SEND:
                 if (pthread_create(&tcp_ctx->thread_id, NULL, &fep_peer_thread, tcp_ctx) != 0) {
-                    fprintf(stderr, "ERR} cant invoke thread type %d, %d th\n", tcp_ctx->svc_type, i);
+                    APPLOG(APPLOG_ERR, "ERR} cant invoke thread type %d, %d th", tcp_ctx->svc_type, i);
                     exit(0);
                 } else {
                     pthread_detach(tcp_ctx->thread_id);
                 }
                 break;
             default:
-                fprintf(stderr, "ERR} in func (%s) unknown svc_type (%d)\n", __func__, tcp_ctx->svc_type);
+                APPLOG(APPLOG_ERR, "ERR} in func (%s) unknown svc_type (%d)", __func__, tcp_ctx->svc_type);
                 break;
         }
     }

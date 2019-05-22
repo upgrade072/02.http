@@ -28,6 +28,12 @@
 
 #include <http_comm.h>
 
+#ifdef LOG_LIB
+#include <loglib.h>
+#elif LOG_APP
+#include <appLog.h>
+#endif
+
 #define MAX_IOV_CNT 3 // header + vheader + body
 #define MAX_IOV_PUSH 256
 
@@ -55,7 +61,7 @@ typedef struct write_list {
     write_item_t *last;                     /* last item */
 
     int item_cnt;                           /* match with {bundle_cnt} */
-    int item_bytes;                         /* match with {bundle_bytes} */
+    ssize_t item_bytes;                     /* match with {bundle_bytes} */
 } write_list_t;
 
 #define MAX_RCV_BUFF_LEN 1024 * 1024 // 1MB
@@ -119,6 +125,11 @@ typedef struct tcp_ctx {
 	int send_bytes;
 	int recv_bytes;
 	int tps;
+	int send_to_remote_called;
+	int send_to_remote_success;
+	int send_to_peer;
+	int send_to_fep;
+	int ctx_assign_fail;
 } tcp_ctx_t;
 
 typedef struct main_ctx {
@@ -142,7 +153,8 @@ void    lb_buff_readcb(struct bufferevent *bev, void *arg);
 write_item_t    *create_write_item(write_list_t *write_list, iovec_item_t *iovec_item);
 void    print_write_item(write_list_t *write_list);
 ssize_t push_write_item(int fd, write_list_t *write_list, int bundle_cnt, int bundle_bytes);
-void    unset_pushed_item(write_list_t *write_list, ssize_t nwritten);
+//void    unset_pushed_item(write_list_t *write_list, ssize_t nwritten);
+void unset_pushed_item(write_list_t *write_list, ssize_t nwritten, const char *caller);
 
 /* ------------------------- util.c --------------------------- */
 char    *util_get_ip_from_sa(struct sockaddr *sa);
