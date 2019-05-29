@@ -80,7 +80,7 @@ typedef struct sock_ctx {
     char buff[MAX_RCV_BUFF_LEN];
     int rcv_len;
 
-    void *main_ctx;
+    void *lb_ctx;
 	void *tcp_ctx;
 
     GNode *my_conn;
@@ -93,6 +93,41 @@ typedef enum svc_type {
     TT_TX_ONLY,
     TT_PEER_SEND 
 } svc_type_t;
+
+typedef struct tcp_stat {
+	int send_bytes;
+	int recv_bytes;
+	int tps;
+	int send_to_remote_called;
+	int send_to_remote_success;
+	int send_to_peer;
+	int send_to_fep;
+	int ctx_assign_fail;
+} tcp_stat_t;
+
+typedef enum select_node_depth {
+    SN_TYPE = 0,
+    SN_HOST,
+    SN_IP,
+    SN_PORT,
+    SN_CONN_ID,
+    SN_MAX
+} select_node_depth_t;
+
+typedef int (*FUNC_PTR)(void *, void *);
+
+typedef struct select_node {
+    int depth;
+    int select_vector;
+    int last_selected;
+
+    char name[1024];
+    int val;
+
+    GNode *node_ptr;        // my gnode pointer
+    FUNC_PTR func_ptr;      // compare function
+    void *leaf_ptr;
+} select_node_t;
 
 typedef struct tcp_ctx {
     pthread_t thread_id;
@@ -118,28 +153,24 @@ typedef struct tcp_ctx {
 	/* use by HTTPS for RR request */
 	int round_robin_index[MAX_THRD_NUM];
 
-    void *main_ctx;
+    void *lb_ctx;
     GNode *root_conn;
 
 	/* for stat */
-	int send_bytes;
-	int recv_bytes;
-	int tps;
-	int send_to_remote_called;
-	int send_to_remote_success;
-	int send_to_peer;
-	int send_to_fep;
-	int ctx_assign_fail;
+	tcp_stat_t tcp_stat;
+
+	/* for dest selection */
+	select_node_t root_select;
 } tcp_ctx_t;
 
-typedef struct main_ctx {
+typedef struct lb_ctx {
 	GNode *fep_rx_thrd;
 	GNode *fep_tx_thrd;
 	GNode *peer_rx_thrd;
 	GNode *peer_tx_thrd;
 
 	pthread_t stat_thrd_id;
-} main_ctx_t;
+} lb_ctx_t;
 
 
 /***************************************************************/

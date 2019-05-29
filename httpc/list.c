@@ -106,6 +106,7 @@ int find_least_conn_worker()
     return thrd_id;
 }
 
+// TODO!!! print NRF ref id 
 void print_list(conn_list_status_t conn_status[]) {
     int i, j;
 
@@ -130,34 +131,6 @@ void print_list(conn_list_status_t conn_status[]) {
         }
     }
     APPLOG(APPLOG_ERR, "---------------------------------------------------------------------------------------------------------------");
-}
-
-void print_raw_list() {
-    int i;
-
-    APPLOG(APPLOG_ERR, "- raw table ----------------------------------------------------------------------------------------------------------");
-    APPLOG(APPLOG_ERR, " idx l-id i-id used  act conn host    type    ip                                             port next  max curr  num");
-    for ( i = 0; i < MAX_SVR_NUM; i++) {
-        if (CONN_LIST[i].used != 1)
-            continue;
-        APPLOG(APPLOG_ERR, "%4d %4d %4d %4d %4d %4d %-7s %-7s %-46s %4d %4d %4d %4d %4d",
-                CONN_LIST[i].index,
-                CONN_LIST[i].list_index,
-                CONN_LIST[i].item_index,
-                CONN_LIST[i].used,
-                CONN_LIST[i].act,
-                CONN_LIST[i].conn,
-                CONN_LIST[i].host,
-                CONN_LIST[i].type,
-                CONN_LIST[i].ip,
-                CONN_LIST[i].port,
-                CONN_LIST[i].next_hop,
-                CONN_LIST[i].max_hop,
-                CONN_LIST[i].curr_idx,
-                CONN_LIST[i].counter);
-    }
-    APPLOG(APPLOG_ERR, "----------------------------------------------------------------------------------------------------------------------");
-
 }
 
 /* watch out for buffer size */
@@ -242,140 +215,6 @@ void gather_list(conn_list_status_t CONN_STATUS[]) {
 			}
 		}
 	}
-}
-
-void prepare_order(int list_index)
-{
-    int i;
-
-    for (i = 0; i < MAX_SVR_NUM; i++) {
-        if (CONN_LIST[i].list_index == list_index) {
-            CONN_LIST[i].next_hop = 0;
-            CONN_LIST[i].max_hop = 0;
-            CONN_LIST[i].curr_idx = 0;
-            CONN_LIST[i].counter = 0;
-        }
-    }
-}
-
-void order_list() {
-    conn_list_t *start = NULL, *curr = NULL, *prev = NULL;
-    int i, j, found;
-
-    for ( i = 0; i < MAX_SVR_NUM; i++) {
-        if (CONN_LIST[i].used != 1)
-            continue;
-        if (CONN_LIST[i].next_hop == 0 ) {
-            start = &CONN_LIST[i];
-            start->max_hop = 1;
-            prev = curr = start;
-
-            found = 0;
-            for (j = i + 1 ; j < MAX_SVR_NUM; j++) {
-                curr = &CONN_LIST[j];
-
-                if (CONN_LIST[j].used != 1)
-                    continue;
-                if (CONN_LIST[j].next_hop != 0 )
-                    continue;
-
-				if (!strcmp(curr->host, start->host)) {
-                    curr->next_hop = start->index;
-                    prev->next_hop = curr->index;
-                    start->max_hop ++;
-
-                    prev = curr;
-                    found ++;
-                }
-            }
-            if (found == 0) {
-                start->next_hop = start->index;
-            }
-        }
-    }
-}
-
-conn_list_t *find_packet_index(char *host, int ls_mode) {
-    int i, found = 0, index;
-    conn_list_t *curr = NULL, *start = NULL;
-	int ls_index, ls_send_num;
-
-	for ( i = 0; i < MAX_SVR_NUM; i++) {
-		if (CONN_LIST[i].used != 1)
-			continue;
-		if(!strcmp(host, CONN_LIST[i].host)) {
-			found = 1;
-			break;
-		}
-	}
-    if (!found) {
-        //APPLOG(APPLOG_DEBUG, "warn} %s not found! host (%s)", __func__, host);
-        return NULL;
-	}
-    start = curr = &CONN_LIST[i];
-
-	switch (ls_mode) {
-		case LSMODE_RR:
-			for (i = 0; i < start->curr_idx; i++) {
-				index = curr->next_hop;
-				curr = &CONN_LIST[index];
-			}
-			start->curr_idx = (start->curr_idx + 1) % start->max_hop;
-
-			for (i = 0; i < start->max_hop; i++) {
-				index = curr->next_hop;
-				curr = &CONN_LIST[index];
-
-				if (curr->conn == CN_CONNECTED) {
-#ifndef PERFORM
-					APPLOG(APPLOG_DEBUG, "packet sended via %d", curr->index);
-#endif
-					return curr;
-				}
-			}
-			break;
-
-		case LSMODE_LS:
-            ls_index = 0;
-            ls_send_num = MAX_COUNT_NUM + 1;
-
-            for (i = 0; i < start->max_hop; i++) {
-                index = curr->next_hop;
-                curr = &CONN_LIST[index];
-
-                if (curr->conn == CN_CONNECTED) {
-                    if (curr->counter <= ls_send_num) {
-                        ls_index = curr->index;
-                        ls_send_num = curr->counter;
-                    }
-                }
-            }
-
-            // HIT
-            if (ls_index > 0) {
-                curr = &CONN_LIST[ls_index];
-#ifndef PERFORM
-                APPLOG(APPLOG_DEBUG, "packet sended via %d (port %d)", curr->index, curr->port);
-#endif
-                if (curr->counter + 1 >= MAX_COUNT_NUM) {
-#ifndef PERFORM
-                    APPLOG(APPLOG_DEBUG, "clear counter");
-#endif
-                    for (i = 0; i < start->max_hop; i++) {
-                        index = curr->next_hop;
-                        curr = &CONN_LIST[index];
-                        curr->counter = 0;
-                    }
-                } else {
-                    curr->counter ++;
-                }
-                return curr;
-            }
-			break;
-	}
-
-    APPLOG(APPLOG_DEBUG, "fail to send");
-	return NULL;
 }
 
 #ifdef OAUTH

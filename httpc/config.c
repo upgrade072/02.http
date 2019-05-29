@@ -500,8 +500,6 @@ int addcfg_server_ipaddr(int id, char *ipaddr, int port, int conn_cnt)
 				if (++cnt == conn_cnt) break;
 			}
 		}
-		/* for re-ordering */
-		prepare_order(list_index);
 	}
 
     config_set_tab_width(&CFG, 4);
@@ -721,9 +719,6 @@ int chgcfg_server_conn_cnt(int id, char *ipaddr, int port, int conn_cnt)
 				}
 			}
 		}
-
-		/* for re-ordering */
-		prepare_order(list_index);
 	}
 
     config_set_tab_width(&CFG, 4);
@@ -823,9 +818,6 @@ int delcfg_server_ipaddr(int id, char *ipaddr, int port)
 				}
 			}
 		}
-
-		/* for re-ordering */
-		prepare_order(list_index);
 	}
 
     config_set_tab_width(&CFG, 4);
@@ -876,9 +868,6 @@ int delcfg_server_hostname(int id)
 				memset(&CONN_LIST[i], 0x00, sizeof(conn_list_t));
 			}
 		}
-
-		/* for re-ordering */
-		prepare_order(list_index);
 	}
 
     config_set_tab_width(&CFG, 4);

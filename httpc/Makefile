@@ -18,7 +18,7 @@ BUILD_LIBS = $(BUILD_LIBS_PATH)/libreq.a \
 			 $(BUILD_LIBS_PATH)/libs.a \
 			 $(BUILD_LIBS_PATH)/http_parser.a
 
-SRCS		= main.c list.c config.c command.c nrf.c lb.c
+SRCS		= main.c list.c config.c command.c nrf.c lb.c select.c
 
 OBJS		= $(SRCS:.c=.o)
 

@@ -290,6 +290,5 @@ void    clear_context_stat(tcp_ctx_t *tcp_ctx);
 void    fep_stat_print(evutil_socket_t fd, short what, void *arg);
 void    *fep_stat_thread(void *arg);
 void    load_lb_config(server_conf *svr_conf, lb_global_t *lb_conf);
-void    attach_lb_thread(lb_global_t *lb_conf, main_ctx_t *main_ctx);
+void    attach_lb_thread(lb_global_t *lb_conf, lb_ctx_t *lb_ctx);
 int     create_lb_thread();
-

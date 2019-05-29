@@ -1200,10 +1200,8 @@ int initialize()
 	} else {
 		memset(CONN_STATUS, 0x00, sizeof(CONN_STATUS));
 
-		order_list();
 		gather_list(CONN_STATUS);
 		print_list(CONN_STATUS);
-		print_raw_list();
 	}
 
 	for ( i = 0; i < CLIENT_CONF.worker_num; i++) {

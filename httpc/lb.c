@@ -3,9 +3,10 @@
 extern client_conf_t CLIENT_CONF;	/* sysconfig from config.c */
 extern thrd_context_t THRD_WORKER[MAX_THRD_NUM];
 extern int THREAD_NO[MAX_THRD_NUM];
+extern conn_list_t CONN_LIST[MAX_SVR_NUM];
 
 lb_global_t LB_CONF;	/* lb config */
-main_ctx_t MAIN_CTX;	/* lb connection context */
+lb_ctx_t LB_CTX;	/* lb connection context */
 
 httpc_ctx_t *get_null_recv_ctx(tcp_ctx_t *tcp_ctx)
 {
@@ -58,12 +59,12 @@ void send_to_worker(tcp_ctx_t *tcp_ctx, conn_list_t *httpc_conn, httpc_ctx_t *re
 	int ctx_idx = Get_CtxId(thrd_idx);
 
 	if (ctx_idx < 0) {
-		tcp_ctx->ctx_assign_fail++;
+		tcp_ctx->tcp_stat.ctx_assign_fail++;
 		//APPLOG(APPLOG_ERR, "(%s) assign context fail in worker [%d]", __func__, thrd_idx);
 		goto STW_ERR;
 	}
 	if ((httpc_ctx = get_context(thrd_idx, ctx_idx, 0)) == NULL) {
-		tcp_ctx->ctx_assign_fail++;
+		tcp_ctx->tcp_stat.ctx_assign_fail++;
 		//APPLOG(APPLOG_ERR, "(%s) get contexx fail in worker [%d]", __func__, thrd_idx);
 		goto STW_ERR;
 	}
@@ -93,7 +94,7 @@ STW_RET:
 	return;
 
 STW_ERR:
-	fep_tcp_ctx = search_dest_via_tag(recv_ctx, MAIN_CTX.fep_tx_thrd);
+	fep_tcp_ctx = search_dest_via_tag(recv_ctx, LB_CTX.fep_tx_thrd);
 	stp_err_to_fep(fep_tcp_ctx, recv_ctx); /* send err to fep */
 	return;
 }
@@ -171,7 +172,7 @@ void push_callback(evutil_socket_t fd, short what, void *arg)
         if (nwritten >= 0) {
             unset_pushed_item(write_list, nwritten, __func__);
 			/* stat */
-			tcp_ctx->send_bytes += nwritten;
+			tcp_ctx->tcp_stat.send_bytes += nwritten;
 		} else if (errno != EINTR && errno != EAGAIN) {
 			APPLOG(APPLOG_ERR, "fep sock there(%s) error! %d : %s\n", __func__, errno, strerror(errno));
 			release_conncb(sock_ctx);
@@ -252,7 +253,7 @@ void send_response_to_fep(httpc_ctx_t *httpc_ctx)
 	//fprintf(stderr, "{{{dbg}}} in %s httpc ctx fep_tag %d\n", __func__, httpc_ctx->fep_tag);
 
 	// TODO!!!! check connect is exist or not !!!
-	tcp_ctx_t *fep_tcp_ctx = search_dest_via_tag(httpc_ctx, MAIN_CTX.fep_tx_thrd);
+	tcp_ctx_t *fep_tcp_ctx = search_dest_via_tag(httpc_ctx, LB_CTX.fep_tx_thrd);
 
 	if (fep_tcp_ctx == NULL) {
 		APPLOG(APPLOG_ERR, "(%s) fail to search origin fep (%d)", __func__, httpc_ctx->fep_tag);
@@ -269,8 +270,8 @@ void send_response_to_fep(httpc_ctx_t *httpc_ctx)
 
 void send_to_peerlb(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx)
 {
-    tcp_ctx_t *fep_tcp_ctx = search_dest_via_tag(recv_ctx, MAIN_CTX.fep_tx_thrd);
-    tcp_ctx_t *peer_tcp_ctx = search_dest_via_tag(recv_ctx, MAIN_CTX.peer_tx_thrd);
+    tcp_ctx_t *fep_tcp_ctx = search_dest_via_tag(recv_ctx, LB_CTX.fep_tx_thrd);
+    tcp_ctx_t *peer_tcp_ctx = search_dest_via_tag(recv_ctx, LB_CTX.peer_tx_thrd);
 
 	if (recv_ctx->user_ctx.head.hopped_cnt != 0 ||
 			peer_tcp_ctx == NULL) {
@@ -291,11 +292,11 @@ void send_to_remote(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx)
 	if (recv_ctx->user_ctx.head.hopped_cnt == 0) 
 		sprintf(recv_ctx->user_ctx.head.fep_origin_addr, "%s", sock_ctx->client_ip);
 
-	if ((httpc_conn = find_packet_index(recv_ctx->user_ctx.head.destHost, LSMODE_LS)) == NULL) {
-		tcp_ctx->send_to_peer++;
+	if ((httpc_conn = find_packet_index(&tcp_ctx->root_select, &recv_ctx->user_ctx.head)) == NULL) {
+		tcp_ctx->tcp_stat.send_to_peer++;
 		send_to_peerlb(sock_ctx, recv_ctx);
 	} else {
-		tcp_ctx->send_to_fep++;
+		tcp_ctx->tcp_stat.send_to_fep++;
 		send_to_worker(tcp_ctx, httpc_conn, recv_ctx);
 	}
 }
@@ -329,16 +330,16 @@ KEEP_PROCESS:
 		APPLOG(APPLOG_ERR, "cant process packet, will just dropped");
 		return packet_process_res(sock_ctx, process_ptr, processed_len);
 	} else {
-		tcp_ctx->tps ++;
+		tcp_ctx->tcp_stat.tps ++;
 	}
 
 	process_ptr += AHIF_TCP_MSG_LEN(head);
 	processed_len += AHIF_TCP_MSG_LEN(head);
 
 	// for log stat
-	tcp_ctx->send_to_remote_called++;
+	tcp_ctx->tcp_stat.send_to_remote_called++;
 	send_to_remote(sock_ctx, recv_ctx);
-	tcp_ctx->send_to_remote_success++;
+	tcp_ctx->tcp_stat.send_to_remote_success++;
 
 	goto KEEP_PROCESS;
 }
@@ -361,7 +362,7 @@ void lb_buff_readcb(struct bufferevent *bev, void *arg)
 	} else {
 		sock_ctx->rcv_len += rcv_len;
 		/* stat */
-		tcp_ctx->recv_bytes += rcv_len;
+		tcp_ctx->tcp_stat.recv_bytes += rcv_len;
 	}
 
 	return check_and_send(tcp_ctx, sock_ctx);
@@ -469,14 +470,7 @@ int get_httpcs_buff_used(tcp_ctx_t *tcp_ctx)
 
 void clear_context_stat(tcp_ctx_t *tcp_ctx)
 {
-	tcp_ctx->recv_bytes = 0;
-	tcp_ctx->send_bytes = 0;
-	tcp_ctx->tps = 0;
-	tcp_ctx->send_to_remote_called = 0;
-	tcp_ctx->send_to_remote_success = 0;
-	tcp_ctx->send_to_peer = 0;
-	tcp_ctx->send_to_fep = 0;
-	tcp_ctx->ctx_assign_fail = 0;
+	memset(&tcp_ctx->tcp_stat, 0x00, sizeof(tcp_stat_t));
 }
 
 void fep_stat_print(evutil_socket_t fd, short what, void *arg)
@@ -487,10 +481,10 @@ void fep_stat_print(evutil_socket_t fd, short what, void *arg)
 	char peer_write[1024] = {0,};
 
 	for (int i = 0; i < LB_CONF.total_fep_num; i++) {
-		GNode *nth_fep_rx = g_node_nth_child(MAIN_CTX.fep_rx_thrd, i);
-		GNode *nth_fep_tx = g_node_nth_child(MAIN_CTX.fep_tx_thrd, i);
-		GNode *nth_peer_rx = g_node_nth_child(MAIN_CTX.peer_rx_thrd, i);
-		GNode *nth_peer_tx = g_node_nth_child(MAIN_CTX.peer_tx_thrd, i);
+		GNode *nth_fep_rx = g_node_nth_child(LB_CTX.fep_rx_thrd, i);
+		GNode *nth_fep_tx = g_node_nth_child(LB_CTX.fep_tx_thrd, i);
+		GNode *nth_peer_rx = g_node_nth_child(LB_CTX.peer_rx_thrd, i);
+		GNode *nth_peer_tx = g_node_nth_child(LB_CTX.peer_tx_thrd, i);
 
 		tcp_ctx_t *fep_rx = (nth_fep_rx == NULL ? NULL : (tcp_ctx_t *)nth_fep_rx->data);
 		tcp_ctx_t *fep_tx = (nth_fep_rx == NULL ? NULL : (tcp_ctx_t *)nth_fep_tx->data);
@@ -514,16 +508,16 @@ void fep_stat_print(evutil_socket_t fd, short what, void *arg)
 				fep_rx->context_num,
 				peer_rx_used,
 				peer_rx->context_num,
-				measure_print(fep_rx->recv_bytes, fep_read),
-				fep_rx->tps,
-				measure_print(fep_tx->send_bytes, fep_write),
-				measure_print(peer_rx->recv_bytes, peer_read),
-				measure_print(peer_tx->send_bytes, peer_write),
-				fep_rx->send_to_remote_called,
-				fep_rx->send_to_remote_success,
-				fep_rx->send_to_peer,
-				fep_rx->send_to_fep,
-				fep_rx->ctx_assign_fail);
+				measure_print(fep_rx->tcp_stat.recv_bytes, fep_read),
+				fep_rx->tcp_stat.tps,
+				measure_print(fep_tx->tcp_stat.send_bytes, fep_write),
+				measure_print(peer_rx->tcp_stat.recv_bytes, peer_read),
+				measure_print(peer_tx->tcp_stat.send_bytes, peer_write),
+				fep_rx->tcp_stat.send_to_remote_called,
+				fep_rx->tcp_stat.send_to_remote_success,
+				fep_rx->tcp_stat.send_to_peer,
+				fep_rx->tcp_stat.send_to_fep,
+				fep_rx->tcp_stat.ctx_assign_fail);
 
 		clear_context_stat(fep_rx);
 		clear_context_stat(fep_tx);
@@ -551,18 +545,18 @@ void *fep_stat_thread(void *arg)
 	return (void *)NULL;
 }
 
-void attach_lb_thread(lb_global_t *lb_conf, main_ctx_t *main_ctx)
+void attach_lb_thread(lb_global_t *lb_conf, lb_ctx_t *lb_ctx)
 {
 	/* CAUTION!!! ALL UNDER THREAD USE THIS */
 	tcp_ctx_t tcp_ctx = {0,};
 	tcp_ctx.flush_tmval = lb_conf->flush_tmval;
-	tcp_ctx.main_ctx = main_ctx;
+	tcp_ctx.lb_ctx = lb_ctx;
 
 	// create root node for thread, create null ctx
-	main_ctx->fep_tx_thrd = new_tcp_ctx(&tcp_ctx);
-	main_ctx->fep_rx_thrd = new_tcp_ctx(&tcp_ctx);
-	main_ctx->peer_rx_thrd = new_tcp_ctx(&tcp_ctx);
-	main_ctx->peer_tx_thrd = new_tcp_ctx(&tcp_ctx);
+	lb_ctx->fep_tx_thrd = new_tcp_ctx(&tcp_ctx);
+	lb_ctx->fep_rx_thrd = new_tcp_ctx(&tcp_ctx);
+	lb_ctx->peer_rx_thrd = new_tcp_ctx(&tcp_ctx);
+	lb_ctx->peer_tx_thrd = new_tcp_ctx(&tcp_ctx);
 
 	/* fep rx thread create */
 	for (int i = 0; i < lb_conf->total_fep_num; i++) {
@@ -570,7 +564,14 @@ void attach_lb_thread(lb_global_t *lb_conf, main_ctx_t *main_ctx)
 		tcp_ctx.svc_type = TT_RX_ONLY;
 		config_setting_t *port = config_setting_get_elem(lb_conf->cf_fep_rx_listen_port, i);
 		tcp_ctx.listen_port = config_setting_get_int(port);
-		add_tcp_ctx_to_main(&tcp_ctx, main_ctx->fep_rx_thrd);
+
+		add_tcp_ctx_to_main(&tcp_ctx, lb_ctx->fep_rx_thrd);
+		{
+			/* create dest selection root */
+			GNode *temp_node = g_node_nth_child(lb_ctx->fep_rx_thrd, i);
+			tcp_ctx_t *temp_ctx = (tcp_ctx_t *)temp_node->data;
+			rebuild_select_node(&temp_ctx->root_select);
+		}
 	}	
 	/* fep tx thread create */
 	for (int i = 0; i < lb_conf->total_fep_num; i++) {
@@ -578,7 +579,7 @@ void attach_lb_thread(lb_global_t *lb_conf, main_ctx_t *main_ctx)
 		tcp_ctx.svc_type = TT_TX_ONLY;
 		config_setting_t *port = config_setting_get_elem(lb_conf->cf_fep_tx_listen_port, i);
 		tcp_ctx.listen_port = config_setting_get_int(port);
-		add_tcp_ctx_to_main(&tcp_ctx, main_ctx->fep_tx_thrd);
+		add_tcp_ctx_to_main(&tcp_ctx, lb_ctx->fep_tx_thrd);
 	}	
 	/* peer rx thread create */
 	for (int i = 0; i < lb_conf->total_fep_num; i++) {
@@ -586,7 +587,14 @@ void attach_lb_thread(lb_global_t *lb_conf, main_ctx_t *main_ctx)
 		tcp_ctx.svc_type = TT_RX_ONLY;
 		config_setting_t *port = config_setting_get_elem(lb_conf->cf_peer_listen_port, i);
 		tcp_ctx.listen_port = config_setting_get_int(port);
-		add_tcp_ctx_to_main(&tcp_ctx, main_ctx->peer_rx_thrd);
+
+		add_tcp_ctx_to_main(&tcp_ctx, lb_ctx->peer_rx_thrd);
+		{
+			/* create dest selection root */
+			GNode *temp_node = g_node_nth_child(lb_ctx->peer_rx_thrd, i);
+			tcp_ctx_t *temp_ctx = (tcp_ctx_t *)temp_node->data;
+			rebuild_select_node(&temp_ctx->root_select);
+		}
 	}	
 	/* peer tx thread create */
 	for (int i = 0; i < lb_conf->total_fep_num; i++) {
@@ -595,20 +603,20 @@ void attach_lb_thread(lb_global_t *lb_conf, main_ctx_t *main_ctx)
 		config_setting_t *port = config_setting_get_elem(lb_conf->cf_peer_connect_port, i);
 		tcp_ctx.listen_port = config_setting_get_int(port);
 		sprintf(tcp_ctx.peer_ip_addr, "%s", lb_conf->peer_lb_address);
-		add_tcp_ctx_to_main(&tcp_ctx, main_ctx->peer_tx_thrd);
+		add_tcp_ctx_to_main(&tcp_ctx, lb_ctx->peer_tx_thrd);
 	}	
 
-	CREATE_LB_THREAD(main_ctx->fep_rx_thrd, sizeof(httpc_ctx_t), lb_conf->context_num);
-	CREATE_LB_THREAD(main_ctx->fep_tx_thrd, 0, 0);
-	CREATE_LB_THREAD(main_ctx->peer_rx_thrd, sizeof(httpc_ctx_t), lb_conf->context_num);
-	CREATE_LB_THREAD(main_ctx->peer_tx_thrd, 0, 0);
+	CREATE_LB_THREAD(lb_ctx->fep_rx_thrd, sizeof(httpc_ctx_t), lb_conf->context_num);
+	CREATE_LB_THREAD(lb_ctx->fep_tx_thrd, 0, 0);
+	CREATE_LB_THREAD(lb_ctx->peer_rx_thrd, sizeof(httpc_ctx_t), lb_conf->context_num);
+	CREATE_LB_THREAD(lb_ctx->peer_tx_thrd, 0, 0);
 
 	/* for stat print small thread */
-    if (pthread_create(&main_ctx->stat_thrd_id, NULL, &fep_stat_thread, main_ctx) != 0) {
+    if (pthread_create(&lb_ctx->stat_thrd_id, NULL, &fep_stat_thread, lb_ctx) != 0) {
         APPLOG(APPLOG_ERR, "fail to create thread\n");
         exit(0);
     } else {
-        pthread_detach(main_ctx->stat_thrd_id);
+        pthread_detach(lb_ctx->stat_thrd_id);
     }
 }
 
@@ -616,7 +624,11 @@ int create_lb_thread()
 {
 	load_lb_config(&CLIENT_CONF, &LB_CONF);
 
-	attach_lb_thread(&LB_CONF, &MAIN_CTX);
+	attach_lb_thread(&LB_CONF, &LB_CTX);
+
+	// wait for thread created ((we use thread[evbase]))
+	sleep(1);
+	init_refresh_select_node(&LB_CTX);
 
 	return 0;
 }

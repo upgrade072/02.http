@@ -220,7 +220,7 @@ sock_ctx_t *assign_sock_ctx(tcp_ctx_t *tcp_ctx, evutil_socket_t fd, struct socka
     sprintf(sock_ctx.client_ip, "%s", util_get_ip_from_sa(sa));
     sock_ctx.client_port = util_get_port_from_sa(sa);
     sock_ctx.client_fd = fd;
-    sock_ctx.main_ctx = tcp_ctx->main_ctx;
+    sock_ctx.lb_ctx = tcp_ctx->lb_ctx;
 
     GNode *new_conn = new_node_conn(&sock_ctx);
     if (new_conn != NULL) {
@@ -250,7 +250,7 @@ void sock_flush_callback(evutil_socket_t fd, short what, void *arg)
     if (nwritten >= 0) {
         unset_pushed_item(write_list, nwritten, __func__);
 		/* stat */
-		tcp_ctx->send_bytes += nwritten;
+		tcp_ctx->tcp_stat.send_bytes += nwritten;
 	} else if (errno != EINTR && errno != EAGAIN) {
 		APPLOG(APPLOG_ERR, "LB-ENGINE] something wrong (%d : %s), release sock\n", errno, strerror(errno));
 		release_conncb(sock_ctx);

@@ -4,6 +4,7 @@
 extern int httpcQid;
 extern int ixpcQid;
 extern client_conf_t CLIENT_CONF;
+extern lb_ctx_t LB_CTX;    /* lb connection context */
 
 char respMsg[MAX_MML_RESULT_LEN], respBuff[MAX_MML_RESULT_LEN];
 
@@ -100,7 +101,7 @@ int func_dis_http_server(IxpcQMsgType *rxIxpcMsg)
 	gather_list(CONN_STATUS);
 	write_list(CONN_STATUS, resBuf);
 
-	print_raw_list();
+	print_list(CONN_STATUS);
 
 	APPLOG(APPLOG_ERR, "\n%s", resBuf);
 	return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
@@ -129,8 +130,9 @@ int func_add_http_server(IxpcQMsgType *rxIxpcMsg)
 	if (addcfg_server_hostname(HOSTNAME, TYPE) < 0)
 		return send_mml_res_failMsg(rxIxpcMsg, "HOSTNAME ADD FAIL");
 
-	/* re-arrange */
-	order_list();
+	// node change, remake
+	trig_refresh_select_node(&LB_CTX);
+
 	gather_list(CONN_STATUS);
 
 	write_list(CONN_STATUS, resBuf);
@@ -180,8 +182,9 @@ int func_add_http_svr_ip(IxpcQMsgType *rxIxpcMsg)
 	if (addcfg_server_ipaddr(ID, IPADDR, PORT, CONN_CNT) < 0)
 		return send_mml_res_failMsg(rxIxpcMsg, "IPADDR ADD FAIL");
 
-	/* re-arrange */
-	order_list();
+	// node change, remake
+	trig_refresh_select_node(&LB_CTX);
+
 	gather_list(CONN_STATUS);
 
 	write_list(CONN_STATUS, resBuf);
@@ -239,11 +242,6 @@ int func_chg_http_server_act(IxpcQMsgType *rxIxpcMsg, int change_to_act)
 	if (actcfg_http_server(ID, ip_exist, IPADDR, PORT, change_to_act) < 0)
 		return send_mml_res_failMsg(rxIxpcMsg, "ACT HTTP SERVER FAIL");
 
-	/* re-arrange */
-	order_list();
-	// for debug
-	print_raw_list();
-
 	sprintf(resBuf, "\n[INPUT PARAM]\n\
 			ID        : %d\n\
 			IPADDR    : %s\n\
@@ -295,8 +293,9 @@ int func_chg_http_server(IxpcQMsgType *rxIxpcMsg)
 	if (chgcfg_server_conn_cnt(ID, IPADDR, PORT, CONN_CNT) < 0)
 		return send_mml_res_failMsg(rxIxpcMsg, "CONN COUNT CHG FAIL");
 
-	/* re-arrange */
-	order_list();
+	// node change, remake
+	trig_refresh_select_node(&LB_CTX);
+
 	gather_list(CONN_STATUS);
 
 	write_list(CONN_STATUS, resBuf);
@@ -341,8 +340,9 @@ int func_del_http_svr_ip(IxpcQMsgType *rxIxpcMsg)
 	if (delcfg_server_ipaddr(ID, IPADDR, PORT) < 0)
 		return send_mml_res_failMsg(rxIxpcMsg, "IPADDR DEL FAIL");
 
-	/* re-arrange */
-	order_list();
+	// node change, remake
+	trig_refresh_select_node(&LB_CTX);
+
 	gather_list(CONN_STATUS);
 
 	write_list(CONN_STATUS, resBuf);
@@ -371,8 +371,9 @@ int func_del_http_server(IxpcQMsgType *rxIxpcMsg)
 	if (delcfg_server_hostname(ID) < 0)
 		return send_mml_res_failMsg(rxIxpcMsg, "HOSTNAME DEL FAIL");
 
-	/* re-arrange */
-	order_list();
+	// node change, remake
+	trig_refresh_select_node(&LB_CTX);
+
 	gather_list(CONN_STATUS);
 
 	write_list(CONN_STATUS, resBuf);
