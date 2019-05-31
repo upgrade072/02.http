@@ -68,7 +68,14 @@ typedef struct write_list {
 typedef struct sock_ctx {
     time_t create_time;
 
-    struct event *event;
+	time_t last_hb_recv_time;
+	AhifHttpCSMsgHeadType hb_pkt_hdr;
+	iovec_item_t push_req; // for hearbeat send
+
+    struct event *event_flush_cb;
+    struct event *event_send_hb;
+    struct event *event_chk_hb;
+
     struct bufferevent *bev;
     write_list_t push_items;
 
@@ -91,6 +98,7 @@ typedef enum svc_type {
     TT_NONE = 0,
     TT_RX_ONLY,
     TT_TX_ONLY,
+    TT_PEER_RECV,
     TT_PEER_SEND 
 } svc_type_t;
 
@@ -148,6 +156,7 @@ typedef struct tcp_ctx {
     int peer_listen_port;
 	char peer_ip_addr[46];
 
+	int heartbeat_enable;
 	int flush_tmval;
 
 	/* use by HTTPS for RR request */
@@ -177,6 +186,7 @@ typedef struct lb_ctx {
 /******* caller must implement this function !!! ***************/
 /* ------------------------- from another.c ------------------ */
 void    lb_buff_readcb(struct bufferevent *bev, void *arg);
+void    iovec_push_req(tcp_ctx_t *dest_tcp_ctx, iovec_item_t *push_req);
 /***************************************************************/
 
 
@@ -206,22 +216,31 @@ void    remove_node(GNode *node);
 GNode   *new_tcp_ctx(tcp_ctx_t *tcp_ctx);
 void    add_tcp_ctx_to_main(tcp_ctx_t *tcp_ctx, GNode *where_to_add);
 sock_ctx_t      *search_node_by_ip(tcp_ctx_t *tcp_ctx, const char *ipaddr);
-sock_ctx_t		*get_last_conn_sock(tcp_ctx_t *tcp_ctx);
+sock_ctx_t      *get_last_conn_sock(tcp_ctx_t *tcp_ctx);
 sock_ctx_t      *return_nth_sock(tcp_ctx_t *tcp_ctx, int idx);
 int     return_sock_num(tcp_ctx_t *tcp_ctx);
+int     is_host_if_cnvt(char *host_or_addr, char *cnvt_to_buff);
 int     check_conf_via_sock(tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx);
 void    unexpect_readcb(struct bufferevent *bev, void *arg);
 void    release_conncb(sock_ctx_t *sock_ctx);
 void    svr_sock_eventcb(struct bufferevent *bev, short events, void *user_data);
 void    packet_process_res(sock_ctx_t *sock_ctx, char *process_ptr, size_t processed_len);
+void    create_heartbeat_msg(sock_ctx_t *sock_ctx);
 sock_ctx_t      *assign_sock_ctx(tcp_ctx_t *tcp_ctx, evutil_socket_t fd, struct sockaddr *sa);
+void    sock_hb_send_cb(evutil_socket_t fd, short what, void *arg);
+int     sock_add_heartbeatcb(tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx);
+void    release_conn_by_hb(lb_ctx_t *lb_ctx, tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx);
+void    sock_hb_chk_cb(evutil_socket_t fd, short what, void *arg);
+int     sock_chk_heartbeatcb(tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx);
 void    sock_flush_callback(evutil_socket_t fd, short what, void *arg);
 int     sock_add_flushcb(tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx);
+void    release_older_sock(tcp_ctx_t *tcp_ctx);
+char    *svc_type_to_str(int svc_type);
 void    *fep_conn_thread(void *arg);
 void    cli_sock_eventcb(struct bufferevent *bev, short events, void *user_data);
 sock_ctx_t      *create_new_peer_sock(tcp_ctx_t *tcp_ctx, const char *peer_addr);
 void    check_peer_conn(evutil_socket_t fd, short what, void *arg);
 void    *fep_peer_thread(void *arg);
 void    CREATE_LB_THREAD(GNode *root_node, size_t context_size, int context_num);
-
 #endif
+

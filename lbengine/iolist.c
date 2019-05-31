@@ -172,4 +172,3 @@ void unset_pushed_item(write_list_t *write_list, ssize_t nwritten, const char *c
         write_item = next;
     }
 }
-

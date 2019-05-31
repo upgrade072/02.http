@@ -142,17 +142,11 @@ void set_iovec(tcp_ctx_t *dest_tcp_ctx, httpc_ctx_t *recv_ctx, const char *dest_
 	}
 }
 
-
 void push_callback(evutil_socket_t fd, short what, void *arg)
 {
     iovec_item_t *push_item = (iovec_item_t *)arg;
     tcp_ctx_t *tcp_ctx = (tcp_ctx_t *)push_item->sender_tcp_ctx;
-#if 0
-    sock_ctx_t *sock_ctx = search_node_by_ip(tcp_ctx, push_item->dest_ip);
-#else
-	//fprintf(stderr, "{{{{dbg}}} %s fep tag %d\n", __func__, tcp_ctx->fep_tag);
 	sock_ctx_t *sock_ctx = get_last_conn_sock(tcp_ctx);
-#endif
 
     if (sock_ctx == NULL) {
 		if (push_item->unset_cb_func != NULL)
@@ -169,14 +163,18 @@ void push_callback(evutil_socket_t fd, short what, void *arg)
 	/* bundle packet by config ==> send by once */
     if (write_list->item_cnt >= LB_CONF.bundle_count || write_list->item_bytes >= LB_CONF.bundle_bytes) {
         ssize_t nwritten = push_write_item(sock_ctx->client_fd, write_list, INT_MAX, INT_MAX);
-        if (nwritten >= 0) {
+        if (nwritten > 0) {
             unset_pushed_item(write_list, nwritten, __func__);
 			/* stat */
 			tcp_ctx->tcp_stat.send_bytes += nwritten;
+#if 0 // forget just release
 		} else if (errno != EINTR && errno != EAGAIN) {
+#else
+		} else if (nwritten == 0) {
+		} else { /* 0 < */
+#endif
 			APPLOG(APPLOG_ERR, "fep sock there(%s) error! %d : %s\n", __func__, errno, strerror(errno));
 			release_conncb(sock_ctx);
-			return;
 		}
     }
 }
@@ -184,6 +182,11 @@ void push_callback(evutil_socket_t fd, short what, void *arg)
 void iovec_push_req(tcp_ctx_t *dest_tcp_ctx, iovec_item_t *push_req)
 {
     struct event_base *peer_evbase = dest_tcp_ctx->evbase;
+
+	if (push_req->iov_cnt <= 0 || push_req->remain_bytes <= 0) {
+		APPLOG(APPLOG_ERR, "ERR!!! push req item or bytes <= 0");
+		return;
+	}
 
     if (event_base_once(peer_evbase, -1, EV_TIMEOUT, push_callback, push_req, NULL) < 0) {
         APPLOG(APPLOG_ERR, "TODO!!! (%s) fail to add callback to dest evbase", __func__);
@@ -301,6 +304,15 @@ void send_to_remote(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx)
 	}
 }
 
+void heartbeat_process(httpc_ctx_t *recv_ctx, tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx)
+{
+	time(&sock_ctx->last_hb_recv_time);
+	APPLOG(APPLOG_ERR, "{{{{dbg}}} heartbeat receive from fep(%d) svc(%s) (%s:%d)\n", 
+			tcp_ctx->fep_tag, svc_type_to_str(tcp_ctx->svc_type), sock_ctx->client_ip, sock_ctx->client_port);
+
+	clear_and_free_ctx(recv_ctx);
+}
+
 void check_and_send(tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx)
 {
 	httpc_ctx_t *recv_ctx = NULL;
@@ -336,10 +348,14 @@ KEEP_PROCESS:
 	process_ptr += AHIF_TCP_MSG_LEN(head);
 	processed_len += AHIF_TCP_MSG_LEN(head);
 
-	// for log stat
-	tcp_ctx->tcp_stat.send_to_remote_called++;
-	send_to_remote(sock_ctx, recv_ctx);
-	tcp_ctx->tcp_stat.send_to_remote_success++;
+	if (recv_ctx->user_ctx.head.mtype == MTYPE_HTTP2_AHIF_CONN_CHECK) {
+		heartbeat_process(recv_ctx, tcp_ctx, sock_ctx);
+	} else {
+		// for log stat
+		tcp_ctx->tcp_stat.send_to_remote_called++;
+		send_to_remote(sock_ctx, recv_ctx);
+		tcp_ctx->tcp_stat.send_to_remote_success++;
+	}
 
 	goto KEEP_PROCESS;
 }
@@ -448,6 +464,12 @@ void load_lb_config(client_conf_t *cli_conf, lb_global_t *lb_conf)
 	} else {
 		APPLOG(APPLOG_ERR, "}}  lb_config.flush_tmval = %d", lb_conf->flush_tmval);
 	}
+	if (config_setting_lookup_int(lb_config, "heartbeat_enable", &lb_conf->heartbeat_enable) == CONFIG_FALSE) {
+		APPLOG(APPLOG_ERR, "lb_config.fail to get heartbeat_enable");
+		exit(0);
+	} else {
+		APPLOG(APPLOG_ERR, "}}  lb_config.heartbeat_enable = %d", lb_conf->heartbeat_enable);
+	}
 
 }
 
@@ -491,28 +513,20 @@ void fep_stat_print(evutil_socket_t fd, short what, void *arg)
 		tcp_ctx_t *peer_rx = (nth_peer_rx == NULL ? NULL : (tcp_ctx_t *)nth_peer_rx->data);
 		tcp_ctx_t *peer_tx = (nth_peer_tx == NULL ? NULL : (tcp_ctx_t *)nth_peer_tx->data);
 
-		if (fep_rx == NULL ||
-			fep_tx == NULL ||
-			peer_rx == NULL ||
-			peer_tx == NULL) {
-			APPLOG(APPLOG_ERR, "ERR] some of fep thread is NULL !!!");
-			exit(0);
-		}
-
 		int fep_rx_used = get_httpcs_buff_used(fep_rx);
-		int peer_rx_used = get_httpcs_buff_used(peer_rx);
+		int peer_rx_used = (peer_rx == NULL ? 0 : get_httpcs_buff_used(peer_rx));
 
 		APPLOG(APPLOG_ERR, "FEP [%2d] CTX [fep_rx %05d/%05d peer_rx %05d/%05d] FEP RX [%s] (TPS %d) FEP TX [%s] ( PEER_RX [%s] PEER TX [%s] ), DBG {{{ called[%d] succ[%d] peer[%d] fep[%d] assign fail[%d] }}}",
 				i,
 				fep_rx_used,
 				fep_rx->context_num,
-				peer_rx_used,
-				peer_rx->context_num,
+				peer_rx == NULL ? 0 : peer_rx_used,
+				peer_rx == NULL ? 0 : peer_rx->context_num,
 				measure_print(fep_rx->tcp_stat.recv_bytes, fep_read),
 				fep_rx->tcp_stat.tps,
 				measure_print(fep_tx->tcp_stat.send_bytes, fep_write),
-				measure_print(peer_rx->tcp_stat.recv_bytes, peer_read),
-				measure_print(peer_tx->tcp_stat.send_bytes, peer_write),
+				peer_rx == NULL ? "N/A" : measure_print(peer_rx->tcp_stat.recv_bytes, peer_read),
+				peer_tx == NULL ? "N/A" : measure_print(peer_tx->tcp_stat.send_bytes, peer_write),
 				fep_rx->tcp_stat.send_to_remote_called,
 				fep_rx->tcp_stat.send_to_remote_success,
 				fep_rx->tcp_stat.send_to_peer,
@@ -521,8 +535,10 @@ void fep_stat_print(evutil_socket_t fd, short what, void *arg)
 
 		clear_context_stat(fep_rx);
 		clear_context_stat(fep_tx);
-		clear_context_stat(peer_rx);
-		clear_context_stat(peer_tx);
+		if (peer_rx != NULL)
+			clear_context_stat(peer_rx);
+		if (peer_tx != NULL)
+			clear_context_stat(peer_tx);
 	}
 }
 
@@ -550,6 +566,7 @@ void attach_lb_thread(lb_global_t *lb_conf, lb_ctx_t *lb_ctx)
 	/* CAUTION!!! ALL UNDER THREAD USE THIS */
 	tcp_ctx_t tcp_ctx = {0,};
 	tcp_ctx.flush_tmval = lb_conf->flush_tmval;
+	tcp_ctx.heartbeat_enable = lb_conf->heartbeat_enable;
 	tcp_ctx.lb_ctx = lb_ctx;
 
 	// create root node for thread, create null ctx
@@ -566,12 +583,11 @@ void attach_lb_thread(lb_global_t *lb_conf, lb_ctx_t *lb_ctx)
 		tcp_ctx.listen_port = config_setting_get_int(port);
 
 		add_tcp_ctx_to_main(&tcp_ctx, lb_ctx->fep_rx_thrd);
-		{
-			/* create dest selection root */
-			GNode *temp_node = g_node_nth_child(lb_ctx->fep_rx_thrd, i);
-			tcp_ctx_t *temp_ctx = (tcp_ctx_t *)temp_node->data;
-			rebuild_select_node(&temp_ctx->root_select);
-		}
+
+		/* create dest selection root */
+		GNode *temp_node = g_node_nth_child(lb_ctx->fep_rx_thrd, i);
+		tcp_ctx_t *temp_ctx = (tcp_ctx_t *)temp_node->data;
+		rebuild_select_node(&temp_ctx->root_select);
 	}	
 	/* fep tx thread create */
 	for (int i = 0; i < lb_conf->total_fep_num; i++) {
@@ -581,30 +597,30 @@ void attach_lb_thread(lb_global_t *lb_conf, lb_ctx_t *lb_ctx)
 		tcp_ctx.listen_port = config_setting_get_int(port);
 		add_tcp_ctx_to_main(&tcp_ctx, lb_ctx->fep_tx_thrd);
 	}	
-	/* peer rx thread create */
-	for (int i = 0; i < lb_conf->total_fep_num; i++) {
+
+	/* peer rx thread create (if lb address exist!) */
+	for (int i = 0; strlen(lb_conf->peer_lb_address) && (i < lb_conf->total_fep_num); i++) {
 		tcp_ctx.fep_tag = i;
-		tcp_ctx.svc_type = TT_RX_ONLY;
+		tcp_ctx.svc_type = TT_PEER_RECV;
 		config_setting_t *port = config_setting_get_elem(lb_conf->cf_peer_listen_port, i);
 		tcp_ctx.listen_port = config_setting_get_int(port);
 
 		add_tcp_ctx_to_main(&tcp_ctx, lb_ctx->peer_rx_thrd);
-		{
-			/* create dest selection root */
-			GNode *temp_node = g_node_nth_child(lb_ctx->peer_rx_thrd, i);
-			tcp_ctx_t *temp_ctx = (tcp_ctx_t *)temp_node->data;
-			rebuild_select_node(&temp_ctx->root_select);
-		}
+
+		/* create dest selection root */
+		GNode *temp_node = g_node_nth_child(lb_ctx->peer_rx_thrd, i);
+		tcp_ctx_t *temp_ctx = (tcp_ctx_t *)temp_node->data;
+		rebuild_select_node(&temp_ctx->root_select);
 	}	
-	/* peer tx thread create */
-	for (int i = 0; i < lb_conf->total_fep_num; i++) {
+	/* peer tx thread create (if lb address exist!) */
+	for (int i = 0; strlen(lb_conf->peer_lb_address) && (i < lb_conf->total_fep_num); i++) {
 		tcp_ctx.fep_tag = i;
 		tcp_ctx.svc_type = TT_PEER_SEND;
 		config_setting_t *port = config_setting_get_elem(lb_conf->cf_peer_connect_port, i);
 		tcp_ctx.listen_port = config_setting_get_int(port);
 		sprintf(tcp_ctx.peer_ip_addr, "%s", lb_conf->peer_lb_address);
 		add_tcp_ctx_to_main(&tcp_ctx, lb_ctx->peer_tx_thrd);
-	}	
+	}
 
 	CREATE_LB_THREAD(lb_ctx->fep_rx_thrd, sizeof(httpc_ctx_t), lb_conf->context_num);
 	CREATE_LB_THREAD(lb_ctx->fep_tx_thrd, 0, 0);

@@ -100,13 +100,7 @@ void push_callback(evutil_socket_t fd, short what, void *arg)
 {
     iovec_item_t *push_item = (iovec_item_t *)arg;
     tcp_ctx_t *tcp_ctx = (tcp_ctx_t *)push_item->sender_tcp_ctx;
-#if 0
-    sock_ctx_t *sock_ctx = search_node_by_ip(tcp_ctx, push_item->dest_ip);
-#else
 	sock_ctx_t *sock_ctx = get_last_conn_sock(tcp_ctx);
-#endif
-
-    //APPLOG(APPLOG_ERR, "((%s)) called dest %s (mypid(%jd))\n", __func__, push_item->dest_ip, (intmax_t)util_gettid());
 
     if (sock_ctx == NULL) {
 		if (push_item->unset_cb_func != NULL)
@@ -126,11 +120,14 @@ void push_callback(evutil_socket_t fd, short what, void *arg)
 			unset_pushed_item(write_list, nwritten, __func__);
 			/* stat */
 			tcp_ctx->tcp_stat.send_bytes += nwritten;
-		}
-		else if (errno != EINTR && errno != EAGAIN) {
+#if 0 // forget just release
+		} else if (errno != EINTR && errno != EAGAIN) {
+#else
+		} else if (nwritten == 0) {
+		} else { /* < 0 */
+#endif
 			APPLOG(APPLOG_ERR, "fep sock there(%s) error! %d : %s\n", __func__, errno, strerror(errno));
 			release_conncb(sock_ctx);
-			return;
 		}
     }
 }
@@ -138,6 +135,11 @@ void push_callback(evutil_socket_t fd, short what, void *arg)
 void iovec_push_req(tcp_ctx_t *dest_tcp_ctx, iovec_item_t *push_req)
 {
     struct event_base *peer_evbase = dest_tcp_ctx->evbase;
+
+	if (push_req->iov_cnt <= 0 || push_req->remain_bytes <= 0) {
+		APPLOG(APPLOG_ERR, "ERR!!! push req item or bytes <= 0");
+		return;
+	}
 
     if (event_base_once(peer_evbase, -1, EV_TIMEOUT, push_callback, push_req, NULL) < 0) {
         APPLOG(APPLOG_ERR, "TODO!!! (%s) fail to add callback to dest evbase", __func__);
@@ -292,6 +294,14 @@ STW_RET:
 	return;
 }
 
+void heartbeat_process(https_ctx_t *recv_ctx, tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx)
+{
+	time(&sock_ctx->last_hb_recv_time);
+	APPLOG(APPLOG_ERR, "{{{dbg}}} heartbeat receive from fep(%d) svc(%s) (%s:%d)\n",
+			tcp_ctx->fep_tag, svc_type_to_str(tcp_ctx->svc_type), sock_ctx->client_ip, sock_ctx->client_port);
+	clear_and_free_ctx(recv_ctx);
+}
+
 void check_and_send(tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx)
 {   
     https_ctx_t *recv_ctx = NULL;
@@ -324,8 +334,12 @@ KEEP_PROCESS:
 
     process_ptr += AHIF_TCP_MSG_LEN(head);
     processed_len += AHIF_TCP_MSG_LEN(head);
-    
-	send_to_worker(tcp_ctx, recv_ctx);
+
+	if (recv_ctx->user_ctx.head.mtype == MTYPE_HTTP2_AHIF_CONN_CHECK) {
+		heartbeat_process(recv_ctx, tcp_ctx, sock_ctx);
+	} else {
+		send_to_worker(tcp_ctx, recv_ctx);
+	}
 
     goto KEEP_PROCESS;
 }
@@ -488,7 +502,12 @@ void load_lb_config(server_conf *svr_conf, lb_global_t *lb_conf)
     } else {
         APPLOG(APPLOG_ERR, "}}  lb_config.flush_tmval = %d", lb_conf->flush_tmval);
     }
-
+	if (config_setting_lookup_int(lb_config, "heartbeat_enable", &lb_conf->heartbeat_enable) == CONFIG_FALSE) {
+		APPLOG(APPLOG_ERR, "lb_config.fail to get heaertbeat_enable");
+		exit(0);
+	} else {
+        APPLOG(APPLOG_ERR, "}}  lb_config.heartbeat_enable = %d", lb_conf->heartbeat_enable);
+	}
 
 }
 
@@ -497,6 +516,7 @@ void attach_lb_thread(lb_global_t *lb_conf, lb_ctx_t *lb_ctx)
     /* CAUTION!!! ALL UNDER THREAD USE THIS */
     tcp_ctx_t tcp_ctx = {0,};
     tcp_ctx.flush_tmval = lb_conf->flush_tmval;
+	tcp_ctx.heartbeat_enable = lb_conf->heartbeat_enable;
     tcp_ctx.lb_ctx = lb_ctx;
 
     // create root node for thread

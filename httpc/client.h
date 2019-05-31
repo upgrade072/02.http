@@ -248,6 +248,7 @@ typedef struct lb_global {
     int bundle_bytes;
     int bundle_count;
 	int flush_tmval;
+	int heartbeat_enable;
 
 	int total_fep_num;
 	int context_num;
@@ -381,6 +382,7 @@ tcp_ctx_t       *search_dest_via_tag(httpc_ctx_t *httpc_ctx, GNode *root_node);
 void    send_response_to_fep(httpc_ctx_t *httpc_ctx);
 void    send_to_peerlb(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx);
 void    send_to_remote(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx);
+void    heartbeat_process(httpc_ctx_t *recv_ctx, tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx);
 void    check_and_send(tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx);
 void    lb_buff_readcb(struct bufferevent *bev, void *arg);
 void    load_lb_config(client_conf_t *cli_conf, lb_global_t *lb_conf);

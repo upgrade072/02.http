@@ -207,6 +207,7 @@ typedef struct lb_global {
     int bundle_bytes;
     int bundle_count;
     int flush_tmval;
+	int heartbeat_enable;
 
     int total_fep_num;
     int context_num;
@@ -283,6 +284,7 @@ void    gb_clean_ctx(https_ctx_t *https_ctx);
 void    set_callback_tag(https_ctx_t *https_ctx, tcp_ctx_t *fep_tcp_ctx);
 int     send_request_to_fep(https_ctx_t *https_ctx);
 void    send_to_worker(tcp_ctx_t *tcp_ctx, https_ctx_t *recv_ctx);
+void    heartbeat_process(https_ctx_t *recv_ctx, tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx);
 void    check_and_send(tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx);
 void    lb_buff_readcb(struct bufferevent *bev, void *arg);
 int     get_httpcs_buff_used(tcp_ctx_t *tcp_ctx);

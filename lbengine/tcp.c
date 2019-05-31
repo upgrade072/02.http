@@ -166,8 +166,12 @@ void release_conncb(sock_ctx_t *sock_ctx)
     unset_pushed_item(&sock_ctx->push_items, sock_ctx->push_items.item_bytes, __func__);
 
 	// CHECK event first? bev first?
-    if (sock_ctx->event) 
-        event_del(sock_ctx->event);
+    if (sock_ctx->event_flush_cb) 
+        event_del(sock_ctx->event_flush_cb);
+    if (sock_ctx->event_send_hb) 
+        event_del(sock_ctx->event_send_hb);
+    if (sock_ctx->event_chk_hb) 
+        event_del(sock_ctx->event_chk_hb);
 
     // remove event, close sock
 	if (sock_ctx->bev) 
@@ -214,6 +218,24 @@ void packet_process_res(sock_ctx_t *sock_ctx, char *process_ptr, size_t processe
     return;
 }
 
+void create_heartbeat_msg(sock_ctx_t *sock_ctx)
+{
+	tcp_ctx_t *tcp_ctx = (tcp_ctx_t *)sock_ctx->tcp_ctx;
+
+	sprintf(sock_ctx->hb_pkt_hdr.magicByte, "%s", AHIF_MAGIC_BYTE);
+	sock_ctx->hb_pkt_hdr.mtype = MTYPE_HTTP2_AHIF_CONN_CHECK;
+	sock_ctx->hb_pkt_hdr.staCause = HTTP_STA_CAUSE_NONE;
+	sock_ctx->push_req.sender_tcp_ctx = tcp_ctx;
+	sock_ctx->push_req.iov[0].iov_base = &sock_ctx->hb_pkt_hdr;
+	sock_ctx->push_req.iov[0].iov_len = AHIF_HTTPCS_MSG_HEAD_LEN;
+	sock_ctx->push_req.iov_cnt = 1;
+	sock_ctx->push_req.remain_bytes = AHIF_HTTPCS_MSG_HEAD_LEN;
+
+	/* recall myself */
+	sock_ctx->push_req.unset_cb_func = create_heartbeat_msg;
+	sock_ctx->push_req.unset_cb_arg = sock_ctx;
+}
+
 sock_ctx_t *assign_sock_ctx(tcp_ctx_t *tcp_ctx, evutil_socket_t fd, struct sockaddr *sa)
 {
     sock_ctx_t sock_ctx = {0,};
@@ -221,17 +243,104 @@ sock_ctx_t *assign_sock_ctx(tcp_ctx_t *tcp_ctx, evutil_socket_t fd, struct socka
     sock_ctx.client_port = util_get_port_from_sa(sa);
     sock_ctx.client_fd = fd;
     sock_ctx.lb_ctx = tcp_ctx->lb_ctx;
+	sock_ctx.tcp_ctx = tcp_ctx;
+	time(&sock_ctx.last_hb_recv_time); // heartbeat recv init
 
     GNode *new_conn = new_node_conn(&sock_ctx);
     if (new_conn != NULL) {
         add_node(tcp_ctx->root_conn, new_conn, NULL);
+		APPLOG(APPLOG_ERR, "LB-ENGINE] tcp ctx (%p) (%s:%d) now sock num (%d)",
+				tcp_ctx,
+				svc_type_to_str(tcp_ctx->svc_type),
+				tcp_ctx->fep_tag,
+				return_sock_num(tcp_ctx));
+
         sock_ctx_t *sock_ctx = (sock_ctx_t *)new_conn->data;
         sock_ctx->my_conn = new_conn;
+
+		/* create heartbeat msg in sock */
+		create_heartbeat_msg(sock_ctx);
+
         return sock_ctx;
     } else {
         APPLOG(APPLOG_ERR, "LB-ENGINE] fail to create sock ctx!");
         return NULL;
     }
+}
+
+void sock_hb_send_cb(evutil_socket_t fd, short what, void *arg)
+{
+    sock_ctx_t *sock_ctx = (sock_ctx_t *)arg;
+	tcp_ctx_t *tcp_ctx = (tcp_ctx_t *)sock_ctx->tcp_ctx;
+
+	return iovec_push_req(tcp_ctx, &sock_ctx->push_req);
+}
+
+int sock_add_heartbeatcb(tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx)
+{
+    struct timeval tm_interval  = {1, 0}; // every 1 sec
+    sock_ctx->event_send_hb = event_new(tcp_ctx->evbase, -1, EV_PERSIST, sock_hb_send_cb, sock_ctx);
+
+    return event_add(sock_ctx->event_send_hb, &tm_interval);
+}
+
+void release_conn_by_hb(lb_ctx_t *lb_ctx, tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx)
+{
+	if (tcp_ctx->svc_type != TT_PEER_RECV && tcp_ctx->svc_type != TT_RX_ONLY) {
+		APPLOG(APPLOG_ERR, "LB-ENGINE] {{{DBG}}} in %s receive unknown svc type");
+		return;
+	}
+
+	if (tcp_ctx->svc_type == TT_PEER_RECV) {
+		/* release my sock */
+		release_conncb(sock_ctx);
+	} else if (tcp_ctx->svc_type == TT_RX_ONLY) {
+		/* release my sock */
+		release_conncb(sock_ctx);
+
+		/* find tx thread */
+		unsigned int fep_num = g_node_n_children(lb_ctx->fep_tx_thrd);
+		for (int i = 0; i < fep_num; i++) {
+			GNode *temp_node = g_node_nth_child(lb_ctx->fep_tx_thrd, i);
+			tcp_ctx_t *pair_tcp_ctx = (tcp_ctx_t *)temp_node->data;
+			/* find tx-pair tcp */
+			if (pair_tcp_ctx->fep_tag == tcp_ctx->fep_tag) {
+				GNode *root = pair_tcp_ctx->root_conn;
+				unsigned int conn_num = g_node_n_children(root);
+				/* release tx-pair-sock */
+				for (int i = 0; i < conn_num; i++) {
+					GNode *nth_conn = g_node_nth_child(root, i);
+					sock_ctx_t *peer_sock_ctx = (sock_ctx_t *)nth_conn->data;
+					release_conncb(peer_sock_ctx);
+				}
+			}
+		}
+	}
+}
+
+void sock_hb_chk_cb(evutil_socket_t fd, short what, void *arg)
+{
+	time_t current = {0,};
+	sock_ctx_t *sock_ctx = (sock_ctx_t *)arg;
+	tcp_ctx_t *tcp_ctx = (tcp_ctx_t *)sock_ctx->tcp_ctx;
+	lb_ctx_t *lb_ctx = (lb_ctx_t *)tcp_ctx->lb_ctx;
+
+	time(&current);
+	if (current - sock_ctx->last_hb_recv_time >= 5) {
+		APPLOG(APPLOG_ERR, "LB-ENGINE] FEP(%d) SVC(%s) HB PROBLEM (last recv %.19s)",
+				tcp_ctx->fep_tag, 
+				svc_type_to_str(tcp_ctx->svc_type),
+				ctime(&sock_ctx->last_hb_recv_time));
+		release_conn_by_hb(lb_ctx, tcp_ctx, sock_ctx);
+	}
+}
+
+int sock_chk_heartbeatcb(tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx)
+{
+    struct timeval tm_interval  = {1, 0}; // for test
+    sock_ctx->event_chk_hb = event_new(tcp_ctx->evbase, -1, EV_PERSIST, sock_hb_chk_cb, sock_ctx);
+
+    return event_add(sock_ctx->event_chk_hb, &tm_interval);
 }
 
 void sock_flush_callback(evutil_socket_t fd, short what, void *arg)
@@ -247,11 +356,16 @@ void sock_flush_callback(evutil_socket_t fd, short what, void *arg)
 
     /* push all remain item */
     ssize_t nwritten = push_write_item(sock_ctx->client_fd, write_list, INT_MAX, INT_MAX);
-    if (nwritten >= 0) {
+    if (nwritten > 0) {
         unset_pushed_item(write_list, nwritten, __func__);
 		/* stat */
 		tcp_ctx->tcp_stat.send_bytes += nwritten;
+#if 0 // forget just release
 	} else if (errno != EINTR && errno != EAGAIN) {
+#else
+	} else if (nwritten == 0) {
+	} else { /* < 0 */
+#endif
 		APPLOG(APPLOG_ERR, "LB-ENGINE] something wrong (%d : %s), release sock\n", errno, strerror(errno));
 		release_conncb(sock_ctx);
 	}
@@ -260,9 +374,9 @@ void sock_flush_callback(evutil_socket_t fd, short what, void *arg)
 int sock_add_flushcb(tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx)
 {
     struct timeval tm_interval  = {0, tcp_ctx->flush_tmval};
-    sock_ctx->event = event_new(tcp_ctx->evbase, -1, EV_PERSIST, sock_flush_callback, sock_ctx);
+    sock_ctx->event_flush_cb = event_new(tcp_ctx->evbase, -1, EV_PERSIST, sock_flush_callback, sock_ctx);
 
-    return event_add(sock_ctx->event, &tm_interval);
+    return event_add(sock_ctx->event_flush_cb, &tm_interval);
 }
 
 void release_older_sock(tcp_ctx_t *tcp_ctx)
@@ -312,26 +426,48 @@ void lb_listener_cb(struct evconnlistener *listener, evutil_socket_t fd,
 
     switch (tcp_ctx->svc_type) {
         case TT_RX_ONLY:
-            APPLOG(APPLOG_ERR, "LB-ENGINE] {dbg} rx only connected!");
+		case TT_PEER_RECV:
+            APPLOG(APPLOG_ERR, "LB-ENGINE] {DBG} RX ONLY (%s) CONNECTED! (fep_tag %d: heartbeat_enable: %d)", 
+					svc_type_to_str(tcp_ctx->svc_type), tcp_ctx->fep_tag, tcp_ctx->heartbeat_enable);
+			if (tcp_ctx->heartbeat_enable) {
+				sock_chk_heartbeatcb(tcp_ctx, sock_ctx);
+			} 
             bufferevent_setcb(bev, lb_buff_readcb, NULL, svr_sock_eventcb, sock_ctx);
             bufferevent_enable(bev, EV_READ);
             break;
         case TT_TX_ONLY:
-            APPLOG(APPLOG_ERR, "LB-ENGINE] {dbg} tx only connected!");
-            int res = sock_add_flushcb(tcp_ctx, sock_ctx); // TODO res < 0 ???
-			if (res < 0) {
-				APPLOG(APPLOG_ERR, "LB-ENGINE] {dbg} fail to add flushcb!");
+            APPLOG(APPLOG_ERR, "LB-ENGINE] {DBG} TX ONLY (%s) CONNECTED! (fep_tag %d: heartbeat_enable: %d)", 
+					svc_type_to_str(tcp_ctx->svc_type), tcp_ctx->fep_tag, tcp_ctx->heartbeat_enable);
+            sock_add_flushcb(tcp_ctx, sock_ctx);
+			if (tcp_ctx->heartbeat_enable) {
+				sock_add_heartbeatcb(tcp_ctx, sock_ctx);
 			}
             bufferevent_setcb(bev, unexpect_readcb, NULL, svr_sock_eventcb, sock_ctx);
             bufferevent_enable(bev, EV_READ);
             break;
         default:
-            APPLOG(APPLOG_ERR, "LB-ENGINE] {dbg} wrong context received");
+            APPLOG(APPLOG_ERR, "LB-ENGINE] {DBG} wrong context received");
             exit(0);
     }
 
     APPLOG(APPLOG_ERR, "LB-ENGINE] accepted fd (%d) addr %s port %d",
             sock_ctx->client_fd, sock_ctx->client_ip, sock_ctx->client_port);
+}
+
+char *svc_type_to_str(int svc_type)
+{
+	switch (svc_type) {
+		case TT_RX_ONLY:
+			return "fep rx only";
+		case TT_TX_ONLY:
+			return "fep tx only";
+		case TT_PEER_RECV:
+			return "peer recv";
+		case TT_PEER_SEND:
+			return "peer send";
+		default:
+			return "unknown";
+	}
 }
 
 void *fep_conn_thread(void *arg)
@@ -357,7 +493,7 @@ void *fep_conn_thread(void *arg)
     listen_addr.sin_port = htons(tcp_ctx->listen_port);
 
     APPLOG(APPLOG_ERR, ">>>[ %s / for FEP %02d] thread id [%jd] will listen [%s:%5d]<<<",
-            __func__, tcp_ctx->fep_tag, (intmax_t)util_gettid(), tcp_ctx->svc_type == TT_RX_ONLY ? "rx only" : "tx only", tcp_ctx->listen_port);
+            __func__, tcp_ctx->fep_tag, (intmax_t)util_gettid(), svc_type_to_str(tcp_ctx->svc_type), tcp_ctx->listen_port);
 
     // EVUTIL_SOCK_NONBLOCK default setted
     // backlog setted to 16
@@ -399,6 +535,12 @@ void cli_sock_eventcb(struct bufferevent *bev, short events, void *user_data)
             APPLOG(APPLOG_ERR, "LB-ENGINE] fail to set SO_LINGER (ABORT) to fd");
 
 		sock_ctx->connected = 1;
+
+		tcp_ctx_t *tcp_ctx = (tcp_ctx_t *)sock_ctx->tcp_ctx;
+		sock_add_flushcb(tcp_ctx, sock_ctx);
+		if (tcp_ctx->heartbeat_enable) {
+			sock_add_heartbeatcb(tcp_ctx, sock_ctx);
+		}
         return;
     }
 
@@ -447,12 +589,6 @@ sock_ctx_t *create_new_peer_sock(tcp_ctx_t *tcp_ctx, const char *peer_addr)
         return NULL;
     }
 
-    int res = sock_add_flushcb(tcp_ctx, sock_ctx); // TODO res < 0 ???
-	if (res < 0) {
-		APPLOG(APPLOG_ERR, "LB-ENGINE] fail to add flush cb in (%s)", __func__);
-		release_conncb(sock_ctx);
-		return NULL;
-	}
     bufferevent_enable(bev, EV_READ);
     bufferevent_setcb(bev, unexpect_readcb, NULL, cli_sock_eventcb, sock_ctx);
     bufferevent_set_timeouts(bev, &TM_SYN_TIMEOUT, &TM_SYN_TIMEOUT);
@@ -556,8 +692,10 @@ void CREATE_LB_THREAD(GNode *root_node, size_t context_size, int context_num)
 		tcp_ctx->context_num = context_num;
 
         switch (tcp_ctx->svc_type) {
+			/* server sock */
             case TT_RX_ONLY:
             case TT_TX_ONLY:
+			case TT_PEER_RECV:
                 if (pthread_create(&tcp_ctx->thread_id, NULL, &fep_conn_thread, tcp_ctx) != 0) {
                     APPLOG(APPLOG_ERR, "ERR} cant invoke thread type %d, %d th", tcp_ctx->svc_type, i);
                     exit(0);
@@ -565,6 +703,7 @@ void CREATE_LB_THREAD(GNode *root_node, size_t context_size, int context_num)
                     pthread_detach(tcp_ctx->thread_id);
                 }
                 break;
+			/* client sock */
             case TT_PEER_SEND:
                 if (pthread_create(&tcp_ctx->thread_id, NULL, &fep_peer_thread, tcp_ctx) != 0) {
                     APPLOG(APPLOG_ERR, "ERR} cant invoke thread type %d, %d th", tcp_ctx->svc_type, i);
