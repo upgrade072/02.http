@@ -27,10 +27,21 @@ void fn_000(char *uri, AhifAppMsgType *txMsg)
 	char protocol[128] = {0,};
 	char host[128] = {0,};
 	char path[256] = {0,};
+	char ip[128] = {0,};
+	char port[128] = {0,};
 
 	sscanf(uri, "%128[^:/]://%128[^/]/%256s", protocol, host, path);
 
 	sprintf(txMsg->head.scheme, "%s", protocol);
 	sprintf(txMsg->head.authority, "%s", host);
 	sprintf(txMsg->head.rsrcUri, "/%s", path);
+
+	sscanf(host, "%128[^:]:%128s", ip, port);
+
+	int port_num = atoi(port);
+
+	sprintf(txMsg->head.destType, "AUSF");
+	sprintf(txMsg->head.destHost, "%s", port_num == 9000 ? "AUSF_DIR_FEP00" : "AUSF_DIR_FEP01");
+	sprintf(txMsg->head.destIp, "%s", ip);
+	txMsg->head.destPort = port_num;
 }

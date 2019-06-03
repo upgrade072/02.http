@@ -170,6 +170,9 @@ typedef struct tcp_ctx {
 
 	/* for dest selection */
 	select_node_t root_select;
+
+	/* for check active / standby */
+	int received_fep_status;
 } tcp_ctx_t;
 
 typedef struct lb_ctx {

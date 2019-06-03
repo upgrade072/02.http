@@ -162,12 +162,14 @@ tcp_ctx_t *get_loadshare_turn(https_ctx_t *https_ctx)
 		int loadshare_turn = (turn_index + i) % fep_num;
 		GNode *nth_thread = g_node_nth_child(root_node, loadshare_turn);
 		if (nth_thread != NULL) {
-			tcp_ctx_t *fep_tcp_ctx = (tcp_ctx_t *)nth_thread->data;
-			int sock_num = g_node_n_children(fep_tcp_ctx->root_conn);
-			if (sock_num > 0) {
-				https_ctx->fep_tag = fep_tcp_ctx->fep_tag;
-				root_data->round_robin_index[https_ctx->thrd_idx] = (fep_tcp_ctx->fep_tag + 1);
-				return fep_tcp_ctx;
+			tcp_ctx_t *tcp_ctx = (tcp_ctx_t *)nth_thread->data;
+			if (tcp_ctx->received_fep_status == HTTP_STA_CAUSE_SYS_ACTIVE) {
+				unsigned int sock_num = g_node_n_children(tcp_ctx->root_conn);
+				if (sock_num > 0) {
+					https_ctx->fep_tag = tcp_ctx->fep_tag;
+					root_data->round_robin_index[https_ctx->thrd_idx] = (tcp_ctx->fep_tag + 1);
+					return tcp_ctx;
+				}
 			}
 		}
 	}
@@ -228,10 +230,11 @@ int send_request_to_fep(https_ctx_t *https_ctx)
 {
 	tcp_ctx_t *fep_tcp_ctx = NULL;
 
-	if (https_ctx->is_direct_ctx) 
+	if (https_ctx->is_direct_ctx) {
 		fep_tcp_ctx = get_direct_dest(https_ctx);
-	else
+	} else {
 		fep_tcp_ctx = get_loadshare_turn(https_ctx);
+	}
 
 	if (fep_tcp_ctx == NULL) {
 		// TODO !!! count this and log stat
@@ -294,12 +297,34 @@ STW_RET:
 	return;
 }
 
-void heartbeat_process(https_ctx_t *recv_ctx, tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx)
+void heartbeat_process(https_ctx_t *recv_ctx, tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx, int staCause)
 {
+	/* normal hb time save job (in RX sock) */
 	time(&sock_ctx->last_hb_recv_time);
-	APPLOG(APPLOG_ERR, "{{{dbg}}} heartbeat receive from fep(%d) svc(%s) (%s:%d)\n",
-			tcp_ctx->fep_tag, svc_type_to_str(tcp_ctx->svc_type), sock_ctx->client_ip, sock_ctx->client_port);
+
+	APPLOG(APPLOG_ERR, "{{{dbg}}} heartbeat receive from fep(%d) svc(%s) (%s:%d) (fep_status: %s)\n",
+			tcp_ctx->fep_tag, svc_type_to_str(tcp_ctx->svc_type), sock_ctx->client_ip, sock_ctx->client_port,
+			staCause == HTTP_STA_CAUSE_SYS_ACTIVE ? "active" :
+			staCause == HTTP_STA_CAUSE_SYS_STANDBY ? "standby" :
+			staCause == HTTP_STA_CAUSE_NONE ? "none" : "unknown");
 	clear_and_free_ctx(recv_ctx);
+
+	/* set active / or standby (to pair TX sock) */
+	tcp_ctx->received_fep_status = staCause;
+	lb_ctx_t *lb_ctx = (lb_ctx_t *)tcp_ctx->lb_ctx;
+
+	/* find tx thread */
+	unsigned int fep_num = g_node_n_children(lb_ctx->fep_tx_thrd);
+	for (int i = 0; i < fep_num; i++) {
+		GNode *temp_node = g_node_nth_child(lb_ctx->fep_tx_thrd, i);
+		tcp_ctx_t *pair_tcp_ctx = (tcp_ctx_t *)temp_node->data;
+		/* find tx-pair tcp */
+		if (pair_tcp_ctx->fep_tag == tcp_ctx->fep_tag) {
+			/* set system status */
+			pair_tcp_ctx->received_fep_status = staCause;
+			break;
+		}
+	}
 }
 
 void check_and_send(tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx)
@@ -336,7 +361,7 @@ KEEP_PROCESS:
     processed_len += AHIF_TCP_MSG_LEN(head);
 
 	if (recv_ctx->user_ctx.head.mtype == MTYPE_HTTP2_AHIF_CONN_CHECK) {
-		heartbeat_process(recv_ctx, tcp_ctx, sock_ctx);
+		heartbeat_process(recv_ctx, tcp_ctx, sock_ctx, recv_ctx->user_ctx.head.staCause);
 	} else {
 		send_to_worker(tcp_ctx, recv_ctx);
 	}
