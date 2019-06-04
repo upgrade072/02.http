@@ -53,9 +53,11 @@
 extern char lOG_PATH[64];
 
 typedef struct client_conf {
+	int debug_mode;
 	int log_level;
     int worker_num;
     int timeout_sec;
+	int pkt_log;
 
 	config_setting_t *lb_config;
 } client_conf_t;
@@ -208,6 +210,11 @@ typedef struct httpc_ctx {
 	
 	// if iovec pushed into tcp queue, worker can't cancel this
 	char tcp_wait;
+
+	/* for recv log */
+	FILE *recv_log_file;
+	size_t file_size;
+	char *log_ptr;
 } httpc_ctx_t;
 
 typedef enum intl_req_mtype {
@@ -324,6 +331,9 @@ void    order_list();
 acc_token_list_t *get_token_list(int id, int used);
 void print_token_list_raw(acc_token_list_t input_token_list[]);
 #endif
+void    log_pkt_send(char *prefix, nghttp2_nv *hdrs, int hdrs_len, char *body, int body_len);
+void    log_pkt_head_recv(httpc_ctx_t *httpc_ctx, const uint8_t *name, size_t namelen, const uint8_t *value, size_t valuelen);
+void    log_pkt_end_stream(int stream_id, httpc_ctx_t *httpc_ctx);
 
 /* ------------------------- client.c --------------------------- */
 int     send_request(http2_session_data_t *session_data, int thrd_index, int ctx_id);

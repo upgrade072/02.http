@@ -10,11 +10,11 @@ void print_oauth_response(access_token_res_t *response)
 {
 	time_t due_time = response->expire_in;
 
-	APPLOG(APPLOG_ERR, "");
-	APPLOG(APPLOG_ERR, "{dbg} recv oauth 2.0 response ...");
-	APPLOG(APPLOG_ERR, "  {access_token : %s", response->access_token);
-	APPLOG(APPLOG_ERR, "  {token_type : %s", response->token_type);
-	APPLOG(APPLOG_ERR, "  {expire_in : %d (%.19s)", response->expire_in, ctime(&due_time));
+	APPLOG(APPLOG_DETAIL, "");
+	APPLOG(APPLOG_DETAIL, "{dbg} recv oauth 2.0 response ...");
+	APPLOG(APPLOG_DETAIL, "  {access_token : %s", response->access_token);
+	APPLOG(APPLOG_DETAIL, "  {token_type : %s", response->token_type);
+	APPLOG(APPLOG_DETAIL, "  {expire_in : %d (%.19s)", response->expire_in, ctime(&due_time));
 }
 
 void parse_oauth_response(char *body, access_token_res_t *response)
@@ -27,8 +27,6 @@ void parse_oauth_response(char *body, access_token_res_t *response)
 	while (ptr != NULL)
 	{
 		char *delimiter = NULL;
-
-		//APPLOG(APPLOG_ERR, "dbg} %s", ptr);
 
 		if (!strncmp(ptr, "access_token", strlen("access_token"))) {
 			if ((delimiter = strchr(ptr, ':')) != NULL) 
@@ -140,7 +138,7 @@ void *nrf_access_thread(void *arg)
 
 	event_base_free(evbase);
 
-	APPLOG(APPLOG_ERR, "%s)%d)reach here\n", __func__, __LINE__);
+	APPLOG(APPLOG_ERR, "%s():%d reach here!", __func__, __LINE__);
 
 	return NULL;
 }

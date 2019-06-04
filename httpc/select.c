@@ -57,24 +57,6 @@ int sn_cmp_conn_id(void *input, void *compare)
         return (comm_input->index - node_data->val);
 }
 
-char *depth_to_str(int depth)
-{
-    switch (depth) {
-        case SN_TYPE:
-            return "type";
-        case SN_HOST:
-            return "host";
-        case SN_IP:
-            return "ip";
-        case SN_PORT:
-            return "port";
-        case SN_CONN_ID:
-            return "conn_id";
-        default:
-            return "N/A";
-    }
-}
-
 GNode *new_select_data(compare_input_t *comm_input, int depth, conn_list_t *conn_list)
 {
     if (depth < SN_TYPE || depth >= SN_MAX)
@@ -340,7 +322,7 @@ void once_refresh_select_node(GNode *root_node)
 
 		struct event_base *evbase = tcp_ctx->evbase;
 		if (event_base_once(evbase, -1, EV_TIMEOUT, refresh_select_node, &tcp_ctx->root_select, NULL) < 0) {
-			APPLOG(APPLOG_ERR, "TODO!!! (%s) fail to add callback to dest evbase", __func__);
+			APPLOG(APPLOG_ERR, "{{{TODO}}} %s() fail to add callback to dest evbase", __func__);
 		}
 	}
 }

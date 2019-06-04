@@ -8,11 +8,8 @@ int set_defined_header(hdr_index_t HDR_INDEX[], char *name, char *val, AhifHttpC
 {
 	hdr_relay *vheader = appData->vheader;
 
-	//fprintf(stderr, "{{{dbg}}} %s called!!! with name [%s] val [%s]\n", __func__, name, val);
-
 	/* check header content length */
 	if (strlen(val) >= MAX_HDR_BODY_LEN) {
-		//fprintf(stderr, "{{{dbg}}} %s over MAX_HDR_BODY_LEN(256)\n", __func__);
 		return (-1);
 	}
 
@@ -20,14 +17,12 @@ int set_defined_header(hdr_index_t HDR_INDEX[], char *name, char *val, AhifHttpC
 	int index = 0;
 	for (; index < MAX_HDR_RELAY_CNT; index++) {
 		if (vheader[index].vheader_id == 0) {
-			//fprintf(stderr, "{{{dbg}}} %s find empty slod %d\n", __func__, index);
 			break;
 		}
 	}
 
 	/* if all slot full we cant */
 	if (index == MAX_HDR_RELAY_CNT) {
-		//fprintf(stderr, "{{{dbg}}} %s over MAX_HDR_RELAY_CNT (12?)\n", __func__);
 		return (-1);
 	}
 
@@ -36,12 +31,10 @@ int set_defined_header(hdr_index_t HDR_INDEX[], char *name, char *val, AhifHttpC
 
 	if (ptr != NULL) {
 		vheader[index].vheader_id = ptr->vheader_id;
-		//fprintf(stderr, "{{{dbg}}} success all done id [%d]\n", vheader[index].vheader_id);
 		sprintf(vheader[index].vheader_body, "%s", val);
 		return 0;
 	}
 
-	//fprintf(stderr, "{{{dbg}}} fail ptr != NULL all done\n");
 	return (-1);
 }
 
@@ -76,20 +69,16 @@ int assign_more_headers(hdr_index_t HDR_INDEX[], nghttp2_nv *hdrs, int size, int
 
 void print_header(FILE *f, const uint8_t *name, size_t namelen, const uint8_t *value, size_t valuelen) 
 {
-#ifndef PERFORM
     fwrite(name, 1, namelen, f);
     fprintf(f, ": ");
     fwrite(value, 1, valuelen, f);
-    fprintf(f, "\n");
-#endif
+	fprintf(f, "\n");
 }
 
 void print_headers(FILE *f, nghttp2_nv *nva, size_t nvlen) 
 {
-#ifndef PERFORM
     size_t i;
     for (i = 0; i < nvlen; ++i) {
         print_header(f, nva[i].name, nva[i].namelen, nva[i].value, nva[i].valuelen);
     }
-#endif
 }

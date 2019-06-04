@@ -33,19 +33,12 @@ https_ctx_t *get_assembled_ctx(tcp_ctx_t *tcp_ctx, char *ptr)
     char *body = ptr + sizeof(AhifHttpCSMsgHeadType) + (sizeof(hdr_relay) * vheaderCnt);
     int bodyLen = head->bodyLen;
 
-	//APPLOG(APPLOG_ERR, "{{{dbg}}} in %s bodyLen is %d\n", __func__, bodyLen);
-
     if((recv_ctx = get_null_recv_ctx(tcp_ctx)) == NULL)
         return NULL;
 
     memcpy(&recv_ctx->user_ctx.head, ptr, sizeof(AhifHttpCSMsgHeadType));
     memcpy(&recv_ctx->user_ctx.vheader, vheader, (sizeof(hdr_relay) * vheaderCnt));
     memcpy(&recv_ctx->user_ctx.body, body, bodyLen);
-
-#if 0
-	APPLOG(APPLOG_ERR, "{{{DBG}}} GET TEMP CTX ASSIGN IT TH %d CTX %d\n", 
-			recv_ctx->user_ctx.head.thrd_index, recv_ctx->user_ctx.head.ctx_id);
-#endif
 
     return recv_ctx;
 }
@@ -70,13 +63,11 @@ void set_iovec(tcp_ctx_t *dest_tcp_ctx, https_ctx_t *https_ctx, const char *dest
     }
     // vheader
     if (user_ctx->head.vheaderCnt) {
-		//APPLOG(APPLOG_ERR, "{{{{dbg}}} vheader cnt %d\n", user_ctx->head.vheaderCnt);
         push_req->iov[item_cnt].iov_base = user_ctx->vheader;
         push_req->iov[item_cnt].iov_len = user_ctx->head.vheaderCnt * sizeof(hdr_relay);
         item_cnt++;
         total_bytes += user_ctx->head.vheaderCnt * sizeof(hdr_relay);
     } else {
-		//APPLOG(APPLOG_ERR, "{{{{dbg}}} vheader cnt 0!!!!\n");
 	}
     // body
     if (user_ctx->head.bodyLen) {
@@ -126,7 +117,7 @@ void push_callback(evutil_socket_t fd, short what, void *arg)
 		} else if (nwritten == 0) {
 		} else { /* < 0 */
 #endif
-			APPLOG(APPLOG_ERR, "fep sock there(%s) error! %d : %s\n", __func__, errno, strerror(errno));
+			APPLOG(APPLOG_ERR, "%s() fep sock error!!! %d : %s\n", __func__, errno, strerror(errno));
 			release_conncb(sock_ctx);
 		}
     }
@@ -137,12 +128,12 @@ void iovec_push_req(tcp_ctx_t *dest_tcp_ctx, iovec_item_t *push_req)
     struct event_base *peer_evbase = dest_tcp_ctx->evbase;
 
 	if (push_req->iov_cnt <= 0 || push_req->remain_bytes <= 0) {
-		APPLOG(APPLOG_ERR, "ERR!!! push req item or bytes <= 0");
+		APPLOG(APPLOG_ERR, "%s() push req item or bytes <= 0!", __func__);
 		return;
 	}
 
     if (event_base_once(peer_evbase, -1, EV_TIMEOUT, push_callback, push_req, NULL) < 0) {
-        APPLOG(APPLOG_ERR, "TODO!!! (%s) fail to add callback to dest evbase", __func__);
+        APPLOG(APPLOG_ERR, "%s() fail to add callback to dest evbase!", __func__);
     }
 }
 
@@ -206,8 +197,6 @@ tcp_ctx_t *get_direct_dest(https_ctx_t *https_ctx)
 
 void gb_clean_ctx(https_ctx_t *https_ctx)
 {
-	//APPLOG(APPLOG_ERR, "{{{dbg}}} %s called!\n", __func__);
-
     memset(https_ctx->user_ctx.vheader, 0x00, sizeof(hdr_relay) * https_ctx->user_ctx.head.vheaderCnt);
     https_ctx->user_ctx.head.vheaderCnt = 0;
 }
@@ -218,7 +207,7 @@ void set_callback_tag(https_ctx_t *https_ctx, tcp_ctx_t *fep_tcp_ctx)
         return;
 
 	if (fep_tcp_ctx->fep_tag < 0 || fep_tcp_ctx->fep_tag >= MAX_PORT_NUM) {
-		APPLOG(APPLOG_ERR, "err} fep_tcp_ctx->fep_tag num wrong [%d]", fep_tcp_ctx->fep_tag);
+		APPLOG(APPLOG_ERR, "%s() fep_tcp_ctx->fep_tag num wrong [%d]!", __func__, fep_tcp_ctx->fep_tag);
 		return;
 	} else {
 		https_ctx->user_ctx.head.callback_port = SERVER_CONF.callback_port[fep_tcp_ctx->fep_tag];
@@ -278,17 +267,16 @@ void send_to_worker(tcp_ctx_t *tcp_ctx, https_ctx_t *recv_ctx)
 
 	// check have same fep tag
 	if (recv_ctx->fep_tag != https_ctx->fep_tag) {
-		APPLOG(APPLOG_ERR, "ERR] fep tag mismatch (ahif recv %d, orig ctx %d)", recv_ctx->fep_tag, https_ctx->fep_tag);
+		APPLOG(APPLOG_DETAIL, "%s() fep tag mismatch (ahif recv %d, orig ctx %d)", __func__, recv_ctx->fep_tag, https_ctx->fep_tag);
 	}
 
 	intl_req_t intl_req = {0,};
 	set_intl_req_msg(&intl_req, thrd_index, ctx_id, session_index, session_id, stream_id, HTTP_INTL_SND_REQ);
 
 	assign_rcv_ctx_info(https_ctx, &recv_ctx->user_ctx);
-	//APPLOG(APPLOG_ERR, "{{{dbg}}} in fep response vheader cnt %d\n", https_ctx->user_ctx.head.vheaderCnt);
 
 	if (msgsnd(THRD_WORKER[thrd_index].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0) == -1) {
-		APPLOG(APPLOG_ERR, "(%s) internal msgsnd to worker [%d] failed", __func__, thrd_index);
+		APPLOG(APPLOG_ERR, "%s() internal msgsnd to worker [%d] failed!!!", __func__, thrd_index);
 		clear_and_free_ctx(https_ctx);
 	}
 
@@ -302,7 +290,7 @@ void heartbeat_process(https_ctx_t *recv_ctx, tcp_ctx_t *tcp_ctx, sock_ctx_t *so
 	/* normal hb time save job (in RX sock) */
 	time(&sock_ctx->last_hb_recv_time);
 
-	APPLOG(APPLOG_ERR, "{{{dbg}}} heartbeat receive from fep(%d) svc(%s) (%s:%d) (fep_status: %s)\n",
+	APPLOG(APPLOG_DETAIL, "heartbeat receive from fep(%d) svc(%s) (%s:%d) (fep_status: %s)\n",
 			tcp_ctx->fep_tag, svc_type_to_str(tcp_ctx->svc_type), sock_ctx->client_ip, sock_ctx->client_port,
 			staCause == HTTP_STA_CAUSE_SYS_ACTIVE ? "active" :
 			staCause == HTTP_STA_CAUSE_SYS_STANDBY ? "standby" :
@@ -343,7 +331,7 @@ KEEP_PROCESS:
     process_ptr = (char *)head;
 
 	if (strncmp(process_ptr, AHIF_MAGIC_BYTE, AHIF_MAGIC_BYTE_LEN)) {
-		APPLOG(APPLOG_ERR, "ahif rcv pkt wrong, it start with %8s\n", process_ptr);
+		APPLOG(APPLOG_ERR, "%s() ahif rcv pkt wrong, it start with %8s\n", __func__, process_ptr);
 		release_conncb(sock_ctx);
 		return;
 	}
@@ -353,7 +341,7 @@ KEEP_PROCESS:
     
     if ((recv_ctx = get_assembled_ctx(tcp_ctx, process_ptr)) == NULL) {
         // TODO!!! it means blocked, all drain ???
-        APPLOG(APPLOG_ERR, "cant process packet, will just dropped");
+        APPLOG(APPLOG_ERR, "%s() cant process packet, will just dropped", __func__);
         return packet_process_res(sock_ctx, process_ptr, processed_len);
     }
 
@@ -379,7 +367,7 @@ void lb_buff_readcb(struct bufferevent *bev, void *arg)
 
 	if (rcv_len <= 0) {
 		if (errno != EINTR && errno != EAGAIN) {
-			APPLOG(APPLOG_ERR, "fep sock there(%s) error! %d : %s\n", __func__, errno, strerror(errno));
+			APPLOG(APPLOG_ERR, "%s() fep sock error! %d : %s\n", __func__, errno, strerror(errno));
 			release_conncb(sock_ctx);
 			return;
 		}
@@ -416,6 +404,9 @@ void clear_context_stat(tcp_ctx_t *tcp_ctx)
 
 void fep_stat_print(evutil_socket_t fd, short what, void *arg)
 {
+	if (SERVER_CONF.debug_mode != 1)
+		return;
+
     char fep_read[1024] = {0,};
     char fep_write[1024] = {0,};
 
@@ -426,15 +417,9 @@ void fep_stat_print(evutil_socket_t fd, short what, void *arg)
         tcp_ctx_t *fep_rx = (nth_fep_rx == NULL ? NULL : (tcp_ctx_t *)nth_fep_rx->data);
         tcp_ctx_t *fep_tx = (nth_fep_rx == NULL ? NULL : (tcp_ctx_t *)nth_fep_tx->data);
 
-        if (fep_rx == NULL ||
-            fep_tx == NULL) {
-            APPLOG(APPLOG_ERR, "ERR] some of fep thread is NULL !!!");
-            exit(0);
-        }
-
         int fep_rx_used = get_httpcs_buff_used(fep_rx);
 
-        APPLOG(APPLOG_ERR, "FEP [%2d] CTX [fep_rx %05d/%05d] FEP TX [%s] (TPS %d) FEP RX [%s] DBG {{{ assign fail[%d] }}}",
+        APPLOG(APPLOG_ERR, "{{{DBG}}} FEP [%2d] CTX [fep_rx %05d/%05d] FEP TX [%s] (TPS %d) FEP RX [%s] DBG {{{ assign fail[%d] }}}",
                 i,
                 fep_rx_used,
                 fep_rx->context_num,
@@ -477,12 +462,12 @@ void load_lb_config(server_conf *svr_conf, lb_global_t *lb_conf)
     /* check fep / peer config list */
     setting = lb_conf->cf_fep_rx_listen_port = config_setting_get_member(lb_config, "fep_rx_listen_port");
     if (setting == NULL) {
-        APPLOG(APPLOG_ERR, "fail to get lb_config.fep_rx_listen_port");
+        APPLOG(APPLOG_ERR, "{{{CFG}}} fail to get lb_config.fep_rx_listen_port!");
         exit(0);
     }
     setting = lb_conf->cf_fep_tx_listen_port = config_setting_get_member(lb_config, "fep_tx_listen_port");
     if (setting == NULL) {
-        APPLOG(APPLOG_ERR, "fail to get lb_config.fep_tx_listen_port");
+        APPLOG(APPLOG_ERR, "{{{CFG}}} fail to get lb_config.fep_tx_listen_port!");
         exit(0);
     }
     /* check port num pair match, a == b == c == d */
@@ -491,47 +476,47 @@ void load_lb_config(server_conf *svr_conf, lb_global_t *lb_conf)
         printf_config_list_int("fep_rx_listen_port", lb_conf->cf_fep_rx_listen_port);
         printf_config_list_int("fep_tx_listen_port", lb_conf->cf_fep_tx_listen_port);
     } else {
-        APPLOG(APPLOG_ERR, "fep tx|rx port num not match!");
+        APPLOG(APPLOG_ERR, "{{{CFG}}} fep tx|rx port num not match!");
         exit(0);
     }
     /* check fep num */
     lb_conf->total_fep_num = config_setting_length(lb_conf->cf_fep_rx_listen_port);
     if (lb_conf->total_fep_num >= MAX_THRD_NUM) {
-        APPLOG(APPLOG_ERR, "total_fep_num(%d) exceed max_thrd_num(%d)",
+        APPLOG(APPLOG_ERR, "{{{CFG}}} total_fep_num(%d) exceed max_thrd_num(%d)!",
                 lb_conf->total_fep_num, MAX_THRD_NUM);
     }
 
     /* get context num for fep */
     if (config_setting_lookup_int(lb_config, "context_num", &lb_conf->context_num) == CONFIG_FALSE) {
-        APPLOG(APPLOG_ERR, "lb_config.fail to get context_num");
+        APPLOG(APPLOG_ERR, "{{{CFG}}} lb_config.fail to get context_num!");
         exit(0);
     } else {
-        APPLOG(APPLOG_ERR, "}}  lb_config.context_num = %d", lb_conf->context_num);
+        APPLOG(APPLOG_ERR, "{{{CFG}}} lb_config.context_num = %d", lb_conf->context_num);
     }
 
     if (config_setting_lookup_int(lb_config, "bundle_bytes", &lb_conf->bundle_bytes) == CONFIG_FALSE) {
-        APPLOG(APPLOG_ERR, "lb_config.fail to get bundle_bytes");
+        APPLOG(APPLOG_ERR, "{{{CFG}}} lb_config.fail to get bundle_bytes!");
         exit(0);
     } else {
-        APPLOG(APPLOG_ERR, "}}  lb_config.bundle_bytes = %d", lb_conf->bundle_bytes);
+        APPLOG(APPLOG_ERR, "{{{CFG}}} lb_config.bundle_bytes = %d", lb_conf->bundle_bytes);
     }
     if (config_setting_lookup_int(lb_config, "bundle_count", &lb_conf->bundle_count) == CONFIG_FALSE) {
-        APPLOG(APPLOG_ERR, "lb_config.fail to get bundle_count");
+        APPLOG(APPLOG_ERR, "{{{CFG}}} lb_config.fail to get bundle_count!");
         exit(0);
     } else {
-        APPLOG(APPLOG_ERR, "}}  lb_config.bundle_count = %d", lb_conf->bundle_count);
+        APPLOG(APPLOG_ERR, "{{{CFG}}} lb_config.bundle_count = %d", lb_conf->bundle_count);
     }
     if (config_setting_lookup_int(lb_config, "flush_tmval", &lb_conf->flush_tmval) == CONFIG_FALSE) {
-        APPLOG(APPLOG_ERR, "lb_config.fail to get flush_tmval");
+        APPLOG(APPLOG_ERR, "{{{CFG}}} lb_config.fail to get flush_tmval!");
         exit(0);
     } else {
-        APPLOG(APPLOG_ERR, "}}  lb_config.flush_tmval = %d", lb_conf->flush_tmval);
+        APPLOG(APPLOG_ERR, "{{{CFG}}} lb_config.flush_tmval = %d", lb_conf->flush_tmval);
     }
 	if (config_setting_lookup_int(lb_config, "heartbeat_enable", &lb_conf->heartbeat_enable) == CONFIG_FALSE) {
-		APPLOG(APPLOG_ERR, "lb_config.fail to get heaertbeat_enable");
+		APPLOG(APPLOG_ERR, "{{{CFG}}} lb_config.fail to get heaertbeat_enable!");
 		exit(0);
 	} else {
-        APPLOG(APPLOG_ERR, "}}  lb_config.heartbeat_enable = %d", lb_conf->heartbeat_enable);
+        APPLOG(APPLOG_ERR, "{{{CFG}}} lb_config.heartbeat_enable = %d", lb_conf->heartbeat_enable);
 	}
 
 }
@@ -568,12 +553,14 @@ void attach_lb_thread(lb_global_t *lb_conf, lb_ctx_t *lb_ctx)
     CREATE_LB_THREAD(lb_ctx->fep_rx_thrd, sizeof(https_ctx_t), lb_conf->context_num);
     CREATE_LB_THREAD(lb_ctx->fep_tx_thrd, 0, 0);
 
-	/* for stat print small thread */
-	if (pthread_create(&lb_ctx->stat_thrd_id, NULL, &fep_stat_thread, lb_ctx) != 0) {
-		APPLOG(APPLOG_ERR, "fail to create thread\n");
-		exit(0);
-	} else {
-		pthread_detach(lb_ctx->stat_thrd_id);
+	if (SERVER_CONF.debug_mode == 1) {
+		/* for stat print small thread */
+		if (pthread_create(&lb_ctx->stat_thrd_id, NULL, &fep_stat_thread, lb_ctx) != 0) {
+			APPLOG(APPLOG_ERR, "%s() fail to create thread", __func__);
+			exit(0);
+		} else {
+			pthread_detach(lb_ctx->stat_thrd_id);
+		}
 	}
 }
 

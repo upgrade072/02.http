@@ -148,7 +148,7 @@ void stat_function(IxpcQMsgType *rxIxpcMsg, int running_thrd_num, int httpc, int
 	item_str =  (httpc ? httpc_stat_str  : (https ? https_stat_str  : NULL));
 	/* if use incorrect, error return */
 	if (item_ptr == NULL) {
-		APPLOG(APPLOG_ERR, "DBG something wrong func(%s) line(%d)\n",  __func__, __LINE__);
+		APPLOG(APPLOG_ERR, "{{{DBG}}} something wrong func(%s) line(%d)\n",  __func__, __LINE__);
 		return;
 	}
 

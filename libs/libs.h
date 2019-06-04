@@ -16,6 +16,7 @@
 #include <stm_msgtypes_udmudr.h>
 #endif
 
+#if 0
 #ifdef LOG_LIB
 #include <loglib.h>
 #elif LOG_APP
@@ -28,6 +29,7 @@
 #elif LOG_APP
 #else
 #define APPLOG(level, fmt, ...) fprintf(stderr, fmt "\n", ##__VA_ARGS__)
+#endif
 #endif
 
 

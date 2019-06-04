@@ -81,11 +81,8 @@ void save_session_info(httpc_ctx_t *httpc_ctx, int thrd_idx, int sess_idx, int s
 	if (conn_list->token_id > 0) 
 		token = get_access_token(conn_list->token_id);
 
-	/*
-	fprintf(stderr, "{{{dbg}}} conn list (list index: %d) (token id : %d)\n", 
-			conn_list->list_index, conn_list->token_id);
-	fprintf(stderr, "{{{dbg}}} token [%s]\n", token != NULL ? token : "");
-	*/
+	APPLOG(APPLOG_DEBUG, "%s() conn list (list index: %d) (token id:%d val:%s)", 
+			__func__, conn_list->list_index, conn_list->token_id, token != NULL ? token : "");
 
 	sprintf(httpc_ctx->access_token, "%s", token != NULL ? token : "");
 #endif
@@ -240,7 +237,7 @@ acc_token_list_t *get_token_list(int id, int used)
 void print_token_list_raw(acc_token_list_t input_token_list[])
 {
 	APPLOG(APPLOG_ERR, "Access Token List Status");
-	APPLOG(APPLOG_ERR, "================================================================================");
+	APPLOG(APPLOG_ERR, "------------------------");
 	for (int i = 0; i < MAX_ACC_TOKEN_NUM; i++) {
 		acc_token_list_t *token_list = &input_token_list[i];
 		if (token_list->occupied != 1)
@@ -258,6 +255,89 @@ void print_token_list_raw(acc_token_list_t input_token_list[])
 			(token_list->status == TA_TRYING) ? "TRYING" : "ACCUIRED",
 			ctime(&token_list->due_date));
 	}
-	APPLOG(APPLOG_ERR, "================================================================================");
+	APPLOG(APPLOG_ERR, "==============================================================================================");
 }
 #endif
+
+// httpc outbound, log write with in 1step
+void log_pkt_send(char *prefix, nghttp2_nv *hdrs, int hdrs_len, char *body, int body_len)
+{
+	FILE *temp_file = NULL;
+	size_t file_size = 0;
+	char *ptr = NULL;
+
+	if (CLIENT_CONF.pkt_log != 1)
+		return;
+
+	temp_file = open_memstream(&ptr, &file_size); // buff size auto-grow
+	if (temp_file == NULL) {
+		APPLOG(APPLOG_ERR, "{{{PKT}}} in %s fail to call open_memstream!", __func__);
+		return;
+	}
+	print_headers(temp_file, hdrs, hdrs_len);
+	if (body_len > 0)
+		util_dumphex(temp_file, body, body_len);
+
+	// 1) close file
+	fclose(temp_file);
+	// 2) use ptr
+	APPLOG(APPLOG_ERR, "{{{PKT}}} %s\n\
+--------------------------------------------------------------------------------------------------\n\
+%s\
+==================================================================================================\n",
+	prefix, ptr);
+	// 3) free ptr
+	free(ptr);
+}
+
+// httpc inbound, logwrite step 1 of 2 (headres receive)
+void log_pkt_head_recv(httpc_ctx_t *httpc_ctx, const uint8_t *name, size_t namelen, const uint8_t *value, size_t valuelen)
+{
+	if (CLIENT_CONF.pkt_log != 1)
+		return;
+
+	if (httpc_ctx->recv_log_file == NULL) {
+		httpc_ctx->recv_log_file = open_memstream(&httpc_ctx->log_ptr, &httpc_ctx->file_size);
+		if (httpc_ctx->recv_log_file == NULL) {
+			APPLOG(APPLOG_ERR, "{{{PKT}}} in %s fail to call open_memstream!", __func__);
+			// TODO fclose (*httpc/s ...)
+			return;
+		}
+	}
+	print_header(httpc_ctx->recv_log_file, name, namelen, value, valuelen);
+}
+
+// httpc inbound, logwrite step 2 of 2 (all of body received or stream closed)
+void log_pkt_end_stream(int stream_id, httpc_ctx_t *httpc_ctx)
+{
+	if (CLIENT_CONF.pkt_log != 1)
+		return;
+
+	if (httpc_ctx->recv_log_file == NULL) {
+		httpc_ctx->recv_log_file = open_memstream(&httpc_ctx->log_ptr, &httpc_ctx->file_size);
+		if (httpc_ctx->recv_log_file == NULL) {
+			APPLOG(APPLOG_ERR, "{{{PKT}}} in %s fail to call open_memstream!", __func__);
+			return;
+		}
+	}
+	// print body to log
+	if (httpc_ctx->user_ctx.head.bodyLen > 0)
+		util_dumphex(httpc_ctx->recv_log_file, httpc_ctx->user_ctx.body, httpc_ctx->user_ctx.head.bodyLen);
+
+	// 1) close file
+	fclose(httpc_ctx->recv_log_file);
+	httpc_ctx->recv_log_file = NULL;
+	// 2) use ptr
+	APPLOG(APPLOG_ERR, "{{{PKT}}} HTTPC RECV http sess/stream(%d:%d) ahifCid(%d)]\n\
+--------------------------------------------------------------------------------------------------\n\
+%s\
+==================================================================================================\n",
+	httpc_ctx->session_id, 
+	stream_id, 
+	httpc_ctx->user_ctx.head.ahifCid,
+	httpc_ctx->log_ptr);
+	// 3) free ptr
+	free(httpc_ctx->log_ptr);
+	httpc_ctx->log_ptr = NULL;
+}
+

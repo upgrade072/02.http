@@ -64,31 +64,31 @@ pid_t util_gettid(void)
 }
 
 // hexa dump raw data
-void util_dumphex(const void* data, size_t size)
+void util_dumphex(FILE *out, const void* data, size_t size)
 {
     char ascii[17];
     size_t i, j;
     ascii[16] = '\0';
     for (i = 0; i < size; ++i) {
-        fprintf(stderr, "%02X ", ((unsigned char*)data)[i]);
+        fprintf(out, "%02X ", ((unsigned char*)data)[i]);
         if (((unsigned char*)data)[i] >= ' ' && ((unsigned char*)data)[i] <= '~') {
             ascii[i % 16] = ((unsigned char*)data)[i];
         } else {
             ascii[i % 16] = '.';
         }
         if ((i+1) % 8 == 0 || i+1 == size) {
-            fprintf(stderr, " ");
+            fprintf(out, " ");
             if ((i+1) % 16 == 0) {
-                fprintf(stderr, "|  %s \n", ascii);
+                fprintf(out, "|  %s \n", ascii);
             } else if (i+1 == size) {
                 ascii[(i+1) % 16] = '\0';
                 if ((i+1) % 16 <= 8) {
-                    fprintf(stderr, " ");
+                    fprintf(out, " ");
                 }
                 for (j = (i+1) % 16; j < 16; ++j) {
-                    fprintf(stderr, "   ");
+                    fprintf(out, "   ");
                 }
-                fprintf(stderr, "|  %s \n", ascii);
+                fprintf(out, "|  %s \n", ascii);
             }
         }
     }
@@ -133,6 +133,6 @@ void printf_config_list_int(char *annotation, config_setting_t *int_list)
 	int item_count = config_setting_length(int_list);
 	for (int i = 0; i < item_count; i++) {
 		config_setting_t *item = config_setting_get_elem(int_list, i);
-		fprintf(stderr, "}} %2d st %s: %d\n", i, annotation, config_setting_get_int(item));
+		APPLOG(APPLOG_ERR, "{{{CFG}}} %2d st %s: %d", i, annotation, config_setting_get_int(item));
 	}
 }

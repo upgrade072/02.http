@@ -59,10 +59,13 @@ extern char lOG_PATH[64];
 
 #define MAX_PORT_NUM	12
 typedef struct server_conf {
+	int debug_mode;
 	int log_level;
 	int listen_port[MAX_PORT_NUM];
 	int worker_num;
 	int timeout_sec;
+	int pkt_log;
+
 	char cert_file[128];
 	char key_file[128];
 	char credential[MAX_ACC_TOKEN_LEN];
@@ -187,6 +190,11 @@ typedef struct https_ctx {
 
 	// if iovec pushed into tcp queue, worker can't cancel this
 	char tcp_wait;
+
+	/* for recv log */
+	FILE *recv_log_file;
+	size_t file_size;
+	char *log_ptr;
 } https_ctx_t;
 
 typedef enum intl_req_mtype {
@@ -241,6 +249,9 @@ int     add_to_allowlist(int list_idx, int thrd_idx, int sess_idx, int session_i
 int     del_from_allowlist(int list_idx, int thrd_idx, int sess_idx);
 void    print_list();
 void    write_list(char *buff);
+void    log_pkt_send(char *prefix, nghttp2_nv *hdrs, int hdrs_len, char *body, int body_len);
+void    log_pkt_head_recv(https_ctx_t *https_ctx, const uint8_t *name, size_t namelen, const uint8_t *value, size_t valuelen);
+void    log_pkt_end_stream(int stream_id, https_ctx_t *https_ctx);
 
 /* ------------------------- main.c --------------------------- */
 int     get_in_port(struct sockaddr *sa);

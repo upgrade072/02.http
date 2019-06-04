@@ -4,6 +4,20 @@
 #include <ahif_msgtypes.h>
 #include <arpa/inet.h>
 
+#ifdef LOG_LIB
+#include <loglib.h>
+#elif LOG_APP
+#include <appLog.h>
+#elif LOG_PRINT
+#endif
+
+#ifdef LOG_LIB
+#define APPLOG(level, fmt, ...) logPrint(ELI, FL, fmt "\n", ##__VA_ARGS__)
+#elif LOG_APP
+#else
+#define APPLOG(level, fmt, ...) fprintf(stderr, fmt "\n", ##__VA_ARGS__)
+#endif
+
 /* HTTPCS STACK VALUE */
 #ifndef TEST
 //#define HTTPC_SEMAPHORE_NAME		"httpc_sem_status"

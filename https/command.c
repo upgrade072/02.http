@@ -38,6 +38,7 @@ void message_handle(evutil_socket_t fd, short what, void *arg)
 {
     char msgBuff[1024*64];
     GeneralQMsgType *msg = (GeneralQMsgType *)msgBuff;
+	TrcLibSetPrintMsgType *trcMsg;
 
 	while (msgrcv(httpsQid, msg, sizeof(GeneralQMsgType), 0, IPC_NOWAIT) >= 0) {
         switch (msg->mtype) {
@@ -47,13 +48,30 @@ void message_handle(evutil_socket_t fd, short what, void *arg)
 			case MTYPE_STATISTICS_REQUEST:
 				stat_function((IxpcQMsgType *)msg->body, SERVER_CONF.worker_num, 0, 1, MSGID_HTTPS_STATISTICS_REPORT);
 				continue;
+			case MTYPE_SETPRINT:
+				trcMsg = (TrcLibSetPrintMsgType*)msg;
+				if (trcMsg->trcLogFlag.pres) {
+					if (trcMsg->trcLogFlag.octet == 9) {
+						SERVER_CONF.debug_mode = (SERVER_CONF.debug_mode == 1 ? 0 : 1);
+						APPLOG(APPLOG_ERR,"---- log level 9 (debug_mode on/off) now [%s]",
+								SERVER_CONF.debug_mode == 1 ? "ON" : "OFF");
+					} else if (trcMsg->trcLogFlag.octet == 8) {
+						SERVER_CONF.pkt_log = (SERVER_CONF.pkt_log == 1 ? 0 : 1);
+						APPLOG(APPLOG_ERR,"---- log level 8 (pkg_log on/off) now [%s]",
+								SERVER_CONF.pkt_log == 1 ? "ON" : "OFF");
+					} else {
+						APPLOG(APPLOG_ERR,"---- log level change (%d -> %d)\n", *lOG_FLAG, trcMsg->trcLogFlag.octet);
+						*lOG_FLAG = trcMsg->trcLogFlag.octet;
+					}
+				}
+				continue;
             default:
-                APPLOG(APPLOG_ERR, "not yet ready");
+				APPLOG(APPLOG_ERR, "%s() receive unknown msg (mtype:%ld)", __func__, (long)msg->mtype);
                 continue;
         }
 	}
 	if (errno != ENOMSG) {
-		APPLOG(APPLOG_ERR,"[%s] >>> msgrcv fail; err=%d(%s)", __func__, errno, strerror(errno));
+		APPLOG(APPLOG_ERR,"%s() msgrcv fail; err=%d(%s)", __func__, errno, strerror(errno));
 	}
 	return;
 }
@@ -64,7 +82,7 @@ void mml_function(IxpcQMsgType *rxIxpcMsg)
     MMLReqMsgType   *mmlReq=(MMLReqMsgType*)rxIxpcMsg->body;
     MmcHdlrVector   mmcHdlr;
     
-    APPLOG(APPLOG_ERR, "receive cmd %s", mmlReq->head.cmdName);
+    APPLOG(APPLOG_DEBUG, "%s() receive cmdName(%s)", __func__, mmlReq->head.cmdName);
     
     for (i = 0; i < MAX_CMD_NUM; i++) {
         if (!strcmp(mmlReq->head.cmdName, mmcHdlrVecTbl[i].cmdName)) {
@@ -74,7 +92,7 @@ void mml_function(IxpcQMsgType *rxIxpcMsg)
     }
 
     if (i >= MAX_CMD_NUM) {  
-        APPLOG(APPLOG_ERR, "not registered mml_cmd(%s)", mmlReq->head.cmdName);
+        APPLOG(APPLOG_ERR, "%s() not registered mml_cmd(%s) received!", __func__, mmlReq->head.cmdName);
     } else {
         respMsg[0]  = '\0';  
         respBuff[0] = '\0';  
@@ -84,18 +102,18 @@ void mml_function(IxpcQMsgType *rxIxpcMsg)
 
 int func_dis_http_client(IxpcQMsgType *rxIxpcMsg)
 {
-    APPLOG(APPLOG_ERR, "DBG %s called", __func__);
+	APPLOG(APPLOG_DEBUG, "%s() called", __func__);
 
     char *resBuf=respMsg;
 
     write_list(resBuf);
 
-	APPLOG(APPLOG_ERR, "\n%s", resBuf);
+	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
     return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
 }
 int func_add_http_client(IxpcQMsgType *rxIxpcMsg)
 {
-    APPLOG(APPLOG_ERR, "DBG %s called", __func__);
+	APPLOG(APPLOG_DEBUG, "%s() called", __func__);
 
     MMLReqMsgType   *mmlReq=(MMLReqMsgType*)rxIxpcMsg->body;
 
@@ -116,12 +134,12 @@ int func_add_http_client(IxpcQMsgType *rxIxpcMsg)
 
     write_list(resBuf);
 
-	APPLOG(APPLOG_ERR, "\n%s", resBuf);
+	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
     return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
 }
 int func_add_http_cli_ip(IxpcQMsgType *rxIxpcMsg)
 {
-    APPLOG(APPLOG_ERR, "DBG %s called", __func__);
+	APPLOG(APPLOG_DEBUG, "%s() called", __func__);
     
     MMLReqMsgType   *mmlReq=(MMLReqMsgType*)rxIxpcMsg->body;
     
@@ -156,7 +174,7 @@ int func_add_http_cli_ip(IxpcQMsgType *rxIxpcMsg)
     
     write_list(resBuf);
     
-	APPLOG(APPLOG_ERR, "\n%s", resBuf);
+	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
     return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
 }
 int func_act_http_client(IxpcQMsgType *rxIxpcMsg)
@@ -169,7 +187,7 @@ int func_dact_http_client(IxpcQMsgType *rxIxpcMsg)
 }
 int func_chg_http_client_act(IxpcQMsgType *rxIxpcMsg, int change_to_act)
 {
-    APPLOG(APPLOG_ERR, "DBG %s called", __func__);
+	APPLOG(APPLOG_DEBUG, "%s() called", __func__);
     
     MMLReqMsgType   *mmlReq=(MMLReqMsgType*)rxIxpcMsg->body;
     
@@ -206,12 +224,12 @@ int func_chg_http_client_act(IxpcQMsgType *rxIxpcMsg, int change_to_act)
 			IPADDR    : %s\n\
 			ACT       : %s\n", ID, IPADDR, change_to_act == 1 ? "ACT":"DACT");
 
-	APPLOG(APPLOG_ERR, "\n%s", resBuf);
+	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
     return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
 }
 int func_chg_http_client(IxpcQMsgType *rxIxpcMsg)
 {
-    APPLOG(APPLOG_ERR, "DBG %s called", __func__);
+	APPLOG(APPLOG_DEBUG, "%s() called", __func__);
 
     MMLReqMsgType   *mmlReq=(MMLReqMsgType*)rxIxpcMsg->body;
 
@@ -246,12 +264,12 @@ int func_chg_http_client(IxpcQMsgType *rxIxpcMsg)
 
     write_list(resBuf);
 
-	APPLOG(APPLOG_ERR, "\n%s", resBuf);
+	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
     return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
 }
 int func_del_http_cli_ip(IxpcQMsgType *rxIxpcMsg)
 {
-    APPLOG(APPLOG_ERR, "DBG %s called", __func__);
+	APPLOG(APPLOG_DEBUG, "%s() called", __func__);
 
     MMLReqMsgType   *mmlReq=(MMLReqMsgType*)rxIxpcMsg->body;
 
@@ -281,12 +299,12 @@ int func_del_http_cli_ip(IxpcQMsgType *rxIxpcMsg)
 
     write_list(resBuf);
 
-	APPLOG(APPLOG_ERR, "\n%s", resBuf);
+	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
     return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
 }
 int func_del_http_client(IxpcQMsgType *rxIxpcMsg)
 {
-    APPLOG(APPLOG_ERR, "DBG %s called", __func__);
+	APPLOG(APPLOG_DEBUG, "%s() called", __func__);
 
     MMLReqMsgType   *mmlReq=(MMLReqMsgType*)rxIxpcMsg->body;
 
@@ -304,7 +322,7 @@ int func_del_http_client(IxpcQMsgType *rxIxpcMsg)
 
     write_list(resBuf);
 
-	APPLOG(APPLOG_ERR, "\n%s", resBuf);
+	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
     return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
 }
 

@@ -208,7 +208,7 @@ int     util_set_rcvbuffsize(int fd, int byte);
 int     util_set_sndbuffsize(int fd, int byte);
 int     util_set_keepalive(int fd, int keepalive, int cnt, int idle, int intvl);
 pid_t   util_gettid(void);
-void    util_dumphex(const void* data, size_t size);
+void    util_dumphex(FILE *out, const void* data, size_t size);
 char    *measure_print(int bytes, char *return_str);
 void    printf_config_list_int(char *annotation, config_setting_t *int_list);
 

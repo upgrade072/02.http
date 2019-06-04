@@ -51,7 +51,7 @@ static void delete_write_item(write_list_t *write_list, write_item_t *write_item
 
 void print_write_item(write_list_t *write_list)
 {
-    APPLOG(APPLOG_ERR, "%s cnt (%d) bytes (%d)", 
+    APPLOG(APPLOG_DEBUG, "%s() cnt (%d) bytes (%d)", 
             __func__, write_list->item_cnt, write_list->item_bytes);
 
     write_item_t *write_item = write_list->root;
@@ -60,10 +60,9 @@ void print_write_item(write_list_t *write_list)
 
         iovec_item_t *iovec_item = write_item->iovec_item;
         if (iovec_item != NULL) {
-            APPLOG(APPLOG_ERR, "have iovec cnt [%d]", iovec_item->iov_cnt);
+            APPLOG(APPLOG_DEBUG, "%s() have iovec cnt [%d]", __func__, iovec_item->iov_cnt);
             for (int i = 0; i < iovec_item->iov_cnt; i++) {
-                APPLOG(APPLOG_ERR, "iovec[%d]", i);
-                util_dumphex(iovec_item->iov[i].iov_base, iovec_item->iov[i].iov_len);
+                util_dumphex(stderr, iovec_item->iov[i].iov_base, iovec_item->iov[i].iov_len);
             }
         }
 
@@ -78,18 +77,18 @@ ssize_t push_write_item(int fd, write_list_t *write_list, int bundle_cnt, int bu
 		return 0;
 
 	if (bundle_cnt < 0 || bundle_bytes < 0) {
-		APPLOG(APPLOG_ERR, "{dbg} wrong input in (%s:%d) bundle cnt (%d) bundle bytes (%d)", __func__, __LINE__,
+		APPLOG(APPLOG_ERR, "{{{LB}}} wrong input in (%s:%d) bundle cnt (%d) bundle bytes (%d)!", __func__, __LINE__,
 				bundle_cnt, bundle_bytes);
 		return -1;
 	}
     if (write_list->item_cnt <= 0 || write_list->item_bytes <= 0) {
-		APPLOG(APPLOG_ERR, "{dbg} wrong input in (%s:%d) write_list->item_cnt %d, write_list->item_bytes %d", 
+		APPLOG(APPLOG_ERR, "{{{LB}}} wrong input in (%s:%d) write_list->item_cnt %d, write_list->item_bytes (%d)!", 
 				__func__, __LINE__,
 				write_list->item_cnt, write_list->item_bytes);
 		return -1;
 	}
 	if (fd < 0) {
-		APPLOG(APPLOG_ERR, "{dbg} wrong input in (%s:%d) (-) fd", __func__, __LINE__);
+		APPLOG(APPLOG_ERR, "{{{LB}}} wrong input in (%s:%d) -fd!", __func__, __LINE__);
 		return -1;
 	}
 
