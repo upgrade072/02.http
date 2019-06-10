@@ -433,6 +433,7 @@ void fep_stat_print(evutil_socket_t fd, short what, void *arg)
     }
 }
 
+#if 0
 void *fep_stat_thread(void *arg)
 {
 	lb_ctx_t *lb_ctx = (lb_ctx_t *)arg;
@@ -453,6 +454,7 @@ void *fep_stat_thread(void *arg)
 
 	return (void *)NULL;
 }
+#endif
 
 void load_lb_config(server_conf *svr_conf, lb_global_t *lb_conf)
 {
@@ -553,6 +555,7 @@ void attach_lb_thread(lb_global_t *lb_conf, lb_ctx_t *lb_ctx)
     CREATE_LB_THREAD(lb_ctx->fep_rx_thrd, sizeof(https_ctx_t), lb_conf->context_num);
     CREATE_LB_THREAD(lb_ctx->fep_tx_thrd, 0, 0);
 
+#if 0
 	if (SERVER_CONF.debug_mode == 1) {
 		/* for stat print small thread */
 		if (pthread_create(&lb_ctx->stat_thrd_id, NULL, &fep_stat_thread, lb_ctx) != 0) {
@@ -562,6 +565,7 @@ void attach_lb_thread(lb_global_t *lb_conf, lb_ctx_t *lb_ctx)
 			pthread_detach(lb_ctx->stat_thrd_id);
 		}
 	}
+#endif
 }
 
 int create_lb_thread()

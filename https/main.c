@@ -26,6 +26,10 @@ http_stat_t HTTP_STAT;
 
 hdr_index_t VHDR_INDEX[2][MAX_HDR_RELAY_CNT];
 
+// for lb ctx print
+extern lb_global_t LB_CONF;
+extern lb_ctx_t LB_CTX;
+
 static unsigned char next_proto_list[256];
 static size_t next_proto_list_len;
 
@@ -1501,6 +1505,11 @@ static void main_loop(const char *key_file, const char *cert_file) {
     event_add(ev_main, &tm_milisec);
 #endif
 
+    /* LB stat print */
+    struct timeval lbctx_print_interval = {1, 0};
+    struct event *ev_lbctx_print;
+    ev_lbctx_print = event_new(evbase, -1, EV_PERSIST, fep_stat_print, NULL);
+    event_add(ev_lbctx_print, &lbctx_print_interval);
 	/* start loop */
 	event_base_loop(evbase, EVLOOP_NO_EXIT_ON_EMPTY);
 

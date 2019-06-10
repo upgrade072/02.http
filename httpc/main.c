@@ -37,6 +37,10 @@ acc_token_list_t	ACC_TOKEN_LIST[MAX_ACC_TOKEN_NUM];
 nrf_worker_t		NRF_WORKER;
 #endif
 
+// for lb ctx stat print
+extern lb_ctx_t LB_CTX;
+extern lb_global_t LB_CONF;
+
 static http2_session_data_t *
 create_http2_session_data() {
 	http2_session_data_t *session_data = NULL;
@@ -1126,6 +1130,12 @@ void main_loop()
 	ev_main = event_new(evbase, -1, EV_PERSIST, message_handle, NULL);
 	event_add(ev_main, &tm_milisec);
 #endif
+
+	/* LB stat print */
+	struct timeval lbctx_print_interval = {1, 0};
+	struct event *ev_lbctx_print;
+	ev_lbctx_print = event_new(evbase, -1, EV_PERSIST, fep_stat_print, NULL);
+	event_add(ev_lbctx_print, &lbctx_print_interval);
 
 	/* start loop */
 	event_base_loop(evbase, EVLOOP_NO_EXIT_ON_EMPTY);

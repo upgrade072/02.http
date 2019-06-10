@@ -181,7 +181,7 @@ typedef struct lb_ctx {
 	GNode *peer_rx_thrd;
 	GNode *peer_tx_thrd;
 
-	pthread_t stat_thrd_id;
+//	pthread_t stat_thrd_id;
 } lb_ctx_t;
 
 
