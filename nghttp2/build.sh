@@ -32,3 +32,6 @@ make install
 ar rc third-party/http-parser/http_parser.a third-party/http-parser/http_parser.o
 cp third-party/http-parser/http_parser.a ${ROOTDIR}/../build/lib
 cp third-party/http-parser/http_parser.h ${ROOTDIR}/../build/include
+
+#for nghttp2 handling (ovld ctrl)
+cp lib/*.h ${ROOTDIR}/../build/include

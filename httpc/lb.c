@@ -85,6 +85,7 @@ void send_to_worker(tcp_ctx_t *tcp_ctx, conn_list_t *httpc_conn, httpc_ctx_t *re
 	if (msgsnd(THRD_WORKER[thrd_idx].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0) == -1) {
 		APPLOG(APPLOG_ERR, "%s() internal msgsnd to worker [%d] failed!!!", __func__, thrd_idx);
 		clear_and_free_ctx(httpc_ctx);
+		Free_CtxId(thrd_idx, ctx_idx);
 	}
 
 STW_RET:
@@ -232,10 +233,7 @@ void free_ctx_with_httpc_ctx(httpc_ctx_t *httpc_ctx)
 	int ctx_idx = httpc_ctx->ctx_idx;
 
 	clear_and_free_ctx(httpc_ctx);
-
-	if (Free_CtxId(thrd_idx, ctx_idx) < 0) {
-		APPLOG(APPLOG_ERR, "%s() fail to free ctx", __func__);
-	}
+	Free_CtxId(thrd_idx, ctx_idx);
 }
 
 tcp_ctx_t *search_dest_via_tag(httpc_ctx_t *httpc_ctx, GNode *root_node)

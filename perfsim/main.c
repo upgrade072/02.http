@@ -91,9 +91,15 @@ int initialize()
     }
 
     /* log initialize */
+#ifdef LOG_LIB
+	char log_path[1024] = {0,};
+	sprintf(log_path, "%s/log/ERR_LOG/%s", getenv(IV_HOME), my_name);
+	initlog_for_loglib(my_name, log_path);
+#elif LOG_APP
     sprintf(fname, "%s/log", getenv(IV_HOME));
     LogInit(my_name, fname);
     APPLOG(APPLOG_ERR, "\n\n\n\n\n[Welcome Process Started]");
+#endif
 
     /* shmq initialize */
 #if 0

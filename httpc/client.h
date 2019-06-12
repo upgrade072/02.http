@@ -43,11 +43,7 @@
 #include <lbengine.h>
 
 #define TM_INTERVAL		20000   // every 20 ms check, 
-#if 0
-#define TMOUT_NORSP		200     // 20ms * 200 = 4 sec timeout
-#else
-#define TMOUT_VECTOR    100      // CLIENT_CONF.tmout_sec * TMOUT_VECTOR = N sec
-#endif
+#define TMOUT_VECTOR    50      // CLIENT_CONF.tmout_sec * TMOUT_VECTOR = N sec
 
 /* For LOG */
 extern char lOG_PATH[64];

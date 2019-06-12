@@ -12,7 +12,14 @@
 #endif
 
 #ifdef LOG_LIB
-#define APPLOG(level, fmt, ...) logPrint(ELI, FL, fmt "\n", ##__VA_ARGS__)
+//#define APPLOG(level, fmt, ...) logPrint(ELI, FL, fmt "\n", ##__VA_ARGS__)
+int *lOG_FLAG;
+#define APPLOG_NONE   LL0
+#define APPLOG_ERR    LL1
+#define APPLOG_SIMPLE LL2
+#define APPLOG_DETAIL LL3
+#define APPLOG_DEBUG  LL4
+#define APPLOG(level, fmt, ...); {if (level <= *lOG_FLAG) logPrint(ELI, FL, fmt "\n", ##__VA_ARGS__);}
 #elif LOG_APP
 #else
 #define APPLOG(level, fmt, ...) fprintf(stderr, fmt "\n", ##__VA_ARGS__)
@@ -143,7 +150,9 @@ typedef enum http_statistic_enum {
 	HTTP_TX_RSP,
 	HTTP_CONN,
 	HTTP_DISCONN,
-	HTTP_TIMEOUT,
+	HTTP_TIMEOUT,	/* send rst msg to peer */
+	HTTP_RX_RST,	/* recv rst msg from peer */
+	HTTP_OVLDCTL,	/* ahif cancel https ctx */
 	HTTP_STRM_N_FOUND,
 	HTTP_DEST_N_AVAIL,
 	HTTP_STAT_MAX

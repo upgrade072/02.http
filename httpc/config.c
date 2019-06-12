@@ -65,7 +65,6 @@ CF_INIT_ERR:
     return (-1);
 }
 
-#ifdef LOG_APP
 int config_load_just_log()
 {
     //config_setting_t *setting;
@@ -93,7 +92,6 @@ CF_LOGLEVEL_LOAD_ERR:
     config_destroy(&CFG);
     return (-1);
 }
-#endif
 
 int config_load()
 {

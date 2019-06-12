@@ -45,17 +45,15 @@
 /* for lb */
 #include <lbengine.h>
 
+#include <nghttp2_session.h>
+
 #define OUTPUT_WOULDBLOCK_THRESHOLD (1 << 16)
 
 /* For LOG */
 extern char lOG_PATH[64];
 
 #define TM_INTERVAL     20000  // every 20ms
-#if 0
-#define TMOUT_NORSP     200	   // 20ms * 200 = 4sec timeout
-#else
-#define TMOUT_VECTOR    100    // SERVER_CONF.tmout_sec * TMOUT_VECTOR = N sec
-#endif
+#define TMOUT_VECTOR    50    // SERVER_CONF.tmout_sec * TMOUT_VECTOR = N sec
 
 #define MAX_PORT_NUM	12
 typedef struct server_conf {
@@ -201,7 +199,8 @@ typedef enum intl_req_mtype {
     HTTP_INTL_SND_REQ = 0,
     HTTP_INTL_TIME_OUT,
 	HTTP_INTL_SESSION_DEL, 
-	HTTP_INTL_SEND_PING
+	HTTP_INTL_SEND_PING,
+	HTTP_INTL_OVLD
 } intl_req_mtype_t;
 
 typedef struct intl_req {
@@ -294,7 +293,7 @@ tcp_ctx_t       *get_direct_dest(https_ctx_t *https_ctx);
 void    gb_clean_ctx(https_ctx_t *https_ctx);
 void    set_callback_tag(https_ctx_t *https_ctx, tcp_ctx_t *fep_tcp_ctx);
 int     send_request_to_fep(https_ctx_t *https_ctx);
-void    send_to_worker(tcp_ctx_t *tcp_ctx, https_ctx_t *recv_ctx);
+void    send_to_worker(tcp_ctx_t *tcp_ctx, https_ctx_t *recv_ctx, int intl_msg_type);
 void    heartbeat_process(https_ctx_t *recv_ctx, tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx, int staCause);
 void    check_and_send(tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx);
 void    lb_buff_readcb(struct bufferevent *bev, void *arg);

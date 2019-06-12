@@ -21,8 +21,8 @@ try this with json-c (https://github.com/jehiah/json-c)
 #include <inttypes.h>
 #include <errno.h>
 #include <time.h>
+#include <ctype.h>
 
-#include <appLog.h>
 #include <commlib.h>
 #include <shmQueue.h>
 #include <ahif_msgtypes.h>

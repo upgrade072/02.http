@@ -34,6 +34,7 @@ void clear_send_ctx(httpc_ctx_t *httpc_ctx)
 
 void clear_and_free_ctx(httpc_ctx_t *httpc_ctx)
 {
+	httpc_ctx->tcp_wait = 0;
 	httpc_ctx->inflight_ref_cnt = 0;
 	httpc_ctx->user_ctx.head.bodyLen = 0;
 	memset(httpc_ctx->user_ctx.head.contentEncoding, 0x00, sizeof(httpc_ctx->user_ctx.head.contentEncoding));
@@ -80,9 +81,6 @@ void save_session_info(httpc_ctx_t *httpc_ctx, int thrd_idx, int sess_idx, int s
 	char *token = NULL;
 	if (conn_list->token_id > 0) 
 		token = get_access_token(conn_list->token_id);
-
-	APPLOG(APPLOG_DEBUG, "%s() conn list (list index: %d) (token id:%d val:%s)", 
-			__func__, conn_list->list_index, conn_list->token_id, token != NULL ? token : "");
 
 	sprintf(httpc_ctx->access_token, "%s", token != NULL ? token : "");
 #endif

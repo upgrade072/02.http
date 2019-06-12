@@ -199,6 +199,7 @@ void gb_clean_ctx(https_ctx_t *https_ctx)
 {
     memset(https_ctx->user_ctx.vheader, 0x00, sizeof(hdr_relay) * https_ctx->user_ctx.head.vheaderCnt);
     https_ctx->user_ctx.head.vheaderCnt = 0;
+	https_ctx->tcp_wait = 0;
 }
 
 void set_callback_tag(https_ctx_t *https_ctx, tcp_ctx_t *fep_tcp_ctx)
@@ -243,7 +244,7 @@ int send_request_to_fep(https_ctx_t *https_ctx)
 	return 0;
 }
 
-void send_to_worker(tcp_ctx_t *tcp_ctx, https_ctx_t *recv_ctx)
+void send_to_worker(tcp_ctx_t *tcp_ctx, https_ctx_t *recv_ctx, int intl_msg_type)
 {
 	int thrd_index = recv_ctx->user_ctx.head.thrd_index;
 	int session_index = recv_ctx->user_ctx.head.session_index;
@@ -261,8 +262,6 @@ void send_to_worker(tcp_ctx_t *tcp_ctx, https_ctx_t *recv_ctx)
 		else
 			http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_STRM_N_FOUND);
 		goto STW_RET;
-	} else {
-		https_ctx->tcp_wait = 0; // not in tcp queue
 	}
 
 	// check have same fep tag
@@ -271,13 +270,17 @@ void send_to_worker(tcp_ctx_t *tcp_ctx, https_ctx_t *recv_ctx)
 	}
 
 	intl_req_t intl_req = {0,};
-	set_intl_req_msg(&intl_req, thrd_index, ctx_id, session_index, session_id, stream_id, HTTP_INTL_SND_REQ);
 
-	assign_rcv_ctx_info(https_ctx, &recv_ctx->user_ctx);
+	/* HTTP_INTL_SND_REQ || HTTP_INTL_OVLD */
+	set_intl_req_msg(&intl_req, thrd_index, ctx_id, session_index, session_id, stream_id, intl_msg_type);
+
+	if (intl_msg_type == HTTP_INTL_SND_REQ)
+		assign_rcv_ctx_info(https_ctx, &recv_ctx->user_ctx);
 
 	if (msgsnd(THRD_WORKER[thrd_index].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0) == -1) {
 		APPLOG(APPLOG_ERR, "%s() internal msgsnd to worker [%d] failed!!!", __func__, thrd_index);
 		clear_and_free_ctx(https_ctx);
+		Free_CtxId(thrd_index, ctx_id);
 	}
 
 STW_RET:
@@ -350,8 +353,14 @@ KEEP_PROCESS:
 
 	if (recv_ctx->user_ctx.head.mtype == MTYPE_HTTP2_AHIF_CONN_CHECK) {
 		heartbeat_process(recv_ctx, tcp_ctx, sock_ctx, recv_ctx->user_ctx.head.staCause);
+	} else if (recv_ctx->user_ctx.head.mtype == MTYPE_HTTP2_STATUS_REPORT_TO_HTTP  &&
+			recv_ctx->user_ctx.head.staCause == HTTP_STA_CAUSE_PREARRANGED_END) {
+		/* AHIF ovld ctrl (silence discard) ==> HTTPS reset stream (internal error) */
+		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s() ctx(%d:%d) receive AHIF OVLD msg", 
+				__func__, recv_ctx->user_ctx.head.thrd_index, recv_ctx->user_ctx.head.ctx_id);
+		send_to_worker(tcp_ctx, recv_ctx, HTTP_INTL_OVLD);
 	} else {
-		send_to_worker(tcp_ctx, recv_ctx);
+		send_to_worker(tcp_ctx, recv_ctx, HTTP_INTL_SND_REQ);
 	}
 
     goto KEEP_PROCESS;

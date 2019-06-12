@@ -6,10 +6,10 @@ char myProcName[COMM_MAX_NAME_LEN];
 char mySysType[COMM_MAX_VALUE_LEN];
 char mySvrId[COMM_MAX_VALUE_LEN];
 
-#ifdef LOG_APP
+//#ifdef LOG_APP
 int logLevel = APPLOG_DEBUG;
 int *lOG_FLAG = &logLevel;
-#endif
+//#endif
 
 int httpcQid, ixpcQid;
 
@@ -192,6 +192,9 @@ static int on_frame_recv_callback(nghttp2_session *session,
 	(void)session;
 
 	switch (frame->hd.type) {
+		case NGHTTP2_RST_STREAM:
+			http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_RX_RST);
+			break;
 		case NGHTTP2_PING:
 			session_data->ping_snd = 0;
 			break;
@@ -373,7 +376,13 @@ static int on_stream_close_callback(nghttp2_session *session, int32_t stream_id,
 
 	log_pkt_end_stream(stream_id, httpc_ctx);
 
-	send_response_to_fep(httpc_ctx);
+	if (httpc_ctx->inflight_ref_cnt > 0) {
+		/* timeout case */
+		clear_and_free_ctx(httpc_ctx);
+		Free_CtxId(thrd_idx, idx);
+	} else {
+		send_response_to_fep(httpc_ctx);
+	}
 
 	return 0;
 }
@@ -513,7 +522,7 @@ static void send_client_connection_header(http2_session_data_t *session_data) {
 	/* schlee, IMPORTANT, this means MAX SND/RCV SIZE */
 	nghttp2_settings_entry iv[5] = {
 		{NGHTTP2_SETTINGS_HEADER_TABLE_SIZE, 65535},
-		{NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS, 1024},
+		{NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS, 65535},
 		{NGHTTP2_SETTINGS_MAX_FRAME_SIZE, 65535},
 		{NGHTTP2_SETTINGS_INITIAL_WINDOW_SIZE, 65535},
 		{NGHTTP2_SETTINGS_MAX_HEADER_LIST_SIZE, 65535}};
@@ -1185,14 +1194,14 @@ int initialize()
 	sprintf(log_path, "%s/log/ERR_LOG/%s", getenv(IV_HOME), myProcName);
 	initlog_for_loglib(myProcName, log_path);
 #elif LOG_APP
+	sprintf(fname, "%s/log", getenv(IV_HOME));
+	LogInit(myProcName, fname);
+#endif
     if (config_load_just_log() < 0) {
         fprintf(stderr, "{{{INIT}}}fail to read config file (log)!\n");
         return (-1);
 	}
-	sprintf(fname, "%s/log", getenv(IV_HOME));
-	LogInit(myProcName, fname);
 	*lOG_FLAG = CLIENT_CONF.log_level;
-#endif
 	APPLOG(APPLOG_ERR, "\n\n[[[[[ Welcome Process Started ]]]]]");
 
     if (config_load() < 0) {

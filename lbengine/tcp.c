@@ -142,14 +142,14 @@ void unexpect_readcb(struct bufferevent *bev, void *arg)
 {
     sock_ctx_t *sock_ctx = (sock_ctx_t *)arg;
 
-    APPLOG(APPLOG_ERR, "{{{LB}}} %s() called!\n", __func__);
+    APPLOG(APPLOG_ERR, "{{{LB}}} %s() called!", __func__);
 
     char buff[10240] = {0,};
     ssize_t rsize = bufferevent_read(bev, buff, sizeof(buff));
 
     buff[rsize + 1] = '\0';
-    APPLOG(APPLOG_ERR, "{{{LB}}} %s() recv unexpected (%ld byte)!", __func__, rsize);
-    util_dumphex(stderr, buff, rsize);
+    APPLOG(APPLOG_ERR, "{{{LB}}} %s() recv unexpected (from %s:%d) (%ld byte)!", 
+			__func__, sock_ctx->client_ip, sock_ctx->client_port, rsize);
 
     release_conncb(sock_ctx);
 }
@@ -167,11 +167,11 @@ void release_conncb(sock_ctx_t *sock_ctx)
 
 	// CHECK event first? bev first?
     if (sock_ctx->event_flush_cb) 
-        event_del(sock_ctx->event_flush_cb);
+        event_free(sock_ctx->event_flush_cb);
     if (sock_ctx->event_send_hb) 
-        event_del(sock_ctx->event_send_hb);
+        event_free(sock_ctx->event_send_hb);
     if (sock_ctx->event_chk_hb) 
-        event_del(sock_ctx->event_chk_hb);
+        event_free(sock_ctx->event_chk_hb);
 
     // remove event, close sock
 	if (sock_ctx->bev) 
@@ -366,7 +366,7 @@ void sock_flush_callback(evutil_socket_t fd, short what, void *arg)
 	} else if (nwritten == 0) {
 	} else { /* < 0 */
 #endif
-		APPLOG(APPLOG_ERR, "{{{LB}}} %s() something wrong (%d : %s), release sock!!!\n", errno, strerror(errno));
+		APPLOG(APPLOG_ERR, "{{{LB}}} %s() something wrong (%d : %s), release sock!!!\n", __func__, errno, strerror(errno));
 		release_conncb(sock_ctx);
 	}
 }

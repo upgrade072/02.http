@@ -5,10 +5,10 @@ char myProcName[COMM_MAX_NAME_LEN];
 char mySysType[COMM_MAX_VALUE_LEN];
 char mySvrId[COMM_MAX_VALUE_LEN];
 
-#ifdef LOG_APP
+//#ifdef LOG_APP
 int logLevel = APPLOG_DEBUG;
 int *lOG_FLAG = &logLevel;
-#endif
+//#endif
 
 int httpsQid, ixpcQid;
 
@@ -513,10 +513,11 @@ static int on_begin_headers_callback(nghttp2_session *session,
 	int idx;
 	https_ctx_t *https_ctx = NULL;
 
-	if (frame->hd.type != NGHTTP2_HEADERS ||
-			frame->headers.cat != NGHTTP2_HCAT_REQUEST) {
+	/* this func normally handle data recv */
+	if (frame->hd.type != NGHTTP2_HEADERS || frame->headers.cat != NGHTTP2_HCAT_REQUEST) {
 		return 0;
 	}
+
 	/* stat HTTP_RX_REQ */
 	http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_RX_REQ);
 
@@ -664,6 +665,10 @@ static int on_frame_recv_callback(nghttp2_session *session,
 	http2_stream_data *stream_data;
 
 	switch (frame->hd.type) {
+		/* for RCV RST STAT */
+		case NGHTTP2_RST_STREAM:
+			http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_RX_RST);
+			break;
 		case NGHTTP2_PING:
 			session_data->ping_snd = 0;
 			break;
@@ -789,7 +794,7 @@ static int send_server_connection_header(http2_session_data *session_data) {
 	/* TODO!!! tuning param */
 	nghttp2_settings_entry iv[5] = {
 		{NGHTTP2_SETTINGS_HEADER_TABLE_SIZE, 65535},
-		{NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS, 1024},
+		{NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS, 65535},
 		{NGHTTP2_SETTINGS_MAX_FRAME_SIZE, 65535},
 		{NGHTTP2_SETTINGS_INITIAL_WINDOW_SIZE, 65535},
 		{NGHTTP2_SETTINGS_MAX_HEADER_LIST_SIZE, 65535}};
@@ -1148,6 +1153,30 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 					continue;
 				}
 				break;
+			case HTTP_INTL_OVLD:
+				if (https_ctx  == NULL) {
+					APPLOG(APPLOG_DEBUG, "%s():%d get_context fail", __func__, __LINE__);
+					continue;
+				}
+				if (session_data == NULL) {
+					/* legacy session expired and new one already created case */
+					APPLOG(APPLOG_DEBUG, "%s():%d get_session fail", __func__, __LINE__);
+				} else {
+					/* it's same session and alive, send reset */
+					APPLOG(APPLOG_DEBUG, "{{{{DBG}}} %s() ctx(%d:%d) stream(%d) close stream (ovld)", 
+							__func__, thrd_index, ctx_id, https_ctx->user_ctx.head.stream_id);
+					nghttp2_session_close_stream(session_data->session, stream_id, NGHTTP2_INTERNAL_ERROR);
+				}
+				clear_and_free_ctx(https_ctx);
+				Free_CtxId(thrd_index, ctx_id);
+
+				/* TODO!! STAT!!! */
+				if (session_data != NULL) 
+					http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_OVLDCTL);
+				else
+					http_stat_inc(0, 0, HTTP_OVLDCTL);
+
+				break;
 			default:
 				break;
 		}   
@@ -1335,14 +1364,14 @@ int initialize()
 	sprintf(log_path, "%s/log/ERR_LOG/%s", getenv(IV_HOME), myProcName);
 	initlog_for_loglib(myProcName, log_path);
 #elif LOG_APP
-    if (config_load_just_log() < 0) {
-        fprintf(stderr, "{{{INIT{{{ fail to read config file (log)!\n");
-        return (-1);
-    }
     sprintf(fname, "%s/log", getenv(IV_HOME));
     LogInit(myProcName, fname);
-    *lOG_FLAG = SERVER_CONF.log_level;
 #endif
+    if (config_load_just_log() < 0) {
+        fprintf(stderr, "{{{INIT}}} fail to read config file (log)!\n");
+        return (-1);
+    }
+    *lOG_FLAG = SERVER_CONF.log_level;
 	APPLOG(APPLOG_ERR, "\n\n[[[[[ Welcome Process Started ]]]]]");
 
 	if (config_load() < 0) {
