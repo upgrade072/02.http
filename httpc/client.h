@@ -52,7 +52,11 @@ typedef struct client_conf {
 	int debug_mode;
 	int log_level;
     int worker_num;
+    int worker_shmkey;
+    int httpc_status_shmkey;
     int timeout_sec;
+	int ping_interval;
+	int ping_timeout;
 	int pkt_log;
 
 	config_setting_t *lb_config;
@@ -169,6 +173,8 @@ typedef struct conn_list {
 	int session_id;
 
 	int token_id;
+
+	int reconn_candidate;				// stream_id is full, trigger reconnect
 } conn_list_t;
 
 typedef enum conn_status {
@@ -242,9 +248,10 @@ typedef struct http2_session_data {
 	int session_index; 
 	int session_id;		// unique id
 	int used;			// 1 : used, 0 : free
-
 	int connected;
-	int ping_snd;
+
+	int ping_cnt;
+	struct timespec ping_rcv_time;
 } http2_session_data_t;
 
 typedef struct lb_global {

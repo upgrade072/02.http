@@ -33,8 +33,8 @@ void assign_new_ctx_info(https_ctx_t *https_ctx, http2_session_data *session_dat
 	https_ctx->user_ctx.head.session_index = session_data->session_index;
 	https_ctx->user_ctx.head.session_id = session_data->session_id;
 	https_ctx->user_ctx.head.stream_id = stream_data->stream_id;
-	sprintf(https_ctx->user_ctx.head.destHost, "%s", session_data->hostname);
 	sprintf(https_ctx->user_ctx.head.destType, "%s", session_data->type);
+	sprintf(https_ctx->user_ctx.head.destHost, "%s", session_data->hostname);
 
 	if (session_data->is_direct_session) {
 		https_ctx->is_direct_ctx = 1;

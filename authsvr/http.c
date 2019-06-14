@@ -392,8 +392,10 @@ int send_response(nghttp2_session *session, int32_t stream_id,
 
     fprintf(stderr, "\nResponse headers:\n");
     print_headers(stderr, nva, nvlen);
-    fprintf(stderr, "\nResponse body (len %ld):\n", strlen(ptr));
-    fwrite(ptr, 1, strlen(ptr), stderr);
+	int bodyLen = ptr == NULL ? 0 : strlen(ptr);
+    fprintf(stderr, "\nResponse body (len %d):\n", bodyLen);
+	if (ptr != NULL)
+		fwrite(ptr, 1, bodyLen, stderr);
     fprintf(stderr, "\n");
 
 	return 0;
@@ -416,13 +418,12 @@ static int on_frame_recv_callback(nghttp2_session *session,
 	nghttp2_nv hdr_err_notfound[] = { MAKE_NV(":status", "404", strlen("404")) };
 
 	http2_session_data *session_data = (http2_session_data *)user_data;
-	http2_stream_data *stream_data;
 	switch (frame->hd.type) {
 		case NGHTTP2_DATA:
 		case NGHTTP2_HEADERS:
 			/* Check that the client request has finished */
 			if (frame->hd.flags & NGHTTP2_FLAG_END_STREAM) {
-				stream_data =
+				http2_stream_data *stream_data =
 					nghttp2_session_get_stream_user_data(session, frame->hd.stream_id);
 				/* For DATA and HEADERS frame, this callback may be called after
 				   on_stream_close_callback. Check that stream still alive. */
@@ -462,7 +463,7 @@ static int on_data_chunk_recv_callback(nghttp2_session *session, uint8_t flags,
 	stream_data = nghttp2_session_get_stream_user_data(session, stream_id);
 	if (stream_data) {
 		if ((len + stream_data->body_len) > MAX_BODY_LEN) {
-			fprintf(stderr, "%s err) overflow body len (curr %d recv %ld max %d)\n",
+			fprintf(stderr, "%s err) overflow body len (curr %d recv %zu max %d)\n",
 					__func__, stream_data->body_len, len, MAX_BODY_LEN);
 		} else {
 			memcpy(stream_data->body + stream_data->body_len, data, len);

@@ -167,11 +167,11 @@ void release_conncb(sock_ctx_t *sock_ctx)
 
 	// CHECK event first? bev first?
     if (sock_ctx->event_flush_cb) 
-        event_free(sock_ctx->event_flush_cb);
+        event_del(sock_ctx->event_flush_cb);
     if (sock_ctx->event_send_hb) 
-        event_free(sock_ctx->event_send_hb);
+        event_del(sock_ctx->event_send_hb);
     if (sock_ctx->event_chk_hb) 
-        event_free(sock_ctx->event_chk_hb);
+        event_del(sock_ctx->event_chk_hb);
 
     // remove event, close sock
 	if (sock_ctx->bev) 

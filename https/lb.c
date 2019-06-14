@@ -293,7 +293,7 @@ void heartbeat_process(https_ctx_t *recv_ctx, tcp_ctx_t *tcp_ctx, sock_ctx_t *so
 	/* normal hb time save job (in RX sock) */
 	time(&sock_ctx->last_hb_recv_time);
 
-	APPLOG(APPLOG_DETAIL, "heartbeat receive from fep(%d) svc(%s) (%s:%d) (fep_status: %s)\n",
+	APPLOG(APPLOG_DETAIL, "heartbeat receive from fep(%d) svc(%s) (%s:%d) (fep_status: %s)",
 			tcp_ctx->fep_tag, svc_type_to_str(tcp_ctx->svc_type), sock_ctx->client_ip, sock_ctx->client_port,
 			staCause == HTTP_STA_CAUSE_SYS_ACTIVE ? "active" :
 			staCause == HTTP_STA_CAUSE_SYS_STANDBY ? "standby" :
@@ -356,8 +356,6 @@ KEEP_PROCESS:
 	} else if (recv_ctx->user_ctx.head.mtype == MTYPE_HTTP2_STATUS_REPORT_TO_HTTP  &&
 			recv_ctx->user_ctx.head.staCause == HTTP_STA_CAUSE_PREARRANGED_END) {
 		/* AHIF ovld ctrl (silence discard) ==> HTTPS reset stream (internal error) */
-		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s() ctx(%d:%d) receive AHIF OVLD msg", 
-				__func__, recv_ctx->user_ctx.head.thrd_index, recv_ctx->user_ctx.head.ctx_id);
 		send_to_worker(tcp_ctx, recv_ctx, HTTP_INTL_OVLD);
 	} else {
 		send_to_worker(tcp_ctx, recv_ctx, HTTP_INTL_SND_REQ);
@@ -391,6 +389,8 @@ void lb_buff_readcb(struct bufferevent *bev, void *arg)
 
 int get_httpcs_buff_used(tcp_ctx_t *tcp_ctx)
 {
+	if (tcp_ctx == NULL)
+		return 0;
     if (tcp_ctx->buff_exist != 1)
         return 0;
 
@@ -425,6 +425,9 @@ void fep_stat_print(evutil_socket_t fd, short what, void *arg)
 
         tcp_ctx_t *fep_rx = (nth_fep_rx == NULL ? NULL : (tcp_ctx_t *)nth_fep_rx->data);
         tcp_ctx_t *fep_tx = (nth_fep_rx == NULL ? NULL : (tcp_ctx_t *)nth_fep_tx->data);
+
+		if (fep_rx == NULL || fep_tx == NULL)
+			continue;
 
         int fep_rx_used = get_httpcs_buff_used(fep_rx);
 

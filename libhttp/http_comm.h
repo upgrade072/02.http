@@ -11,6 +11,10 @@
 #elif LOG_PRINT
 #endif
 
+// if stream id reach to 1073741823, no more assign ascend stream id
+// so prepare reconnect when stream id reach HTTP_PREPARE_STREAM_LIMIT
+#define HTTP_PREPARE_STREAM_LIMIT 1000000000
+
 #ifdef LOG_LIB
 //#define APPLOG(level, fmt, ...) logPrint(ELI, FL, fmt "\n", ##__VA_ARGS__)
 int *lOG_FLAG;
@@ -25,7 +29,8 @@ int *lOG_FLAG;
 #define APPLOG(level, fmt, ...) fprintf(stderr, fmt "\n", ##__VA_ARGS__)
 #endif
 
-/* HTTPCS STACK VALUE */
+/* HTTPCS STACK VALUE ==> move to .cfg */
+#if 0
 #ifndef TEST
 //#define HTTPC_SEMAPHORE_NAME		"httpc_sem_status"
 #define HTTPC_SHM_MEM_KEY			0x00520000
@@ -36,6 +41,7 @@ int *lOG_FLAG;
 #define HTTPC_SHM_MEM_KEY			0x00620000
 #define HTTPC_INTL_MSG_KEY_BASE		0x00620100 // ~ 0x00620111
 #define HTTPS_INTL_MSG_KEY_BASE		0x00620200 // ~ 0x00620211
+#endif
 #endif
 
 #define AHIF_HTTPC_SEND_SIZE(a) AHIF_HTTPCS_MSG_HEAD_LEN + AHIF_VHDR_LEN + a.head.bodyLen
@@ -152,7 +158,7 @@ typedef enum http_statistic_enum {
 	HTTP_DISCONN,
 	HTTP_TIMEOUT,	/* send rst msg to peer */
 	HTTP_RX_RST,	/* recv rst msg from peer */
-	HTTP_OVLDCTL,	/* ahif cancel https ctx */
+	HTTP_PRE_END,	/* ahif cancel https ctx */
 	HTTP_STRM_N_FOUND,
 	HTTP_DEST_N_AVAIL,
 	HTTP_STAT_MAX
@@ -179,7 +185,7 @@ typedef struct shm_http {
 /* function proto type */
 
 /* ------------------------- libshm.c --------------------------- */
-int     get_http_shm(void);
+int     get_http_shm(int httpc_status_shmkey);
 void    set_httpc_status(conn_list_status_t conn_status[]);
 
 /* ------------------------- libvhdr.c --------------------------- */

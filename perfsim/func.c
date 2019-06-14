@@ -30,13 +30,13 @@ void fn_000(char *uri, AhifAppMsgType *txMsg)
 	char ip[128] = {0,};
 	char port[128] = {0,};
 
-	sscanf(uri, "%128[^:/]://%128[^/]/%256s", protocol, host, path);
+	sscanf(uri, "%127[^:/]://%127[^/]/%255s", protocol, host, path);
 
 	sprintf(txMsg->head.scheme, "%s", protocol);
 	sprintf(txMsg->head.authority, "%s", host);
 	sprintf(txMsg->head.rsrcUri, "/%s", path);
 
-	sscanf(host, "%128[^:]:%128s", ip, port);
+	sscanf(host, "%127[^:]:%127s", ip, port);
 
 	int port_num = atoi(port);
 

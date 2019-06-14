@@ -199,7 +199,7 @@ static http2_session_data *create_http2_session_data(app_context *app_ctx,
     }
 
 	if ((allowlist_index = check_allow(host)) < 0) {
-        APPLOG(APPLOG_DEBUG, "%s():%d (%s) allow list find fail", __func__, __LINE__, host);
+        APPLOG(APPLOG_DETAIL, "%s():%d (conn from: %s) allow list fail to find (or connection full)", __func__, __LINE__, host);
 		return NULL;
     }
 
@@ -301,7 +301,7 @@ static int session_send(http2_session_data *session_data) {
 	int rv;
 	rv = nghttp2_session_send(session_data->session);
 	if (rv != 0) {
-		warnx("Fatal error: %s", nghttp2_strerror(rv));
+		APPLOG(APPLOG_ERR, "Fatal error: %s", nghttp2_strerror(rv));
 		return (-1);
 	}
 	return 0;
@@ -317,13 +317,17 @@ static int session_recv(http2_session_data *session_data) {
 	size_t datalen = evbuffer_get_length(input);
 	unsigned char *data = evbuffer_pullup(input, -1);
 
+	if (session_data->session == NULL) {
+		APPLOG(APPLOG_ERR, "Fatal error: session_data->session is NULL!");
+		return (-1);
+	}
 	readlen = nghttp2_session_mem_recv(session_data->session, data, datalen);
 	if (readlen < 0) {
-		warnx("Fatal error: %s", nghttp2_strerror((int)readlen));
+		APPLOG(APPLOG_ERR, "Fatal error: %s", nghttp2_strerror((int)readlen));
 		return (-1);
 	}
 	if (evbuffer_drain(input, (size_t)readlen) != 0) {
-		warnx("Fatal error: evbuffer_drain failed");
+		APPLOG(APPLOG_ERR, "Fatal error: evbuffer_drain failed");
 		return (-1);
 	}
 	if (session_send(session_data) != 0) {
@@ -369,7 +373,7 @@ static int send_response(nghttp2_session *session, int32_t stream_id,
 
 	rv = nghttp2_submit_response(session, stream_id, nva, nvlen, &data_prd);
 	if (rv != 0) {
-		warnx("Fatal error: %s", nghttp2_strerror(rv));
+		APPLOG(APPLOG_ERR, "Fatal error: %s", nghttp2_strerror(rv));
 		return (-1);
 	}
 
@@ -412,7 +416,7 @@ static int send_response_by_ctx(nghttp2_session *session, int32_t stream_id,
 	log_pkt_send(log_pfx, nva, nvlen, https_ctx->user_ctx.body, https_ctx->user_ctx.head.bodyLen);
 
 	if (rv != 0) {
-		warnx("Fatal error: %s", nghttp2_strerror(rv));
+		APPLOG(APPLOG_ERR, "Fatal error: %s", nghttp2_strerror(rv));
 		return (-1);
 	}
 
@@ -670,7 +674,7 @@ static int on_frame_recv_callback(nghttp2_session *session,
 			http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_RX_RST);
 			break;
 		case NGHTTP2_PING:
-			session_data->ping_snd = 0;
+			clock_gettime(CLOCK_REALTIME, &session_data->ping_rcv_time);
 			break;
 		case NGHTTP2_DATA:
 		case NGHTTP2_HEADERS:
@@ -804,7 +808,7 @@ static int send_server_connection_header(http2_session_data *session_data) {
 	rv = nghttp2_submit_settings(session_data->session, NGHTTP2_FLAG_NONE, iv,
 			ARRLEN(iv));
 	if (rv != 0) {
-		warnx("Fatal error: %s", nghttp2_strerror(rv));
+		APPLOG(APPLOG_ERR, "Fatal error: %s", nghttp2_strerror(rv));
 		return (-1);
 	}
 	return 0;
@@ -886,6 +890,7 @@ static void eventcb(struct bufferevent *bev, short events, void *ptr) {
   
         // schlee, ok let's send ping 
         session_data->connected = CN_CONNECTED;
+		clock_gettime(CLOCK_REALTIME, &session_data->ping_rcv_time);
 		return;
 	}
 	if (events & BEV_EVENT_EOF) {
@@ -1145,8 +1150,6 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 					/* legacy session expired and new one already created case */
 					APPLOG(APPLOG_DEBUG, "%s():%d h2 submit_ping fail", __func__, __LINE__);
 					continue;
-				} else {
-					session_data->ping_snd ++;
 				}
 				if (session_send(session_data) != 0) {
 					APPLOG(APPLOG_DEBUG, "%s():%d session_send fail", __func__, __LINE__);
@@ -1162,9 +1165,7 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 					/* legacy session expired and new one already created case */
 					APPLOG(APPLOG_DEBUG, "%s():%d get_session fail", __func__, __LINE__);
 				} else {
-					/* it's same session and alive, send reset */
-					APPLOG(APPLOG_DEBUG, "{{{{DBG}}} %s() ctx(%d:%d) stream(%d) close stream (ovld)", 
-							__func__, thrd_index, ctx_id, https_ctx->user_ctx.head.stream_id);
+					/* silence discard stream */
 					nghttp2_session_close_stream(session_data->session, stream_id, NGHTTP2_INTERNAL_ERROR);
 				}
 				clear_and_free_ctx(https_ctx);
@@ -1172,9 +1173,9 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 
 				/* TODO!! STAT!!! */
 				if (session_data != NULL) 
-					http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_OVLDCTL);
+					http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_PRE_END);
 				else
-					http_stat_inc(0, 0, HTTP_OVLDCTL);
+					http_stat_inc(0, 0, HTTP_PRE_END);
 
 				break;
 			default:
@@ -1234,6 +1235,9 @@ void send_ping_callback(evutil_socket_t fd, short what, void *arg)
     int thrd_idx, sess_idx;
 	http2_session_data *session_data = NULL;
 	intl_req_t intl_req;
+	struct timespec tm_curr = {0,};
+
+	clock_gettime(CLOCK_REALTIME, &tm_curr);
 
 	for (thrd_idx = 0; thrd_idx < SERVER_CONF.worker_num; thrd_idx++) {
 		for (sess_idx = 0; sess_idx < MAX_SVR_NUM; sess_idx++) {
@@ -1243,17 +1247,23 @@ void send_ping_callback(evutil_socket_t fd, short what, void *arg)
 			if (session_data->connected != CN_CONNECTED)
 				continue;
 			/* if (5sec:  send - ack > 5 ) delete sess */
+#if 0
 			if (session_data->ping_snd > MAX_PING_WAIT) {
+#else
+			if ((tm_curr.tv_sec - session_data->ping_rcv_time.tv_sec) > SERVER_CONF.ping_timeout) {
+#endif
 				APPLOG(APPLOG_ERR, "%s() session (id: %d) goaway~!", __func__, session_data->session_id);
 				set_intl_req_msg(&intl_req, thrd_idx, 0, sess_idx, session_data->session_id, 0, HTTP_INTL_SESSION_DEL);
                 if (-1 == msgsnd(THRD_WORKER[thrd_idx].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0)) {
 					APPLOG(APPLOG_ERR, "%s():%d msgsnd fail", __func__, __LINE__);
                 }
-			} else { /* else send ping */
+				continue;
+			} 
+			if (session_data->ping_cnt ++ % SERVER_CONF.ping_interval == 0) {
 				set_intl_req_msg(&intl_req, thrd_idx, 0, sess_idx, session_data->session_id, 0, HTTP_INTL_SEND_PING);
-                if (-1 == msgsnd(THRD_WORKER[thrd_idx].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0)) {
+				if (-1 == msgsnd(THRD_WORKER[thrd_idx].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0)) {
 					APPLOG(APPLOG_ERR, "%s():%d msgsnd fail", __func__, __LINE__);
-                }
+				}
 			}
 		}
 	}
@@ -1382,13 +1392,13 @@ int initialize()
 	}
 
 	for ( i = 0; i < SERVER_CONF.worker_num; i++) {
-		if (-1 == (THRD_WORKER[i].msg_id = msgget((key_t)(HTTPS_INTL_MSG_KEY_BASE + i), IPC_CREAT | 0666))) {
+		if (-1 == (THRD_WORKER[i].msg_id = msgget((key_t)(SERVER_CONF.worker_shmkey + i), IPC_CREAT | 0666))) {
 			APPLOG(APPLOG_ERR, "{{{INIT}}} fail to create internal msgq id!");
 			exit( 1);
 		}
 		/* & flushing it & remake */
 		msgctl(THRD_WORKER[i].msg_id, IPC_RMID, NULL);
-		if (-1 == (THRD_WORKER[i].msg_id = msgget((key_t)(HTTPS_INTL_MSG_KEY_BASE + i), IPC_CREAT | 0666))) {
+		if (-1 == (THRD_WORKER[i].msg_id = msgget((key_t)(SERVER_CONF.worker_shmkey + i), IPC_CREAT | 0666))) {
 			APPLOG(APPLOG_ERR, "{{{INIT}}} fail to create internal msgq id!");
 			exit( 1);
 		}
@@ -1521,7 +1531,7 @@ static void main_loop(const char *key_file, const char *cert_file) {
 	event_add(ev_ping, &tm_ping);
 
     /* send conn status to OMP FIMD */
-    struct timeval tm_status = {1, 0};
+    struct timeval tm_status = {5, 0};
     struct event *ev_status;
     ev_status = event_new(evbase, -1, EV_PERSIST, send_status_to_omp, NULL);
     event_add(ev_status, &tm_status);

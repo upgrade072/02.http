@@ -3,9 +3,12 @@
 #define CF_SERVER_CONF      "server.cfg"
 #define CF_LOG_LEVEL	    "server_cfg.sys_config.log_level"
 #define CF_DEBUG_MODE	    "server_cfg.sys_config.debug_mode"
+#define CF_WORKER_SHMKEY    "server_cfg.sys_config.worker_shmkey_base"
 #define CF_LISTEN_PORT      "server_cfg.http_config.listen_port"
 #define CF_MAX_WORKER_NUM   "server_cfg.http_config.worker_num"
 #define CF_TIMEOUT_SEC      "server_cfg.http_config.timeout_sec"
+#define CF_PING_INTERVAL    "server_cfg.http_config.ping_interval"
+#define CF_PING_TIMEOUT     "server_cfg.http_config.ping_timeout"
 #define CF_PKT_LOG		    "server_cfg.http_config.pkt_log"
 #define CF_CERT_FILE        "server_cfg.oauth_config.cert_file"
 #define CF_KEY_FILE         "server_cfg.oauth_config.key_file"
@@ -184,6 +187,16 @@ int config_load()
 		APPLOG(APPLOG_ERR, "{{{CFG}}} worker num is [%d]", worker_num);
     }
 
+    /* worker shmkey base */
+    int worker_shmkey;
+    if (config_lookup_int(&CFG, CF_WORKER_SHMKEY, &worker_shmkey) == CONFIG_FALSE) {
+        APPLOG(APPLOG_ERR, "{{{CFG}}} worker shmkey base cfg not exist!");
+        goto CF_LOAD_ERR;
+    } else {
+        SERVER_CONF.worker_shmkey = worker_shmkey;
+        APPLOG(APPLOG_ERR, "{{{CFG}}} worker shmkey is [0x%x]", SERVER_CONF.worker_shmkey);
+    }
+
     /* timeout sec */
     int timeout_sec = 0;
     if (config_lookup_int(&CFG, CF_TIMEOUT_SEC, &timeout_sec) == CONFIG_FALSE) {
@@ -196,6 +209,34 @@ int config_load()
         }
         SERVER_CONF.timeout_sec = timeout_sec;
         APPLOG(APPLOG_ERR, "{{{CFG}}} timeout sec is [%d]", SERVER_CONF.timeout_sec);
+    }
+
+    /* ping interval */
+    int ping_interval = 0;
+    if (config_lookup_int(&CFG, CF_PING_INTERVAL, &ping_interval) == CONFIG_FALSE) {
+        APPLOG(APPLOG_ERR, "{{{CFG}}} ping interval cfg not exist!");
+        goto CF_LOAD_ERR;
+    } else {
+        if (ping_interval <= 0) {
+            APPLOG(APPLOG_ERR, "{{{CFG}}} ping interval[%d] is invalid!", ping_interval);
+            goto CF_LOAD_ERR;
+        }
+        SERVER_CONF.ping_interval = ping_interval;
+        APPLOG(APPLOG_ERR, "{{{CFG}}} ping interval is [%d]", SERVER_CONF.ping_interval);
+    }
+    
+    /* ping timeout */
+    int ping_timeout = 0;
+    if (config_lookup_int(&CFG, CF_PING_TIMEOUT, &ping_timeout) == CONFIG_FALSE) {
+        APPLOG(APPLOG_ERR, "{{{CFG}}} ping timeout cfg not exist!");
+        goto CF_LOAD_ERR;
+    } else { 
+        if (ping_timeout <= 0) {
+            APPLOG(APPLOG_ERR, "{{{CFG}}} ping timeout[%d] is invalid!", ping_timeout);
+            goto CF_LOAD_ERR;
+        }
+        SERVER_CONF.ping_timeout = ping_timeout;
+        APPLOG(APPLOG_ERR, "{{{CFG}}} ping timeout is [%d]", SERVER_CONF.ping_timeout);
     }
 
     /* pkt_log enable */

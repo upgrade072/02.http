@@ -61,7 +61,10 @@ typedef struct server_conf {
 	int log_level;
 	int listen_port[MAX_PORT_NUM];
 	int worker_num;
+	int worker_shmkey;
 	int timeout_sec;
+	int ping_interval;
+	int ping_timeout;
 	int pkt_log;
 
 	char cert_file[128];
@@ -152,12 +155,12 @@ typedef struct http2_session_data {
 	int used; // 1 : used, 0 : free
 
 	int connected;
-	int ping_snd;
+	int ping_cnt;
+	struct timespec ping_rcv_time;
 
 #ifdef OAUTH
 	int auth_act;
 #endif
-
 	// for direct relay
 	int is_direct_session;
 	int relay_fep_tag;

@@ -104,11 +104,11 @@ void http_stat_inc(int thrd_idx, int host_idx, int stat_idx)
 int httpc_stat_idx[] =
 { HTTP_TX_REQ, HTTP_RX_RSP, HTTP_CONN, HTTP_DISCONN, HTTP_TIMEOUT, HTTP_RX_RST, HTTP_STRM_N_FOUND, HTTP_DEST_N_AVAIL };
 int https_stat_idx[] =
-{ HTTP_RX_REQ, HTTP_TX_RSP, HTTP_CONN, HTTP_DISCONN, HTTP_TIMEOUT, HTTP_RX_RST, HTTP_OVLDCTL, HTTP_STRM_N_FOUND} ;
+{ HTTP_RX_REQ, HTTP_TX_RSP, HTTP_CONN, HTTP_DISCONN, HTTP_TIMEOUT, HTTP_RX_RST, HTTP_PRE_END, HTTP_STRM_N_FOUND} ;
 char httpc_stat_str[][128] =
 { "HTTP_TX_REQ", "HTTP_RX_RSP", "HTTP_CONN", "HTTP_DISCONN", "HTTP_TIMEOUT", "HTTP_RX_RST", "HTTP_STRM_N_FOUND", "HTTP_DEST_N_AVAIL" };
 char https_stat_str[][128] =
-{ "HTTP_RX_REQ", "HTTP_TX_RSP", "HTTP_CONN", "HTTP_DISCONN", "HTTP_TIMEOUT", "HTTP_RX_RST", "HTTP_OVLDCTL", "HTTP_STRM_N_FOUND"} ;
+{ "HTTP_RX_REQ", "HTTP_TX_RSP", "HTTP_CONN", "HTTP_DISCONN", "HTTP_TIMEOUT", "HTTP_RX_RST", "HTTP_PRE_END", "HTTP_STRM_N_FOUND"} ;
 int httpc_stat_size = sizeof(httpc_stat_idx) / sizeof(int);
 int https_stat_size = sizeof(https_stat_idx) / sizeof(int);
 

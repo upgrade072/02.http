@@ -468,8 +468,10 @@ int jwt_decode(jwt_t **jwt, const char *token, const unsigned char *key,
 	char *body, *sig;
 	int ret = EINVAL;
 
-	if (!jwt)
+	if (!jwt) {
+		free(head);
 		return EINVAL;
+	}
 
 	*jwt = NULL;
 

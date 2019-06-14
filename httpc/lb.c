@@ -249,8 +249,6 @@ tcp_ctx_t *search_dest_via_tag(httpc_ctx_t *httpc_ctx, GNode *root_node)
 
 void send_response_to_fep(httpc_ctx_t *httpc_ctx)
 {
-	APPLOG(APPLOG_DEBUG, "%s() httpc ctx fep_tag %d", __func__, httpc_ctx->fep_tag);
-
 	// TODO!!!! check connect is exist or not !!!
 	tcp_ctx_t *fep_tcp_ctx = search_dest_via_tag(httpc_ctx, LB_CTX.fep_tx_thrd);
 
@@ -303,7 +301,7 @@ void send_to_remote(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx)
 void heartbeat_process(httpc_ctx_t *recv_ctx, tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx)
 {
 	time(&sock_ctx->last_hb_recv_time);
-	APPLOG(APPLOG_DETAIL, "heartbeat receive from fep(%d) svc(%s) (%s:%d)\n", 
+	APPLOG(APPLOG_DETAIL, "heartbeat receive from fep(%d) svc(%s) (%s:%d)", 
 			tcp_ctx->fep_tag, svc_type_to_str(tcp_ctx->svc_type), sock_ctx->client_ip, sock_ctx->client_port);
 
 	clear_and_free_ctx(recv_ctx);
@@ -471,6 +469,8 @@ void load_lb_config(client_conf_t *cli_conf, lb_global_t *lb_conf)
 
 int get_httpcs_buff_used(tcp_ctx_t *tcp_ctx)
 {
+	if (tcp_ctx == NULL)
+		return 0;
 	if (tcp_ctx->buff_exist != 1)
 		return 0;
 
@@ -511,6 +511,9 @@ void fep_stat_print(evutil_socket_t fd, short what, void *arg)
 		tcp_ctx_t *fep_tx = (nth_fep_rx == NULL ? NULL : (tcp_ctx_t *)nth_fep_tx->data);
 		tcp_ctx_t *peer_rx = (nth_peer_rx == NULL ? NULL : (tcp_ctx_t *)nth_peer_rx->data);
 		tcp_ctx_t *peer_tx = (nth_peer_tx == NULL ? NULL : (tcp_ctx_t *)nth_peer_tx->data);
+
+		if (fep_rx == NULL || fep_tx == NULL)
+			continue;
 
 		int fep_rx_used = get_httpcs_buff_used(fep_rx);
 		int peer_rx_used = (peer_rx == NULL ? 0 : get_httpcs_buff_used(peer_rx));
