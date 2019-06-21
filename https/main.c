@@ -208,9 +208,8 @@ static http2_session_data *create_http2_session_data(app_context *app_ctx,
 	 * 종료 시 해당 세션의 ctx 수집 과정에서 신규 생성된 세션과의 충돌이 생기지 않도록 한다 
 	 */
 	index = find_least_conn_worker();
-    int pos;
     for (i = 0 ; i < MAX_SVR_NUM; i++) {
-        pos = (SESS_IDX + i) % MAX_SVR_NUM;
+        int pos = (SESS_IDX + i) % MAX_SVR_NUM;
         if (SESS[index][pos].used == 0) {
             found = 1;
             SESS_IDX = sess_idx = pos;
@@ -239,15 +238,33 @@ static http2_session_data *create_http2_session_data(app_context *app_ctx,
 	/* use when session DACT */
 	add_to_allowlist(allowlist_index, index, sess_idx, session_data->session_id);
 
-	ssl = create_ssl(app_ctx->ssl_ctx);
-	APPLOG(APPLOG_DETAIL, "%s() thread [%d], accept new client, session id (%d)", __func__, index, session_data->session_id);
+	if (app_ctx->ssl_ctx != NULL) {
+		ssl = create_ssl(app_ctx->ssl_ctx);
+		APPLOG(APPLOG_DETAIL, "TLS] %s() thread [%d], accept new client, session id (%d)", 
+				__func__, index, session_data->session_id);
+	} else {
+		APPLOG(APPLOG_DETAIL, "TCP] %s() thread [%d], accept new client, session id (%d)", 
+				__func__, index, session_data->session_id);
+	}
 
 	setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (char *)&val, sizeof(val));
 	session_data->thrd_index = index;
-	session_data->bev = bufferevent_openssl_socket_new(
-			THRD_WORKER[index].evbase, fd, ssl, BUFFEREVENT_SSL_ACCEPTING,
-			BEV_OPT_CLOSE_ON_FREE | BEV_OPT_DEFER_CALLBACKS);
+	if (app_ctx->ssl_ctx != NULL) {
+		APPLOG(APPLOG_DETAIL, "DBG}}} SSL CONNECTED !");
+		sprintf(session_data->scheme, "%s", "https");
+		session_data->bev = bufferevent_openssl_socket_new(
+				THRD_WORKER[index].evbase, fd, ssl, BUFFEREVENT_SSL_ACCEPTING,
+				BEV_OPT_CLOSE_ON_FREE | BEV_OPT_DEFER_CALLBACKS);
+	} else {
+		APPLOG(APPLOG_DETAIL, "DBG}}} TCP CONNECTED !");
+		sprintf(session_data->scheme, "%s", "http");
+		session_data->bev = bufferevent_socket_new(
+				THRD_WORKER[index].evbase, fd,
+				BEV_OPT_CLOSE_ON_FREE | BEV_OPT_DEFER_CALLBACKS);
+	}
+#if 0
 	bufferevent_enable(session_data->bev, EV_READ | EV_WRITE);
+#endif
 
 	session_data->client_addr = strdup(host);
 	session_data->client_port = ntohs(get_in_port(addr));
@@ -258,15 +275,20 @@ static http2_session_data *create_http2_session_data(app_context *app_ctx,
 		session_data->relay_fep_tag = app_ctx->relay_fep_tag;
 	}
 
+	/* schlee, if tcp connection, never happen EVENT_CONNECTED */
+	if (app_ctx->ssl_ctx == NULL) {
+		eventcb(session_data->bev, BEV_EVENT_CONNECTED, session_data);
+	}
+
     /* schlee, if evhandler not assigned, it cause send_ping core error */
     bufferevent_setcb(session_data->bev, readcb, writecb, eventcb, session_data);
+	bufferevent_enable(session_data->bev, EV_READ | EV_WRITE);
 
 	return session_data;
 }
 
 static void delete_http2_session_data(http2_session_data *session_data) {
 	http2_stream_data *stream_data;
-	SSL *ssl = bufferevent_openssl_get_ssl(session_data->bev);
 
 	session_data->connected = 0;
 
@@ -278,8 +300,11 @@ static void delete_http2_session_data(http2_session_data *session_data) {
 	ALLOW_LIST[session_data->allowlist_index].curr --;
 	del_from_allowlist(session_data->allowlist_index, session_data->thrd_index, session_data->session_index);
 
-	if (ssl) {
-		SSL_shutdown(ssl);
+	if (!strcmp(session_data->scheme, "https")) {
+		SSL *ssl = bufferevent_openssl_get_ssl(session_data->bev);
+		if (ssl) {
+			SSL_shutdown(ssl);
+		}
 	}
 	bufferevent_free(session_data->bev);
 	nghttp2_session_del(session_data->session);
@@ -666,7 +691,6 @@ static int on_request_recv(nghttp2_session *session,
 static int on_frame_recv_callback(nghttp2_session *session,
 		const nghttp2_frame *frame, void *user_data) {
 	http2_session_data *session_data = (http2_session_data *)user_data;
-	http2_stream_data *stream_data;
 
 	switch (frame->hd.type) {
 		/* for RCV RST STAT */
@@ -680,7 +704,7 @@ static int on_frame_recv_callback(nghttp2_session *session,
 		case NGHTTP2_HEADERS:
 			/* Check that the client request has finished */
 			if (frame->hd.flags & NGHTTP2_FLAG_END_STREAM) {
-				stream_data =
+				http2_stream_data *stream_data = 
 					nghttp2_session_get_stream_user_data(session, frame->hd.stream_id);
 				/* For DATA and HEADERS frame, this callback may be called after
 				   on_stream_close_callback. Check that stream still alive. */
@@ -704,7 +728,6 @@ static int on_data_chunk_recv_callback(nghttp2_session *session, uint8_t flags,
 	(void)flags;
 	http2_stream_data *stream_data = NULL;
 	https_ctx_t *https_ctx = NULL;
-	int thrd_idx, idx;
 
 	/* no data, do nothing */
 	if (len == 0) return 0;
@@ -712,8 +735,8 @@ static int on_data_chunk_recv_callback(nghttp2_session *session, uint8_t flags,
 	/* re-assemble */
 	stream_data = nghttp2_session_get_stream_user_data(session, stream_id);
 	if (stream_data) {
-        thrd_idx = session_data->thrd_index;
-        idx = stream_data->ctx_id;
+        int thrd_idx = session_data->thrd_index;
+        int idx = stream_data->ctx_id;
 
 		if ((https_ctx = get_context(thrd_idx, idx, 1)) == NULL) {
 			APPLOG(APPLOG_ERR, "%s() get_context fail!", __func__);
@@ -758,7 +781,7 @@ static int on_stream_close_callback(nghttp2_session *session, int32_t stream_id,
 	return 0;
 }
 
-static void initialize_nghttp2_session(http2_session_data *session_data) {
+void initialize_nghttp2_session(http2_session_data *session_data) {
 	nghttp2_session_callbacks *callbacks;
 
 	nghttp2_session_callbacks_new(&callbacks);
@@ -860,24 +883,26 @@ static void eventcb(struct bufferevent *bev, short events, void *ptr) {
 	if (events & BEV_EVENT_CONNECTED) {
 		const unsigned char *alpn = NULL;
 		unsigned int alpnlen = 0;
-		SSL *ssl;
 		(void)bev;
 
 		APPLOG(APPLOG_DETAIL, "%s() %s:%d Connected", __func__, session_data->client_addr, session_data->client_port);
 
-		ssl = bufferevent_openssl_get_ssl(session_data->bev);
+		if (!strcmp(session_data->scheme, "https")) {
+			SSL *ssl = bufferevent_openssl_get_ssl(session_data->bev);
 
-		SSL_get0_next_proto_negotiated(ssl, &alpn, &alpnlen);
+			SSL_get0_next_proto_negotiated(ssl, &alpn, &alpnlen);
 #if OPENSSL_VERSION_NUMBER >= 0x10002000L
-		if (alpn == NULL) {
-			SSL_get0_alpn_selected(ssl, &alpn, &alpnlen);
-		}
+			if (alpn == NULL) {
+				SSL_get0_alpn_selected(ssl, &alpn, &alpnlen);
+			}
 #endif // OPENSSL_VERSION_NUMBER >= 0x10002000L
 
-		if (alpn == NULL || alpnlen != 2 || memcmp("h2", alpn, 2) != 0) {
-			APPLOG(APPLOG_ERR, "%s() %s h2 is not negotiated", __func__, session_data->client_addr);
-			delete_http2_session_data(session_data);
-			return;
+			if (alpn == NULL || alpnlen != 2 || memcmp("h2", alpn, 2) != 0) {
+				APPLOG(APPLOG_ERR, "%s() %s h2 is not negotiated", __func__, session_data->client_addr);
+				delete_http2_session_data(session_data);
+				return;
+			}
+
 		}
 
 		initialize_nghttp2_session(session_data);
@@ -887,9 +912,9 @@ static void eventcb(struct bufferevent *bev, short events, void *ptr) {
 			delete_http2_session_data(session_data);
 			return;
 		}
-  
-        // schlee, ok let's send ping 
-        session_data->connected = CN_CONNECTED;
+
+		// schlee, ok let's send ping 
+		session_data->connected = CN_CONNECTED;
 		clock_gettime(CLOCK_REALTIME, &session_data->ping_rcv_time);
 		return;
 	}
@@ -909,13 +934,12 @@ static void acceptcb(struct evconnlistener *listener, int fd,
 	app_context *app_ctx = (app_context *)arg;
 	http2_session_data *session_data;
 	(void)listener;
-	char host[NI_MAXHOST];
-	int rv;
 
 	session_data = create_http2_session_data(app_ctx, fd, addr, addrlen);
 
 	if (session_data == NULL) {
-		rv = getnameinfo(addr, (socklen_t)addrlen, host, sizeof(host), NULL, 0, NI_NUMERICHOST);
+		char host[NI_MAXHOST] = {0,};
+		int rv = getnameinfo(addr, (socklen_t)addrlen, host, sizeof(host), NULL, 0, NI_NUMERICHOST);
 		if (rv != 0) {
 			APPLOG(APPLOG_ERR, "%s() create session failed (unknown)!", __func__);
 		} else {
@@ -966,8 +990,6 @@ static void start_listen(struct event_base *evbase, const char *service,
 		}
 	}
 	APPLOG(APPLOG_ERR, "%s() Could not start listener", __func__);
-
-
 }
 
 static void initialize_app_context(app_context *app_ctx, SSL_CTX *ssl_ctx,
@@ -1044,7 +1066,6 @@ void main_tick_callback(evutil_socket_t fd, short what, void *arg)
 void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 {
 	int read_index = *(int *)arg;
-	int res;
 	intl_req_t intl_req;
 
 	struct http2_session_data *session_data = NULL;
@@ -1058,7 +1079,7 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 	{
 		memset(&intl_req, 0x00, sizeof(intl_req));
 		/* get first msg (Arg 4) */
-		res = msgrcv(THRD_WORKER[read_index].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0, IPC_NOWAIT | MSG_NOERROR); 
+		int res = msgrcv(THRD_WORKER[read_index].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0, IPC_NOWAIT | MSG_NOERROR); 
 		if (res < 0) {
 			if (errno != ENOMSG) {
 				APPLOG(APPLOG_ERR,"%s() msgrcv fail; err=%d(%s)", __func__, errno, strerror(errno));
@@ -1327,10 +1348,8 @@ void *workerThread(void *arg)
 
 void create_https_worker()
 {
-	int i, res;
-
-	for (i = 0; i < SERVER_CONF.worker_num; i++) {
-		res = pthread_create(&THRD_WORKER[i].thrd_id, NULL, &workerThread, (void *)&THREAD_NO[i]);
+	for (int i = 0; i < SERVER_CONF.worker_num; i++) {
+		int res = pthread_create(&THRD_WORKER[i].thrd_id, NULL, &workerThread, (void *)&THREAD_NO[i]);
 		if (res != 0) {
 			APPLOG(APPLOG_ERR, "%s() Thread Create Fail (Worker:%2dth)", __func__, i);
 			exit(0);
@@ -1480,9 +1499,11 @@ int initialize()
 }
 
 static void main_loop(const char *key_file, const char *cert_file) {
-	SSL_CTX *ssl_ctx;
-	app_context comm_app_ctx;
-	app_context direct_app_ctx[MAX_PORT_NUM];
+	SSL_CTX *ssl_ctx = NULL;
+	app_context comm_app_ctx_tls = {0,};
+	app_context comm_app_ctx_tcp = {0,};
+	app_context direct_app_ctx_tls[MAX_PORT_NUM];
+	app_context direct_app_ctx_tcp[MAX_PORT_NUM];
 	struct event_base *evbase;
 	char port_str[12] = {0,};
 	int i;
@@ -1492,22 +1513,37 @@ static void main_loop(const char *key_file, const char *cert_file) {
 	/* create event base */
 	evbase = event_base_new();
 
-	/* initialize listen ports */
-	initialize_app_context(&comm_app_ctx, ssl_ctx, evbase, 0, 0);
+	/* initialize https (over tls) listen ports */
+	initialize_app_context(&comm_app_ctx_tls, ssl_ctx, evbase, 0, 0);
 	for (i = 0; i < MAX_PORT_NUM; i++) {
-		if (SERVER_CONF.listen_port[i]) {
-			sprintf(port_str, "%d", SERVER_CONF.listen_port[i]);
-			start_listen(evbase, port_str, &comm_app_ctx);
+		if (SERVER_CONF.https_listen_port[i]) {
+			sprintf(port_str, "%d", SERVER_CONF.https_listen_port[i]);
+			start_listen(evbase, port_str, &comm_app_ctx_tls);
+		}
+	}
+	/* initialize http (over tcp) listen ports */
+	initialize_app_context(&comm_app_ctx_tcp, NULL, evbase, 0, 0);
+	for (i = 0; i < MAX_PORT_NUM; i++) {
+		if (SERVER_CONF.http_listen_port[i]) {
+			sprintf(port_str, "%d", SERVER_CONF.http_listen_port[i]);
+			start_listen(evbase, port_str, &comm_app_ctx_tcp);
 		}
 	}
 
-	/* if enabled, initial direct relay listen ports */
+	/* if enabled, initial direct relay listen ports, it only https (over tls) support now */
 	if (SERVER_CONF.dr_enabled) {
 		for (i = 0; i < MAX_PORT_NUM; i++) {
-			initialize_app_context(&direct_app_ctx[i], ssl_ctx, evbase, 1, i);
-			if (SERVER_CONF.callback_port[i]) {
-				sprintf(port_str, "%d", SERVER_CONF.callback_port[i]);
-				start_listen(evbase, port_str, &direct_app_ctx[i]);
+			initialize_app_context(&direct_app_ctx_tls[i], ssl_ctx, evbase, 1, i);
+			if (SERVER_CONF.callback_port_tls[i]) {
+				sprintf(port_str, "%d", SERVER_CONF.callback_port_tls[i]);
+				start_listen(evbase, port_str, &direct_app_ctx_tls[i]);
+			}
+		}
+		for (i = 0; i < MAX_PORT_NUM; i++) {
+			initialize_app_context(&direct_app_ctx_tcp[i], NULL, evbase, 1, i);
+			if (SERVER_CONF.callback_port_tcp[i]) {
+				sprintf(port_str, "%d", SERVER_CONF.callback_port_tcp[i]);
+				start_listen(evbase, port_str, &direct_app_ctx_tcp[i]);
 			}
 		}
 	}

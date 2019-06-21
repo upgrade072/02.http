@@ -211,7 +211,11 @@ void set_callback_tag(https_ctx_t *https_ctx, tcp_ctx_t *fep_tcp_ctx)
 		APPLOG(APPLOG_ERR, "%s() fep_tcp_ctx->fep_tag num wrong [%d]!", __func__, fep_tcp_ctx->fep_tag);
 		return;
 	} else {
-		https_ctx->user_ctx.head.callback_port = SERVER_CONF.callback_port[fep_tcp_ctx->fep_tag];
+		if (!strcmp(https_ctx->user_ctx.head.scheme, "https")) {
+			https_ctx->user_ctx.head.callback_port = SERVER_CONF.callback_port_tls[fep_tcp_ctx->fep_tag];
+		} else {
+			https_ctx->user_ctx.head.callback_port = SERVER_CONF.callback_port_tcp[fep_tcp_ctx->fep_tag];
+		}
 		sprintf(https_ctx->user_ctx.head.callback_ip, "%s", SERVER_CONF.callback_ip);
 	}
 }

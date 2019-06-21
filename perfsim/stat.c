@@ -104,8 +104,6 @@ static stat_cnt_t STAT_CNT;
 void calc_and_print_stat()
 {
     char buf[1024] = {0,};
-    char logbuf_avg[1024] = {0,};
-    char logbuf_sum[1024] = {0,};
     char buf_dbg[1024] = {0,};
     char buf_step[1024] = {0,};
 
@@ -135,8 +133,7 @@ void calc_and_print_stat()
 
     /* make stat summary (recv) */
     for (int k = 0; k < MAX_THREAD_NUM; k++) {
-        statistic_t *recv_stat = NULL;
-        recv_stat = &RECV_STAT[k].stat[curr_idx];
+        statistic_t *recv_stat = &RECV_STAT[k].stat[curr_idx];
         for (int i = 0; i < MAX_THREAD_NUM; i++) {
             for (int j = 0; j < PF_STAT_MAX; j++) {
                 stat_cnt.stat_count[j] += recv_stat->per_thread_stat[i].stat_count[j];
@@ -171,6 +168,8 @@ void calc_and_print_stat()
 
     LOGWRITE_STAT ++;
     if (LOGWRITE_STAT >= 20) {
+		char logbuf_avg[1024] = {0,};
+		char logbuf_sum[1024] = {0,};
         sprintf(logbuf_avg, "%s", "AVG]");
         sprintf(logbuf_sum, "%s", "SUM]");
         for (int i = 0; i < PF_STAT_MAX; i++) {

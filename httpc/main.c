@@ -48,9 +48,8 @@ create_http2_session_data() {
 
 	/* schlee, session index always forward, prevent conflict */
 	index = find_least_conn_worker();
-	int pos;
 	for (i = 0 ; i < MAX_SVR_NUM; i++) {
-		pos = (SESS_IDX + i) % MAX_SVR_NUM;
+		int pos = (SESS_IDX + i) % MAX_SVR_NUM;
 		if (SESS[index][pos].used == 0) {
 			found = 1;
 			SESS_IDX = sess_idx = pos;
@@ -79,13 +78,15 @@ static void delete_http2_session_data(http2_session_data_t *session_data)
 	http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_DISCONN);
 
 	pthread_mutex_lock(&ONLY_CRT_SESS_LOCK);
-	SSL *ssl = bufferevent_openssl_get_ssl(session_data->bev);
 
+	if (!strcmp(session_data->scheme, "https")) {
+		SSL *ssl = bufferevent_openssl_get_ssl(session_data->bev);
+		if (ssl) {
+			SSL_shutdown(ssl);
+		}
+	}
 	THRD_WORKER[session_data->thrd_index].server_num--;
 
-	if (ssl) {
-		SSL_shutdown(ssl);
-	}
 	bufferevent_free(session_data->bev);
 	session_data->bev = NULL;
 
@@ -248,7 +249,11 @@ static int submit_request(http2_session_data_t *session_data, httpc_ctx_t *httpc
 
 	nghttp2_nv hdrs[MAX_HDR_RELAY_CNT + 5] = {
 		MAKE_NV(HDR_METHOD, httpc_ctx->user_ctx.head.httpMethod, strlen(httpc_ctx->user_ctx.head.httpMethod)),
-		MAKE_NV(HDR_SCHEME, "https", 5),
+#if 0
+		MAKE_NV(HDR_SCHEME, "https", 5), 
+#else
+		MAKE_NV(HDR_SCHEME, session_data->scheme, strlen(session_data->scheme)),
+#endif
 		MAKE_NV(HDR_AUTHORITY, session_data->authority, session_data->authority_len),
 		MAKE_NV(HDR_PATH, request_path, strlen(request_path))};
 	int hdrs_len = 4; /* :method :scheme :authority :path */
@@ -321,7 +326,6 @@ static int on_data_chunk_recv_callback(nghttp2_session *session, uint8_t flags,
 	/* get stream fron contex for defragment */
 	http2_stream_data *stream_data = NULL;
 	httpc_ctx_t *httpc_ctx = NULL;
-	int thrd_idx, idx;
 
 	/* no data, do nothing */
 	if (len == 0) return 0;
@@ -329,8 +333,8 @@ static int on_data_chunk_recv_callback(nghttp2_session *session, uint8_t flags,
 	/* re-assemble */
 	stream_data = nghttp2_session_get_stream_user_data(session, stream_id);
 	if (stream_data) {
-		thrd_idx = session_data->thrd_index;
-		idx = stream_data->ctx_id;
+		int thrd_idx = session_data->thrd_index;
+		int idx = stream_data->ctx_id;
 
 		if ((httpc_ctx = get_context(thrd_idx, idx, 1)) == NULL) {
 			APPLOG(APPLOG_ERR, "%s() get_context fail!", __func__);
@@ -604,21 +608,22 @@ static void eventcb(struct bufferevent *bev, short events, void *ptr) {
 		int val = 1;
 		const unsigned char *alpn = NULL;
 		unsigned int alpnlen = 0;
-		SSL *ssl;
 
-		ssl = bufferevent_openssl_get_ssl(session_data->bev);
+		if (!strcmp(session_data->scheme, "https")) {
+			SSL *ssl = bufferevent_openssl_get_ssl(session_data->bev);
 
-		SSL_get0_next_proto_negotiated(ssl, &alpn, &alpnlen);
+			SSL_get0_next_proto_negotiated(ssl, &alpn, &alpnlen);
 #if OPENSSL_VERSION_NUMBER >= 0x10002000L
-		if (alpn == NULL) {
-			SSL_get0_alpn_selected(ssl, &alpn, &alpnlen);
-		}
+			if (alpn == NULL) {
+				SSL_get0_alpn_selected(ssl, &alpn, &alpnlen);
+			}
 #endif // OPENSSL_VERSION_NUMBER >= 0x10002000L
 
-		if (alpn == NULL || alpnlen != 2 || memcmp("h2", alpn, 2) != 0) {
-			APPLOG(APPLOG_ERR, "%s() h2 is not negotiated", __func__);
-			delete_http2_session_data(session_data);
-			return;
+			if (alpn == NULL || alpnlen != 2 || memcmp("h2", alpn, 2) != 0) {
+				APPLOG(APPLOG_ERR, "%s() h2 is not negotiated", __func__);
+				delete_http2_session_data(session_data);
+				return;
+			}
 		}
 
 		setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (char *)&val, sizeof(val));
@@ -681,14 +686,19 @@ static void eventcb(struct bufferevent *bev, short events, void *ptr) {
 static void initiate_connection(struct event_base *evbase, SSL_CTX *ssl_ctx,
 		const char *ip, uint16_t port,
 		http2_session_data_t *session_data) {
-	int rv;
-	struct bufferevent *bev;
-	SSL *ssl;
+	int rv = 0;
+	struct bufferevent *bev = NULL;
+	SSL *ssl = NULL;
 
-	ssl = create_ssl(ssl_ctx);
-	bev = bufferevent_openssl_socket_new(
-			evbase, -1, ssl, BUFFEREVENT_SSL_CONNECTING,
-			BEV_OPT_DEFER_CALLBACKS | BEV_OPT_CLOSE_ON_FREE | BEV_OPT_THREADSAFE);
+	if (!strcmp(session_data->scheme, "https")) {
+		ssl = create_ssl(ssl_ctx);
+		bev = bufferevent_openssl_socket_new(
+				evbase, -1, ssl, BUFFEREVENT_SSL_CONNECTING,
+				BEV_OPT_DEFER_CALLBACKS | BEV_OPT_CLOSE_ON_FREE | BEV_OPT_THREADSAFE);
+	} else {
+		bev = bufferevent_socket_new(
+				evbase, -1, BEV_OPT_DEFER_CALLBACKS | BEV_OPT_CLOSE_ON_FREE | BEV_OPT_THREADSAFE);
+	}
 	bufferevent_enable(bev, EV_READ | EV_WRITE);
 	bufferevent_setcb(bev, readcb, writecb, eventcb, session_data);
 	rv = bufferevent_socket_connect_hostname(bev, NULL,
@@ -849,7 +859,6 @@ void inspect_stream_id(int stream_id, http2_session_data_t *session_data)
 void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 {
 	int read_index = *(int *)arg;
-	int res;
 	intl_req_t intl_req;
 
 	http2_session_data_t *session_data = NULL;
@@ -862,7 +871,7 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 	{
 		memset(&intl_req, 0x00, sizeof(intl_req));
 		/* get first msg (Arg 4) */
-		res = msgrcv(THRD_WORKER[read_index].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0, IPC_NOWAIT | MSG_NOERROR);
+		int res = msgrcv(THRD_WORKER[read_index].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0, IPC_NOWAIT | MSG_NOERROR);
 		if (res < 0) {
 			if (errno != ENOMSG) {
 				APPLOG(APPLOG_ERR,"%s() msgrcv fail; err=%d(%s)", __func__, errno, strerror(errno));
@@ -990,7 +999,7 @@ void *workerThread(void *arg)
 
 void create_httpc_worker()
 {
-	int i, res;
+	int res;
 
 #ifdef OAUTH
 	// create NRF access thread 
@@ -1003,7 +1012,7 @@ void create_httpc_worker()
 	}
 #endif
 
-	for (i = 0; i < CLIENT_CONF.worker_num; i++) {
+	for (int i = 0; i < CLIENT_CONF.worker_num; i++) {
 		res = pthread_create(&THRD_WORKER[i].thrd_id, NULL, &workerThread, (void *)&THREAD_NO[i]);
 		if (res != 0) {
 			APPLOG(APPLOG_ERR, "%s() Thread Create Fail (Worker:%2dth)", __func__, i);
@@ -1041,6 +1050,7 @@ void conn_func(evutil_socket_t fd, short what, void *arg)
 
 		// schlee, create session authority data
 		/* authority   = [ userinfo "@" ] host [ ":" port ] */
+		sprintf(session_data->scheme, "%s", CONN_LIST[i].scheme);
 		sprintf(session_data->authority, "%s", CONN_LIST[i].ip);
 		sprintf(session_data->authority + strlen(session_data->authority), "%s", ":");
 		sprintf(session_data->authority + strlen(session_data->authority), "%d", CONN_LIST[i].port);

@@ -88,10 +88,11 @@ void send_to_worker(tcp_ctx_t *tcp_ctx, conn_list_t *httpc_conn, httpc_ctx_t *re
 		Free_CtxId(thrd_idx, ctx_idx);
 	}
 
-STW_RET:
+/* SUCCESS RETURN */
 	recv_ctx->occupied = 0;
 	return;
 
+/* ERROR RETURN */
 STW_ERR:
 	fep_tcp_ctx = search_dest_via_tag(recv_ctx, LB_CTX.fep_tx_thrd);
 	stp_err_to_fep(fep_tcp_ctx, recv_ctx); /* send err to fep */

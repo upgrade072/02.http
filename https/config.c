@@ -4,7 +4,8 @@
 #define CF_LOG_LEVEL	    "server_cfg.sys_config.log_level"
 #define CF_DEBUG_MODE	    "server_cfg.sys_config.debug_mode"
 #define CF_WORKER_SHMKEY    "server_cfg.sys_config.worker_shmkey_base"
-#define CF_LISTEN_PORT      "server_cfg.http_config.listen_port"
+#define CF_TLS_LISTEN_PORT  "server_cfg.http_config.listen_port_tls"
+#define CF_TCP_LISTEN_PORT  "server_cfg.http_config.listen_port_tcp"
 #define CF_MAX_WORKER_NUM   "server_cfg.http_config.worker_num"
 #define CF_TIMEOUT_SEC      "server_cfg.http_config.timeout_sec"
 #define CF_PING_INTERVAL    "server_cfg.http_config.ping_interval"
@@ -17,7 +18,8 @@
 #define CF_DRELAY_CONFIG	"server_cfg.direct_relay"
 #define CF_DRELAY_ENABLE	"server_cfg.direct_relay.enable"
 #define CF_CALLBACK_IP		"server_cfg.direct_relay.callback_ip"
-#define CF_CALLBACK_PORT	"server_cfg.direct_relay.callback_port"
+#define CF_CALLBACK_TLS_PORT	"server_cfg.direct_relay.callback_port_tls"
+#define CF_CALLBACK_TCP_PORT	"server_cfg.direct_relay.callback_port_tcp"
 #define CF_ALLOW_LIST		"allow_list"
 
 extern server_conf SERVER_CONF;
@@ -113,29 +115,54 @@ int config_load()
         APPLOG(APPLOG_ERR, "{{{CFG}}} debug mode is [%s]", SERVER_CONF.debug_mode == 1 ? "ON" : "OFF");
     }
 
-	/* listen port cfg loading */
-    if ((setting = config_lookup(&CFG, CF_LISTEN_PORT)) == NULL) {
-		APPLOG(APPLOG_ERR, "{{{CFG}}} listen port cfg not exist!");
+	/* HTTPS listen port cfg loading */
+    if ((setting = config_lookup(&CFG, CF_TLS_LISTEN_PORT)) == NULL) {
+		APPLOG(APPLOG_ERR, "{{{CFG}}} https listen port cfg not exist!");
         goto CF_LOAD_ERR;
     } else {
         int count = config_setting_length(setting);
-        int i, port, index = 0;
+        int i, index = 0;
 
-        APPLOG(APPLOG_ERR, "{{{CFG}}} server listen ports are ... (%d)", count);
+        APPLOG(APPLOG_ERR, "{{{CFG}}} server https listen ports are ... (%d)", count);
         for (i = 0; i < count; i++) {
-            port =  config_setting_get_int_elem(setting, i);
+            int port =  config_setting_get_int_elem(setting, i);
             if (port == 0 || port >= 65535) continue;
 			if (index >= MAX_PORT_NUM) {
-				APPLOG(APPLOG_ERR, "{{{CFG}}} server listen port exceed max port num[%d]!", MAX_PORT_NUM);
+				APPLOG(APPLOG_ERR, "{{{CFG}}} server https listen port exceed max port num[%d]!", MAX_PORT_NUM);
 				break;
 			} else {
-				SERVER_CONF.listen_port[index] = port; index++;
+				SERVER_CONF.https_listen_port[index] = port; index++;
 				APPLOG(APPLOG_ERR, " %-7d", port);
 			}
         }
 		if (index == 0) {
-			APPLOG(APPLOG_ERR, "{{{CFG}}} server listen port setting not exist!");
-			goto CF_LOAD_ERR;
+			APPLOG(APPLOG_ERR, "{{{CFG}}} server https listen port setting not exist!");
+			//goto CF_LOAD_ERR;
+		}
+    }
+	/* HTTP listen port cfg loading */
+    if ((setting = config_lookup(&CFG, CF_TCP_LISTEN_PORT)) == NULL) {
+		APPLOG(APPLOG_ERR, "{{{CFG}}} http listen port cfg not exist!");
+        goto CF_LOAD_ERR;
+    } else {
+        int count = config_setting_length(setting);
+        int i, index = 0;
+
+        APPLOG(APPLOG_ERR, "{{{CFG}}} server http listen ports are ... (%d)", count);
+        for (i = 0; i < count; i++) {
+            int port =  config_setting_get_int_elem(setting, i);
+            if (port == 0 || port >= 65535) continue;
+			if (index >= MAX_PORT_NUM) {
+				APPLOG(APPLOG_ERR, "{{{CFG}}} server http listen port exceed max port num[%d]!", MAX_PORT_NUM);
+				break;
+			} else {
+				SERVER_CONF.http_listen_port[index] = port; index++;
+				APPLOG(APPLOG_ERR, " %-7d", port);
+			}
+        }
+		if (index == 0) {
+			APPLOG(APPLOG_ERR, "{{{CFG}}} server http listen port setting not exist!");
+			//goto CF_LOAD_ERR;
 		}
     }
 
@@ -151,22 +178,41 @@ int config_load()
 		} else {
 			APPLOG(APPLOG_ERR, "{{{CFG}}} direct_relay section .callback_ip [%s]", SERVER_CONF.callback_ip);
 		}
-		if ((setting = config_lookup(&CFG, CF_CALLBACK_PORT)) == NULL) {
-			APPLOG(APPLOG_ERR, "{{{CFG}}} direct_relay section .callback_port not exist!");
+		if ((setting = config_lookup(&CFG, CF_CALLBACK_TLS_PORT)) == NULL) {
+			APPLOG(APPLOG_ERR, "{{{CFG}}} direct_relay section .callback_port_tls not exist!");
 			goto CF_LOAD_ERR;
 		} else {
 			int count = config_setting_length(setting);
 
-			APPLOG(APPLOG_ERR, "{{{CFG}}} direct relay ports ars ... (%d)", count);
+			APPLOG(APPLOG_ERR, "{{{CFG}}} direct relay ports (tls) ars ... (%d)", count);
 			for (int i = 0; i < count; i++) {
 				int port = config_setting_get_int_elem(setting, i);
 				if (i >= MAX_PORT_NUM) {
-					APPLOG(APPLOG_ERR, "{{{CFG}}} direct relay section .callback_port exceed max[%d]!", MAX_PORT_NUM);
+					APPLOG(APPLOG_ERR, "{{{CFG}}} direct relay section .callback_port_tls exceed max[%d]!", MAX_PORT_NUM);
 					break;
 				} else {
-					SERVER_CONF.callback_port[i] = port;
+					SERVER_CONF.callback_port_tls[i] = port;
 					APPLOG(APPLOG_ERR, "  listen [%s:%d] direct relay to fep [%02d]",
-							SERVER_CONF.callback_ip, SERVER_CONF.callback_port[i], i);
+							SERVER_CONF.callback_ip, SERVER_CONF.callback_port_tls[i], i);
+				}
+			}
+		}
+		if ((setting = config_lookup(&CFG, CF_CALLBACK_TCP_PORT)) == NULL) {
+			APPLOG(APPLOG_ERR, "{{{CFG}}} direct_relay section .callback_port_tcp not exist!");
+			goto CF_LOAD_ERR;
+		} else {
+			int count = config_setting_length(setting);
+
+			APPLOG(APPLOG_ERR, "{{{CFG}}} direct relay ports (tcp) ars ... (%d)", count);
+			for (int i = 0; i < count; i++) {
+				int port = config_setting_get_int_elem(setting, i);
+				if (i >= MAX_PORT_NUM) {
+					APPLOG(APPLOG_ERR, "{{{CFG}}} direct relay section .callback_port_tcp exceed max[%d]!", MAX_PORT_NUM);
+					break;
+				} else {
+					SERVER_CONF.callback_port_tcp[i] = port;
+					APPLOG(APPLOG_ERR, "  listen [%s:%d] direct relay to fep [%02d]",
+							SERVER_CONF.callback_ip, SERVER_CONF.callback_port_tcp[i], i);
 				}
 			}
 		}

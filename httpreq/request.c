@@ -185,12 +185,11 @@ static int lib_on_data_chunk_recv_callback(nghttp2_session *session, uint8_t fla
 static int lib_on_stream_close_callback(nghttp2_session *session, int32_t stream_id,
 		uint32_t error_code, void *user_data) {
 	libhttp_session_data_t *session_data = (libhttp_session_data_t *)user_data;
-	int rv;
 
 	if (session_data->stream_data->stream_id == stream_id) {
 		APPLOG(APPLOG_DETAIL, "{{{HLIB}}} Stream %d closed with error_code=%u", stream_id,
 				error_code);
-		rv = nghttp2_session_terminate_session(session, NGHTTP2_NO_ERROR);
+		int rv = nghttp2_session_terminate_session(session, NGHTTP2_NO_ERROR);
 		if (rv != 0) {
 			return NGHTTP2_ERR_CALLBACK_FAILURE;
 		}

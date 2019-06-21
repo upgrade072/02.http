@@ -348,7 +348,6 @@ int getch(void)
 extern float BULK_SND;
 void *modifyThread(void *arg)
 {
-    int ch;
     //char conf_setting_name[256] = {0,};
     config_setting_t *root = NULL;
     config_setting_t *scenario = NULL;
@@ -362,7 +361,7 @@ void *modifyThread(void *arg)
 
     while(1)
     {
-        ch = getch();
+        int ch = getch();
 
         switch (ch) {
             case 65:

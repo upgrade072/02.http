@@ -54,10 +54,3 @@ int	Free_CtxId(int thrd_idx, uint id)
 
 	return(0);
 }
-int Check_CtxId(int thrd_idx, uint id)
-{
-	if((id<CTX_START_ID[thrd_idx]) || (id>=(CTX_START_ID[thrd_idx]+CTX_SIZEID[thrd_idx])))
-		return(-1);
-
-	return(0);
-}

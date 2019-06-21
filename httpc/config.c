@@ -314,7 +314,7 @@ int config_load()
 			config_setting_t *group;
 			config_setting_t *list;
 			int list_count;
-			const char *ip, *act;
+			const char *scheme, *ip, *act;
 			const char *type;
 			int port;
 			int cnt;
@@ -343,14 +343,18 @@ int config_load()
 				CONN_LIST[index].item_index = -1;
 				CONN_LIST[index].used = 1;
 				CONN_LIST[index].conn = 0;
-				sprintf(CONN_LIST[index].host, "%s", group->name);
 				sprintf(CONN_LIST[index].type, "%s", type);
+				sprintf(CONN_LIST[index].host, "%s", group->name);
 				continue;
 			}
 
 			for (j = 0; j < list_count; j++) {
 				config_setting_t *item = config_setting_get_elem(list, j);
 
+				if (config_setting_lookup_string (item, "scheme", &scheme) == CONFIG_FALSE)
+					continue;
+				else if (strcmp(scheme, "http") && strcmp(scheme, "https")) 
+					continue;
 				if (config_setting_lookup_string (item, "ip", &ip) == CONFIG_FALSE)
 					continue;
 				if (config_setting_lookup_int (item, "port", &port) == CONFIG_FALSE)
@@ -375,9 +379,9 @@ int config_load()
 				if (!strcmp(act, "ACT") &&!strcmp(act, "DACT")) continue;
 
 #ifdef OAUTH
-				APPLOG(APPLOG_ERR, "%3d) %-46s %-6d (x %-3d) %-5s %-5s %-5d", j, ip, port, cnt, act, type, token_id);
+				APPLOG(APPLOG_ERR, "%3d) %-46s %-6d (x %-3d) %-5s %-5s %-5s %-5d", j, ip, port, cnt, act, scheme, type, token_id);
 #else
-				APPLOG(APPLOG_ERR, "%3d) %-46s %-6d (x %-3d) %-5s %-5s", j, ip, port, cnt, act, type);
+				APPLOG(APPLOG_ERR, "%3d) %-46s %-6d (x %-3d) %-5s %-5s %-5s", j, ip, port, cnt, act, scheme, type);
 #endif
 
 				item_index = new_item(list_index, ip, port);
@@ -395,6 +399,7 @@ int config_load()
 					CONN_LIST[index].used = 1;
 					CONN_LIST[index].conn = 0;
 					sprintf(CONN_LIST[index].host, "%s", group->name);
+					sprintf(CONN_LIST[index].scheme, "%s", scheme);
 					sprintf(CONN_LIST[index].type, "%s", type);
 					sprintf(CONN_LIST[index].ip, "%s", ip);
 					CONN_LIST[index].port = port;

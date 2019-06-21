@@ -288,12 +288,12 @@ void *receiverThread(void *arg)
     int index = *(int *)arg;
     char rxMsg[sizeof(AhifAppMsgType) + 1024] = {0,};
     AhifAppMsgType *recvMsg = (AhifAppMsgType *)&rxMsg;
-    int msgSize = 0, sleep_cnt = 0;
+    int sleep_cnt = 0;
 
     while (1)
     {
         pthread_mutex_lock(&SHMQ_READ_MUTEX);
-        msgSize = shmqlib_getMsg(appRxQid, rxMsg);
+        int msgSize = shmqlib_getMsg(appRxQid, rxMsg);
         pthread_mutex_unlock(&SHMQ_READ_MUTEX);
 
         if (msgSize <= 0) {
@@ -508,7 +508,7 @@ void recv_action(int recv_thrd_idx, AhifAppMsgType *recvMsg)
         }
 	}
 
-PARSE_JSON_FROM_MSG:
+/* PARSE_JSON_FROM_MSG: */
 
     /* make json obj from resp */
     if ((resp_obj = json_tokener_parse(recvMsg->body)) == NULL) {
@@ -575,7 +575,7 @@ DONT_CHECK_RESULT:
         goto END_CALL;
     }
 
-MOVE_TO_NEXT:
+/* MOVE_TO_NEXT: */
 
 	if (recvMsg->head.respCode < 200 || recvMsg->head.respCode >= 300) {
 		goto END_CALL;

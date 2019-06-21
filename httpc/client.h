@@ -160,6 +160,7 @@ typedef struct conn_list {
 	int conn;	// if 0 : disconnected, 1 : connected
 	int act;	// 1: act, 0: deact
 
+	char scheme[12];					// https (over TLS) | http (over TCP)
 	char type[AHIF_COMM_NAME_LEN];		// UDM | PCF | ...
 	char host[AHIF_MAX_DESTHOST_LEN];	// udm_fep_01 
 	char ip[INET6_ADDRSTRLEN];			// 192.168.100.100
@@ -238,6 +239,7 @@ typedef struct http2_session_data {
 	//struct evdns_base *dnsbase;
 	struct bufferevent *bev;
 
+	char scheme[12];
 	char authority[128];
 	int authority_len;
 

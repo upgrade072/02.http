@@ -59,7 +59,8 @@ extern char lOG_PATH[64];
 typedef struct server_conf {
 	int debug_mode;
 	int log_level;
-	int listen_port[MAX_PORT_NUM];
+	int https_listen_port[MAX_PORT_NUM];
+	int http_listen_port[MAX_PORT_NUM];
 	int worker_num;
 	int worker_shmkey;
 	int timeout_sec;
@@ -74,7 +75,8 @@ typedef struct server_conf {
 	/* for direct relay to fep */
 	int	dr_enabled;							// 0 (not) 1 (true)
 	const char *callback_ip;				// for callback uri ipaddr 
-	int callback_port[MAX_PORT_NUM];		// for callback uri port
+	int callback_port_tls[MAX_PORT_NUM];	// for callback uri port
+	int callback_port_tcp[MAX_PORT_NUM];	// for callback uri port
 
     config_setting_t *lb_config;
 } server_conf;
@@ -144,8 +146,10 @@ typedef struct http2_session_data {
 
 	char *client_addr;
 	int client_port;
-	char hostname[AHIF_MAX_DESTHOST_LEN];
+
+	char scheme[12]; 
 	char type[AHIF_COMM_NAME_LEN];
+	char hostname[AHIF_MAX_DESTHOST_LEN];
 
 	int list_index;		// hostname index
 	int thrd_index;
@@ -267,6 +271,7 @@ void    thrd_tick_callback(evutil_socket_t fd, short what, void *arg);
 void    chk_tmout_callback(evutil_socket_t fd, short what, void *arg);
 void    send_ping_callback(evutil_socket_t fd, short what, void *arg);
 void    send_status_to_omp(evutil_socket_t fd, short what, void *arg);
+void	initialize_nghttp2_session(http2_session_data *session_data);
 void    *workerThread(void *arg);
 void    create_https_worker();
 int     initialize();

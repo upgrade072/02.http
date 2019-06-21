@@ -148,8 +148,8 @@ void unexpect_readcb(struct bufferevent *bev, void *arg)
     ssize_t rsize = bufferevent_read(bev, buff, sizeof(buff));
 
     buff[rsize + 1] = '\0';
-    APPLOG(APPLOG_ERR, "{{{LB}}} %s() recv unexpected (from %s:%d) (%ld byte)!", 
-			__func__, sock_ctx->client_ip, sock_ctx->client_port, rsize);
+    APPLOG(APPLOG_ERR, "{{{LB}}} %s() recv unexpected (from %s:%d) (%ld byte) [%s]!!!", 
+			__func__, sock_ctx->client_ip, sock_ctx->client_port, rsize, buff);
 
     release_conncb(sock_ctx);
 }
@@ -432,6 +432,7 @@ void lb_listener_cb(struct evconnlistener *listener, evutil_socket_t fd,
 			if (tcp_ctx->heartbeat_enable) {
 				sock_chk_heartbeatcb(tcp_ctx, sock_ctx);
 			} 
+			svr_sock_eventcb(bev, BEV_EVENT_CONNECTED, sock_ctx);
             bufferevent_setcb(bev, lb_buff_readcb, NULL, svr_sock_eventcb, sock_ctx);
             bufferevent_enable(bev, EV_READ);
             break;
@@ -442,6 +443,7 @@ void lb_listener_cb(struct evconnlistener *listener, evutil_socket_t fd,
 			if (tcp_ctx->heartbeat_enable) {
 				sock_add_heartbeatcb(tcp_ctx, sock_ctx);
 			}
+			svr_sock_eventcb(bev, BEV_EVENT_CONNECTED, sock_ctx);
             bufferevent_setcb(bev, unexpect_readcb, NULL, svr_sock_eventcb, sock_ctx);
             bufferevent_enable(bev, EV_READ);
             break;
