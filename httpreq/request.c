@@ -137,7 +137,7 @@ static int lib_on_begin_headers_callback(nghttp2_session *session,
 		case NGHTTP2_HEADERS:
 			if (frame->headers.cat == NGHTTP2_HCAT_RESPONSE &&
 					session_data->stream_data->stream_id == frame->hd.stream_id) {
-				APPLOG(APPLOG_ERR, "\nResponse headers for stream ID=%d",
+				APPLOG(APPLOG_DETAIL, "{{{HLIB}}} Response headers for stream ID=%d",
 						frame->hd.stream_id);
 			}
 			break;
@@ -154,7 +154,7 @@ static int lib_on_frame_recv_callback(nghttp2_session *session,
 		case NGHTTP2_HEADERS:
 			if (frame->headers.cat == NGHTTP2_HCAT_RESPONSE &&
 					session_data->stream_data->stream_id == frame->hd.stream_id) {
-				APPLOG(APPLOG_ERR, "All headers received");
+				APPLOG(APPLOG_DETAIL, "{{{HLIB}}} All headers received");
 			}
 			break;
 	}
@@ -185,12 +185,11 @@ static int lib_on_data_chunk_recv_callback(nghttp2_session *session, uint8_t fla
 static int lib_on_stream_close_callback(nghttp2_session *session, int32_t stream_id,
 		uint32_t error_code, void *user_data) {
 	libhttp_session_data_t *session_data = (libhttp_session_data_t *)user_data;
-	int rv;
 
 	if (session_data->stream_data->stream_id == stream_id) {
-		APPLOG(APPLOG_ERR, "Stream %d closed with error_code=%u", stream_id,
+		APPLOG(APPLOG_DETAIL, "{{{HLIB}}} Stream %d closed with error_code=%u", stream_id,
 				error_code);
-		rv = nghttp2_session_terminate_session(session, NGHTTP2_NO_ERROR);
+		int rv = nghttp2_session_terminate_session(session, NGHTTP2_NO_ERROR);
 		if (rv != 0) {
 			return NGHTTP2_ERR_CALLBACK_FAILURE;
 		}
@@ -205,7 +204,7 @@ static int lib_select_next_proto_cb(SSL *ssl, unsigned char **out,
 	(void)arg;
 
 	if (nghttp2_select_next_protocol(out, outlen, in, inlen) <= 0) {
-		APPLOG(APPLOG_ERR, "Server did not advertise" NGHTTP2_PROTO_VERSION_ID);
+		APPLOG(APPLOG_ERR, "{{{HLIB}}} Server did not advertise" NGHTTP2_PROTO_VERSION_ID);
 		return (-1);
 	}
 	return SSL_TLSEXT_ERR_OK;
@@ -216,7 +215,7 @@ static SSL_CTX *lib_create_ssl_ctx(void) {
 	ssl_ctx = SSL_CTX_new(SSLv23_client_method());
 	if (!ssl_ctx) {
 		// TODO!!! fail exit
-		APPLOG(APPLOG_ERR, "Could not create SSL/TLS context: %s",
+		APPLOG(APPLOG_ERR, "{{{HLIB}}} Could not create SSL/TLS context: %s",
 				ERR_error_string(ERR_get_error(), NULL));
 		return NULL;
 	}
@@ -238,7 +237,7 @@ static SSL *lib_create_ssl(SSL_CTX *ssl_ctx) {
 	ssl = SSL_new(ssl_ctx);
 	if (!ssl) {
 		// TODO!!! fail exit
-		APPLOG(APPLOG_ERR, "Could not create SSL/TLS session object: %s",
+		APPLOG(APPLOG_ERR, "{{{HLIB}}} Could not create SSL/TLS session object: %s",
 				ERR_error_string(ERR_get_error(), NULL));
 		return NULL;
 	}
@@ -285,7 +284,7 @@ static void lib_send_client_connection_header(libhttp_session_data_t *session_da
 	int rv = nghttp2_submit_settings(session_data->session, NGHTTP2_FLAG_NONE, iv,
 			ARRLEN(iv));
 	if (rv != 0) {
-		APPLOG(APPLOG_ERR, "Could not submit SETTINGS: %s", nghttp2_strerror(rv));
+		APPLOG(APPLOG_ERR, "{{{{HLIB}}} Could not submit SETTINGS: %s", nghttp2_strerror(rv));
 	}
 }
 
@@ -299,8 +298,8 @@ static ssize_t lib_ptr_read_callback(nghttp2_session *session, int32_t stream_id
     int len = stream_data->sndreq->body_size;
 
     if (len >= length) {
-        APPLOG(APPLOG_ERR, "err] length(%d) exceed maximum val(%zu)",
-                len, length);
+        APPLOG(APPLOG_ERR, "{{{HLIB}}} %s() length(%d) exceed maximum val(%zu)",
+                __func__, len, length);
         return 0;
     }
     memcpy(buf, data, len);
@@ -335,8 +334,8 @@ static void lib_submit_request(libhttp_session_data_t *session_data) {
 		hdrs_len ++;
 	}
 
-	APPLOG(APPLOG_ERR, "\nRequest headers:");
-	APPLOG(APPLOG_ERR, "hdrs len %d", hdrs_len);
+	APPLOG(APPLOG_DETAIL, "Request headers:");
+	APPLOG(APPLOG_DETAIL, "hdrs len %d", hdrs_len);
 	print_headers(stderr, hdrs, hdrs_len);
 
 	if (stream_data->sndreq->body_size > 0) {
@@ -346,7 +345,7 @@ static void lib_submit_request(libhttp_session_data_t *session_data) {
 	stream_id = nghttp2_submit_request(session_data->session, NULL, hdrs, hdrs_len, 
 		(stream_data->sndreq->body_size > 0) ? &data_prd : NULL, stream_data);
 	if (stream_id < 0) {
-		APPLOG(APPLOG_ERR, "Could not submit HTTP request: %s", nghttp2_strerror(stream_id));
+		APPLOG(APPLOG_ERR, "{{{HLIB}}} Could not submit HTTP request: %s", nghttp2_strerror(stream_id));
 		/* schlee, stream_id (-) setted, will error handle */
 	}
 
@@ -358,7 +357,7 @@ static int lib_session_send(libhttp_session_data_t *session_data) {
 
 	rv = nghttp2_session_send(session_data->session);
 	if (rv != 0) {
-		APPLOG(APPLOG_ERR, "Fatal error: %s", nghttp2_strerror(rv));
+		APPLOG(APPLOG_ERR, "{{{HLIB}}} %s() Fatal error: %s", __func__, nghttp2_strerror(rv));
 		return -1;
 	}
 	return 0;
@@ -373,12 +372,12 @@ static void lib_readcb(struct bufferevent *bev, void *ptr) {
 
 	readlen = nghttp2_session_mem_recv(session_data->session, data, datalen);
 	if (readlen < 0) {
-		APPLOG(APPLOG_ERR, "Fatal error: %s", nghttp2_strerror((int)readlen));
+		APPLOG(APPLOG_ERR, "{{{HLIB}}} %s() Fatal error: %s", __func__, nghttp2_strerror((int)readlen));
 		lib_delete_session_data(session_data);
 		return;
 	}
 	if (evbuffer_drain(input, (size_t)readlen) != 0) {
-		APPLOG(APPLOG_ERR, "Fatal error: evbuffer_drain failed");
+		APPLOG(APPLOG_ERR, "{{{HLIB}}} %s() Fatal error: evbuffer_drain failed", __func__);
 		lib_delete_session_data(session_data);
 		return;
 	}
@@ -408,7 +407,7 @@ static void lib_eventcb(struct bufferevent *bev, short events, void *ptr) {
 		unsigned int alpnlen = 0;
 		SSL *ssl;
 
-		APPLOG(APPLOG_ERR, "}}}} Connected !!! {{{{");
+		APPLOG(APPLOG_DETAIL, "{{{HLIB}}} %s() Connected!!!", __func__);
 
 		ssl = bufferevent_openssl_get_ssl(session_data->bev);
 
@@ -420,7 +419,7 @@ static void lib_eventcb(struct bufferevent *bev, short events, void *ptr) {
 #endif // OPENSSL_VERSION_NUMBER >= 0x10002000L
 
 		if (alpn == NULL || alpnlen != 2 || memcmp("h2", alpn, 2) != 0) {
-			APPLOG(APPLOG_ERR, "h2 is not negotiated");
+			APPLOG(APPLOG_ERR, "{{{HLIB}}} h2 is not negotiated");
 			lib_delete_session_data(session_data);
 			return;
 		}
@@ -435,11 +434,11 @@ static void lib_eventcb(struct bufferevent *bev, short events, void *ptr) {
 		return;
 	}
 	if (events & BEV_EVENT_EOF) {
-		APPLOG(APPLOG_ERR, "Disconnected from the remote host");
+		APPLOG(APPLOG_DETAIL, "{{{HLIB}}} %s() Disconnected from the remote host", __func__);
 	} else if (events & BEV_EVENT_ERROR) {
-		APPLOG(APPLOG_ERR, "Network error");
+		APPLOG(APPLOG_DETAIL, "{{{HLIB}}} %s() Network error", __func__);
 	} else if (events & BEV_EVENT_TIMEOUT) {
-		APPLOG(APPLOG_ERR, "Timeout");
+		APPLOG(APPLOG_DETAIL, "{{{HLIB}}} %s() Timeout", __func__);
 	}
 	lib_delete_session_data(session_data);
 }
@@ -463,7 +462,7 @@ static void lib_initiate_connection(struct event_base *evbase, SSL_CTX *ssl_ctx,
 			AF_UNSPEC, host, port);
 
 	if (rv != 0) {
-		APPLOG(APPLOG_ERR, "Could not connect to the remote host %s", host);
+		APPLOG(APPLOG_ERR, "{{{HLIB}}} Could not connect to the remote host %s", host);
 		// TODO!!! let's see what happen
 	}
 	session_data->bev = bev;
@@ -483,7 +482,7 @@ void single_run(libhttp_single_sndreq_t *sndreq, libhttp_single_rcvres_t *rcvres
 	/* Parse the |uri| and stores its components in |u| */
 	rv = http_parser_parse_url(uri, strlen(uri), 0, &u);
 	if (rv != 0) {
-		APPLOG(APPLOG_ERR, "Could not parse URI %s", uri);
+		APPLOG(APPLOG_ERR, "{{{HLIB}}} Could not parse URI %s", uri);
 		return;
 	}
 
@@ -510,7 +509,7 @@ void single_run(libhttp_single_sndreq_t *sndreq, libhttp_single_rcvres_t *rcvres
 	event_base_free(evbase);
 	SSL_CTX_free(ssl_ctx);
 
-	APPLOG(APPLOG_ERR, "}}}} all RESOURCE cleared !!! {{{{");
+	APPLOG(APPLOG_DETAIL, "{{{HLIB}}} all RESOURCE cleared !!!");
 
 	return;
 }

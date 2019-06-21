@@ -13,24 +13,3 @@ diff -urN ./nghttp2-1.31.1/lib/nghttp2_frame.h ./nghttp2-1.31.1_modified/lib/ngh
  /* The one frame buffer length for tranmission.  We may use several of
     them to support CONTINUATION.  To account for Pad Length field, we
     allocate extra 1 byte, which saves extra large memcopying. */
-diff -urN ./nghttp2-1.31.1/lib/nghttp2_session.c ./nghttp2-1.31.1_modified/lib/nghttp2_session.c
---- ./nghttp2-1.31.1/lib/nghttp2_session.c	2018-04-12 23:46:47.000000000 +0900
-+++ ./nghttp2-1.31.1_modified/lib/nghttp2_session.c	2018-06-25 17:37:51.748255947 +0900
-@@ -1756,10 +1756,17 @@
-          session->remote_window_size, session->remote_settings.max_frame_size,
-          stream->stream_id, stream->remote_window_size);
- 
-+#if 0
-   return nghttp2_min(nghttp2_min(nghttp2_min(requested_window_size,
-                                              stream->remote_window_size),
-                                  session->remote_window_size),
-                      (int32_t)session->remote_settings.max_frame_size);
-+#else
-+  return nghttp2_max(nghttp2_max(nghttp2_max(requested_window_size,
-+                                             stream->remote_window_size),
-+                                 session->remote_window_size),
-+                     (int32_t)session->remote_settings.max_frame_size);
-+#endif
- }
- 
- /*

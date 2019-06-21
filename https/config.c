@@ -1,14 +1,25 @@
 #include "server.h"
 
 #define CF_SERVER_CONF      "server.cfg"
-#define CF_LOG_LEVEL	    "server_cfg.log_level"
-#define CF_LISTEN_PORT      "server_cfg.listen_port"
-#define CF_MAX_WORKER_NUM   "server_cfg.worker_num"
-#define CF_TIMEOUT_SEC      "server_cfg.timeout_sec"
+#define CF_LOG_LEVEL	    "server_cfg.sys_config.log_level"
+#define CF_DEBUG_MODE	    "server_cfg.sys_config.debug_mode"
+#define CF_WORKER_SHMKEY    "server_cfg.sys_config.worker_shmkey_base"
+#define CF_TLS_LISTEN_PORT  "server_cfg.http_config.listen_port_tls"
+#define CF_TCP_LISTEN_PORT  "server_cfg.http_config.listen_port_tcp"
+#define CF_MAX_WORKER_NUM   "server_cfg.http_config.worker_num"
+#define CF_TIMEOUT_SEC      "server_cfg.http_config.timeout_sec"
+#define CF_PING_INTERVAL    "server_cfg.http_config.ping_interval"
+#define CF_PING_TIMEOUT     "server_cfg.http_config.ping_timeout"
+#define CF_PKT_LOG		    "server_cfg.http_config.pkt_log"
 #define CF_CERT_FILE        "server_cfg.oauth_config.cert_file"
 #define CF_KEY_FILE         "server_cfg.oauth_config.key_file"
 #define CF_CREDENTIAL       "server_cfg.oauth_config.credential"
 #define CF_LB_CONFIG        "server_cfg.lb_config"
+#define CF_DRELAY_CONFIG	"server_cfg.direct_relay"
+#define CF_DRELAY_ENABLE	"server_cfg.direct_relay.enable"
+#define CF_CALLBACK_IP		"server_cfg.direct_relay.callback_ip"
+#define CF_CALLBACK_TLS_PORT	"server_cfg.direct_relay.callback_port_tls"
+#define CF_CALLBACK_TCP_PORT	"server_cfg.direct_relay.callback_port_tcp"
 #define CF_ALLOW_LIST		"allow_list"
 
 extern server_conf SERVER_CONF;
@@ -38,56 +49,55 @@ int init_cfg()
     
     /* read config file */
     if (!config_read_file(&CFG, CONFIG_PATH)) {
-        fprintf(stderr, "%s:%d - %s\n",
+        APPLOG(APPLOG_ERR, "{{{CFG}}} %s:%d - %s!!!",
                 config_error_file(&CFG),
                 config_error_line(&CFG),
                 config_error_text(&CFG));
         goto CF_INIT_ERR;
     }
     
-    fprintf(stderr, "\nloading [%s]\n", CONFIG_PATH);
-    fprintf(stderr, "=====================================================================\n");
+
+	APPLOG(APPLOG_ERR, "{{{CFG}}} loading [%s]", CONFIG_PATH);
+	APPLOG(APPLOG_ERR, "==============================================================================================");
     
     config_set_tab_width(&CFG, 4);
     
     return (0);
 
 CF_INIT_ERR:
-    fprintf(stderr, "cfg loading fail!!!!\n");
-    fprintf(stderr, "\n=====================================================================\n");
+	APPLOG(APPLOG_ERR, "{{{CFG}}} cfg loading fail!!!");
+	APPLOG(APPLOG_ERR, "==============================================================================================");
     
     config_destroy(&CFG);
     return (-1);
 }
 
-#ifdef LOG_APP
 int config_load_just_log()
 {
     int log_level;
 
     if (config_lookup_int(&CFG, CF_LOG_LEVEL, &log_level) == CONFIG_FALSE) {
-        fprintf(stderr, "config log_level not exist\n");
-        goto CF_LOGLEVEL_LOAD_ERR;
+		APPLOG(APPLOG_ERR, "{{{CFG}}} config log_level not exist!");
+		goto CF_LOGLEVEL_LOAD_ERR;
     } else {
         if (log_level < APPLOG_NONE || log_level > APPLOG_DEBUG) {
-            fprintf(stderr, "config log_level value invalid[%d] (%d~%d)\n",
-                    log_level, APPLOG_NONE, APPLOG_DEBUG);
+			APPLOG(APPLOG_ERR, "{{{CFG}}} config log_level value invalid[%d] (%d~%d)!",
+					log_level, APPLOG_NONE, APPLOG_DEBUG);
             goto CF_LOGLEVEL_LOAD_ERR;
         }
-        SERVER_CONF.log_level = log_level;
-        fprintf(stderr, "log_level is [%d]\n", log_level);
+		SERVER_CONF.log_level = log_level;
+		APPLOG(APPLOG_ERR, "{{{CFG}}} log level is [%d]", log_level);
     }
     return (0);
 
 CF_LOGLEVEL_LOAD_ERR:
-    fprintf(stderr, "\n=====================================================================\n");
-    fprintf(stderr, "cfg loading fail\n");
+	APPLOG(APPLOG_ERR, "==============================================================================================");
+	APPLOG(APPLOG_ERR, "{{{CFG}}} cfg loading fail!!!");
 
     /* if init fail, destroy and program exit */
     config_destroy(&CFG);
     return (-1);
 }
-#endif
 
 int config_load()
 {
@@ -95,65 +105,199 @@ int config_load()
     const char *str;
 	int list_index, item_index;
 
-	/* listen port cfg loading */
-    if ((setting = config_lookup(&CFG, CF_LISTEN_PORT)) == NULL) {
-		APPLOG(APPLOG_ERR, "listen port cfg not exist");
+    /* debug mode */
+    int debug_mode = 0;
+    if (config_lookup_int(&CFG, CF_DEBUG_MODE, &debug_mode) == CONFIG_FALSE) {
+		APPLOG(APPLOG_ERR, "{{{CFG}}} debug mode cfg not exist!");
+        goto CF_LOAD_ERR;
+    } else {
+        SERVER_CONF.debug_mode = (debug_mode == 1 ? 1: 0);
+        APPLOG(APPLOG_ERR, "{{{CFG}}} debug mode is [%s]", SERVER_CONF.debug_mode == 1 ? "ON" : "OFF");
+    }
+
+	/* HTTPS listen port cfg loading */
+    if ((setting = config_lookup(&CFG, CF_TLS_LISTEN_PORT)) == NULL) {
+		APPLOG(APPLOG_ERR, "{{{CFG}}} https listen port cfg not exist!");
         goto CF_LOAD_ERR;
     } else {
         int count = config_setting_length(setting);
-        int i, port, index = 0;
+        int i, index = 0;
 
-        APPLOG(APPLOG_ERR, "server listen ports are ... (%d)", count);
+        APPLOG(APPLOG_ERR, "{{{CFG}}} server https listen ports are ... (%d)", count);
         for (i = 0; i < count; i++) {
-            port =  config_setting_get_int_elem(setting, i);
+            int port =  config_setting_get_int_elem(setting, i);
             if (port == 0 || port >= 65535) continue;
 			if (index >= MAX_PORT_NUM) {
-				APPLOG(APPLOG_ERR, "server listen port exceed max port num[%d]", MAX_PORT_NUM);
+				APPLOG(APPLOG_ERR, "{{{CFG}}} server https listen port exceed max port num[%d]!", MAX_PORT_NUM);
 				break;
 			} else {
-				SERVER_CONF.listen_port[index] = port; index++;
+				SERVER_CONF.https_listen_port[index] = port; index++;
 				APPLOG(APPLOG_ERR, " %-7d", port);
 			}
         }
 		if (index == 0) {
-			APPLOG(APPLOG_ERR, "server listen port setting not exist");
-			goto CF_LOAD_ERR;
+			APPLOG(APPLOG_ERR, "{{{CFG}}} server https listen port setting not exist!");
+			//goto CF_LOAD_ERR;
 		}
     }
-	APPLOG(APPLOG_ERR, "\n");
+	/* HTTP listen port cfg loading */
+    if ((setting = config_lookup(&CFG, CF_TCP_LISTEN_PORT)) == NULL) {
+		APPLOG(APPLOG_ERR, "{{{CFG}}} http listen port cfg not exist!");
+        goto CF_LOAD_ERR;
+    } else {
+        int count = config_setting_length(setting);
+        int i, index = 0;
+
+        APPLOG(APPLOG_ERR, "{{{CFG}}} server http listen ports are ... (%d)", count);
+        for (i = 0; i < count; i++) {
+            int port =  config_setting_get_int_elem(setting, i);
+            if (port == 0 || port >= 65535) continue;
+			if (index >= MAX_PORT_NUM) {
+				APPLOG(APPLOG_ERR, "{{{CFG}}} server http listen port exceed max port num[%d]!", MAX_PORT_NUM);
+				break;
+			} else {
+				SERVER_CONF.http_listen_port[index] = port; index++;
+				APPLOG(APPLOG_ERR, " %-7d", port);
+			}
+        }
+		if (index == 0) {
+			APPLOG(APPLOG_ERR, "{{{CFG}}} server http listen port setting not exist!");
+			//goto CF_LOAD_ERR;
+		}
+    }
+
+	/* direct relay cfg loading */
+	if ((setting = config_lookup(&CFG, CF_DRELAY_CONFIG)) == NULL ||
+			config_lookup_int(&CFG, CF_DRELAY_ENABLE, &SERVER_CONF.dr_enabled) == CONFIG_FALSE ||
+			SERVER_CONF.dr_enabled == 0) {
+		APPLOG(APPLOG_ERR, "{{{CFG}}} direct_replay section not exist or .enabled not exist or .enabled == 0!");
+	} else {
+		if (config_lookup_string(&CFG, CF_CALLBACK_IP, &SERVER_CONF.callback_ip) == CONFIG_FALSE) {
+			APPLOG(APPLOG_ERR, "{{{CFG}}} direct_relay section .callback_ip not exist!");
+			goto CF_LOAD_ERR;
+		} else {
+			APPLOG(APPLOG_ERR, "{{{CFG}}} direct_relay section .callback_ip [%s]", SERVER_CONF.callback_ip);
+		}
+		if ((setting = config_lookup(&CFG, CF_CALLBACK_TLS_PORT)) == NULL) {
+			APPLOG(APPLOG_ERR, "{{{CFG}}} direct_relay section .callback_port_tls not exist!");
+			goto CF_LOAD_ERR;
+		} else {
+			int count = config_setting_length(setting);
+
+			APPLOG(APPLOG_ERR, "{{{CFG}}} direct relay ports (tls) ars ... (%d)", count);
+			for (int i = 0; i < count; i++) {
+				int port = config_setting_get_int_elem(setting, i);
+				if (i >= MAX_PORT_NUM) {
+					APPLOG(APPLOG_ERR, "{{{CFG}}} direct relay section .callback_port_tls exceed max[%d]!", MAX_PORT_NUM);
+					break;
+				} else {
+					SERVER_CONF.callback_port_tls[i] = port;
+					APPLOG(APPLOG_ERR, "  listen [%s:%d] direct relay to fep [%02d]",
+							SERVER_CONF.callback_ip, SERVER_CONF.callback_port_tls[i], i);
+				}
+			}
+		}
+		if ((setting = config_lookup(&CFG, CF_CALLBACK_TCP_PORT)) == NULL) {
+			APPLOG(APPLOG_ERR, "{{{CFG}}} direct_relay section .callback_port_tcp not exist!");
+			goto CF_LOAD_ERR;
+		} else {
+			int count = config_setting_length(setting);
+
+			APPLOG(APPLOG_ERR, "{{{CFG}}} direct relay ports (tcp) ars ... (%d)", count);
+			for (int i = 0; i < count; i++) {
+				int port = config_setting_get_int_elem(setting, i);
+				if (i >= MAX_PORT_NUM) {
+					APPLOG(APPLOG_ERR, "{{{CFG}}} direct relay section .callback_port_tcp exceed max[%d]!", MAX_PORT_NUM);
+					break;
+				} else {
+					SERVER_CONF.callback_port_tcp[i] = port;
+					APPLOG(APPLOG_ERR, "  listen [%s:%d] direct relay to fep [%02d]",
+							SERVER_CONF.callback_ip, SERVER_CONF.callback_port_tcp[i], i);
+				}
+			}
+		}
+	}
 
     /* worker num cfg loading */
     int worker_num;
     if (config_lookup_int(&CFG, CF_MAX_WORKER_NUM, &worker_num) == CONFIG_FALSE) {
-		APPLOG(APPLOG_ERR, "worker num cfg not exist");
+		APPLOG(APPLOG_ERR, "{{{CFG}}} worker num cfg not exist!");
         goto CF_LOAD_ERR;
     } else {
 		if (worker_num <= 0 || worker_num > MAX_THRD_NUM) { 
-			APPLOG(APPLOG_ERR, "worker_num[%d] is zero or exceed max_thrd_num[%d]",
+			APPLOG(APPLOG_ERR, "{{{CFG}}} worker_num[%d] is zero or exceed max_thrd_num[%d]!",
 					worker_num, MAX_THRD_NUM);
 			goto CF_LOAD_ERR;
 		}
 		SERVER_CONF.worker_num = worker_num;
-		APPLOG(APPLOG_ERR, "worker num is [%d]", worker_num);
+		APPLOG(APPLOG_ERR, "{{{CFG}}} worker num is [%d]", worker_num);
+    }
+
+    /* worker shmkey base */
+    int worker_shmkey;
+    if (config_lookup_int(&CFG, CF_WORKER_SHMKEY, &worker_shmkey) == CONFIG_FALSE) {
+        APPLOG(APPLOG_ERR, "{{{CFG}}} worker shmkey base cfg not exist!");
+        goto CF_LOAD_ERR;
+    } else {
+        SERVER_CONF.worker_shmkey = worker_shmkey;
+        APPLOG(APPLOG_ERR, "{{{CFG}}} worker shmkey is [0x%x]", SERVER_CONF.worker_shmkey);
     }
 
     /* timeout sec */
     int timeout_sec = 0;
     if (config_lookup_int(&CFG, CF_TIMEOUT_SEC, &timeout_sec) == CONFIG_FALSE) {
-        APPLOG(APPLOG_ERR, "timeout sec cfg not exist");
+        APPLOG(APPLOG_ERR, "{{{CFG}}} timeout sec cfg not exist!");
         goto CF_LOAD_ERR;
     } else {
         if (timeout_sec <= 0) {
-            APPLOG(APPLOG_ERR, "timeout sec[%d] is invalid", timeout_sec);
+            APPLOG(APPLOG_ERR, "{{{CFG}}} timeout sec[%d] is invalid!", timeout_sec);
             goto CF_LOAD_ERR;
         }
         SERVER_CONF.timeout_sec = timeout_sec;
-        APPLOG(APPLOG_ERR, "timeout sec is [%d]", SERVER_CONF.timeout_sec);
+        APPLOG(APPLOG_ERR, "{{{CFG}}} timeout sec is [%d]", SERVER_CONF.timeout_sec);
+    }
+
+    /* ping interval */
+    int ping_interval = 0;
+    if (config_lookup_int(&CFG, CF_PING_INTERVAL, &ping_interval) == CONFIG_FALSE) {
+        APPLOG(APPLOG_ERR, "{{{CFG}}} ping interval cfg not exist!");
+        goto CF_LOAD_ERR;
+    } else {
+        if (ping_interval <= 0) {
+            APPLOG(APPLOG_ERR, "{{{CFG}}} ping interval[%d] is invalid!", ping_interval);
+            goto CF_LOAD_ERR;
+        }
+        SERVER_CONF.ping_interval = ping_interval;
+        APPLOG(APPLOG_ERR, "{{{CFG}}} ping interval is [%d]", SERVER_CONF.ping_interval);
+    }
+    
+    /* ping timeout */
+    int ping_timeout = 0;
+    if (config_lookup_int(&CFG, CF_PING_TIMEOUT, &ping_timeout) == CONFIG_FALSE) {
+        APPLOG(APPLOG_ERR, "{{{CFG}}} ping timeout cfg not exist!");
+        goto CF_LOAD_ERR;
+    } else { 
+        if (ping_timeout <= 0) {
+            APPLOG(APPLOG_ERR, "{{{CFG}}} ping timeout[%d] is invalid!", ping_timeout);
+            goto CF_LOAD_ERR;
+        }
+        SERVER_CONF.ping_timeout = ping_timeout;
+        APPLOG(APPLOG_ERR, "{{{CFG}}} ping timeout is [%d]", SERVER_CONF.ping_timeout);
+    }
+
+    /* pkt_log enable */
+    int pkt_log = 0;
+    if (config_lookup_int(&CFG, CF_PKT_LOG, &pkt_log) == CONFIG_FALSE) {
+        APPLOG(APPLOG_ERR, "{{{CFG}}} pkt log cfg not exist!");
+        goto CF_LOAD_ERR;
+    } else {
+        SERVER_CONF.pkt_log = (pkt_log == 1 ? 1 : 0);
+        APPLOG(APPLOG_ERR, "{{{CFG}}} pkt log is [%s]", SERVER_CONF.pkt_log == 1 ? "ON" : "OFF");
     }
 
 	/* certification file cfg loading */
     if (config_lookup_string(&CFG, CF_CERT_FILE, &str) == CONFIG_FALSE) {
-		APPLOG(APPLOG_ERR, "cert file cfg not exist\n");
+		APPLOG(APPLOG_ERR, "{{{CFG}}} cert file cfg not exist!");
         goto CF_LOAD_ERR;
     } else {
 #ifndef TEST
@@ -162,15 +306,15 @@ int config_load()
 		sprintf(SERVER_CONF.cert_file, "%s", str);
 #endif
 		if (access(SERVER_CONF.cert_file, F_OK) < 0) {
-			APPLOG(APPLOG_ERR, "cert file[%s] is not exist", SERVER_CONF.cert_file);
+			APPLOG(APPLOG_ERR, "{{{CFG}}} cert file[%s] is not exist!", SERVER_CONF.cert_file);
 			goto CF_LOAD_ERR;
 		}
-        APPLOG(APPLOG_ERR, "cert file name is [%s]", SERVER_CONF.cert_file);
+        APPLOG(APPLOG_ERR, "{{{CFG}}} cert file name is [%s]", SERVER_CONF.cert_file);
     }
 
 	/* key file cfg loading */
     if (config_lookup_string(&CFG, CF_KEY_FILE, &str) == CONFIG_FALSE) {
-		APPLOG(APPLOG_ERR, "key file cfg not exist");
+		APPLOG(APPLOG_ERR, "{{{CFG}}} key file cfg not exist!");
         goto CF_LOAD_ERR;
     } else {
 #ifndef TEST
@@ -179,35 +323,35 @@ int config_load()
 		sprintf(SERVER_CONF.key_file, "%s", str);
 #endif
 		if (access(SERVER_CONF.key_file, F_OK) < 0) {
-			APPLOG(APPLOG_ERR, "key file[%s] is not exist", SERVER_CONF.key_file);
+			APPLOG(APPLOG_ERR, "{{{CFG}}} key file[%s] is not exist!", SERVER_CONF.key_file);
 			goto CF_LOAD_ERR;
 		}
-        APPLOG(APPLOG_ERR, "key file name is  [%s]", SERVER_CONF.key_file);
+        APPLOG(APPLOG_ERR, "{{{CFG}}} key file name is [%s]", SERVER_CONF.key_file);
     }
 
     /* lb config load */
     if ((setting = config_lookup(&CFG, CF_LB_CONFIG)) == NULL) {
-        APPLOG(APPLOG_ERR, "lb config loading fail (nok)");
+        APPLOG(APPLOG_ERR, "{{{CFG}}} lb config loading fail!!!");
         goto CF_LOAD_ERR;
     } else {
         SERVER_CONF.lb_config = setting;
-        APPLOG(APPLOG_ERR, "lb config loading success (ok)");
+        APPLOG(APPLOG_ERR, "{{{CFG}}} lb config loading success");
     }
 
 #ifdef OAUTH
 	/* oauth 2.0 secret key */
 	if (config_lookup_string(&CFG, CF_CREDENTIAL, &str) == CONFIG_FALSE) {
-		APPLOG(APPLOG_ERR, "oauth2.0 credential not exist");
+		APPLOG(APPLOG_ERR, "{{{CFG}}} oauth2.0 credential not exist!");
 		goto CF_LOAD_ERR;
 	} else {
 		sprintf(SERVER_CONF.credential, "%s", str);
-		APPLOG(APPLOG_ERR, "oauth2.0 credential is [%s]", SERVER_CONF.credential);
+		APPLOG(APPLOG_ERR, "{{{CFG}}} oauth2.0 credential is [%s]", SERVER_CONF.credential);
 	}
 #endif
 
 	/* allow list loading */
     if ((setting = config_lookup(&CFG, CF_ALLOW_LIST)) == NULL) {
-		APPLOG(APPLOG_ERR, "allow list cfg not exist");
+		APPLOG(APPLOG_ERR, "{{{CFG}}} allow list cfg not exist!");
         goto CF_LOAD_ERR;
     } else {
         int count = config_setting_length(setting);
@@ -215,7 +359,7 @@ int config_load()
 		struct sockaddr_in sa;
 		struct sockaddr_in6 sa6;
 
-        APPLOG(APPLOG_ERR, "allow lists are ... (%d)", count);
+        APPLOG(APPLOG_ERR, "{{{CFG}}} allow lists are ... (%d)", count);
         for (i = 0; i < count; i++) {
             config_setting_t *group;
             config_setting_t *list;
@@ -228,18 +372,18 @@ int config_load()
 			if (group == NULL)
 				continue;
 			if (config_setting_lookup_string (group, "type", &type) == CONFIG_FALSE) {
-				APPLOG(APPLOG_ERR, "group name (%s) member type is null", group->name);
+				APPLOG(APPLOG_ERR, "{{{CFG}}} group name (%s) member type is null!", group->name);
 				continue;
 			}
             list = config_setting_get_member(group, "list");
 			if (list == NULL) {
-				APPLOG(APPLOG_ERR, "group name (%s) member list is null", group->name);
+				APPLOG(APPLOG_ERR, "{{{CFG}}} group name (%s) member list is null!", group->name);
 				continue;
 			}
             list_count = config_setting_length(list);
             list_index = new_list(group->name);
 
-            APPLOG(APPLOG_ERR, "%s have %d item", group->name, list_count);
+            APPLOG(APPLOG_ERR, "{{{CFG}}} %s have %d item", group->name, list_count);
 
             if (list_count == 0) {
                 index ++;
@@ -274,7 +418,7 @@ int config_load()
                 if (inet_pton(AF_INET, ip, &(sa.sin_addr)))  {
                 } else if (inet_pton(AF_INET6, ip, &(sa6.sin6_addr))) {
                 } else {
-                    APPLOG(APPLOG_ERR, "DBG, incorrect numeric ip [%s]", ip);
+                    APPLOG(APPLOG_ERR, "{{{CFG}}} incorrect numeric ip [%s]!", ip);
                     continue;
                 }
 				if (max <= 0 || max >= 65535) continue;
@@ -286,7 +430,7 @@ int config_load()
 
 				index++; // from 1 ~
 				if (index >= MAX_LIST_NUM) {
-					APPLOG(APPLOG_ERR, "allow list exceed max num[%d]", MAX_LIST_NUM);
+					APPLOG(APPLOG_ERR, "{{{CFG}}} allow list exceed max num[%d]!", MAX_LIST_NUM);
 					break;
 				}
                 ALLOW_LIST[index].index = index;
@@ -310,8 +454,9 @@ int config_load()
 		}
 	}
 
-    APPLOG(APPLOG_ERR, "=====================================================================");
-    APPLOG(APPLOG_ERR, "all cfg loading success\n");
+
+	APPLOG(APPLOG_ERR, "==============================================================================================");
+	APPLOG(APPLOG_ERR, "{{{CFG}}} all cfg loading success");
 
 	config_set_tab_width(&CFG, 4);
 	config_write_file(&CFG, CONFIG_PATH);
@@ -319,8 +464,8 @@ int config_load()
     return (0);
 
 CF_LOAD_ERR:
-    APPLOG(APPLOG_ERR, "=====================================================================");
-    APPLOG(APPLOG_ERR, "cfg loading fail");
+	APPLOG(APPLOG_ERR, "==============================================================================================");
+	APPLOG(APPLOG_ERR, "{{{CFG}}} cfg loading fail");
 
 	/* if init fail, destry and program exit */
     config_destroy(&CFG);
@@ -332,7 +477,7 @@ int addcfg_client_hostname(char *hostname, char *type)
     int i, found = 0;
 
     if ((setting = config_lookup(&CFG, CF_ALLOW_LIST)) == NULL) {
-        APPLOG(APPLOG_ERR, "allow list cfg not exist");
+        APPLOG(APPLOG_ERR, "%s() allow list cfg not exist!", __func__);
         goto CF_ADD_CLI_HOSTNAME_ERR;
     } else {
         config_setting_t *group;
@@ -383,7 +528,7 @@ int addcfg_client_ipaddr(int id, char *ipaddr, int max)
     config_setting_t *setting;
 
     if ((setting = config_lookup(&CFG, CF_ALLOW_LIST)) == NULL) {
-        APPLOG(APPLOG_ERR, "allow list cfg not exist");
+        APPLOG(APPLOG_ERR, "%s() allow list cfg not exist!", __func__);
 		goto CF_ADD_CLI_IPADDR_ERR;
 	} else {
 		config_setting_t *group;
@@ -406,18 +551,8 @@ int addcfg_client_ipaddr(int id, char *ipaddr, int max)
 		/* if first add, delete null row from raw-table */
 		list_count = config_setting_length(list);
 		if (list_count == 0) {
-		 	APPLOG(APPLOG_ERR, "%s have %d item", group->name, list_count);
+		 	APPLOG(APPLOG_DEBUG, "%s() check, %s have %d item", __func__, group->name, list_count);
 		}
-
-		config_setting_t *item = config_setting_add(list, NULL,  CONFIG_TYPE_GROUP);
-		config_setting_t *val;
-
-		val = config_setting_add(item, "ip", CONFIG_TYPE_STRING);
-		config_setting_set_string(val, ipaddr);
-		val = config_setting_add(item, "max", CONFIG_TYPE_INT);
-		config_setting_set_int(val, max);
-		val = config_setting_add(item, "act", CONFIG_TYPE_STRING);
-		config_setting_set_string(val, "DACT");
 
 		if ((list_index = get_list(group->name)) < 0)
 			goto CF_ADD_CLI_IPADDR_ERR;
@@ -440,6 +575,19 @@ int addcfg_client_ipaddr(int id, char *ipaddr, int max)
 				}
 			}
 		}
+
+		config_setting_t *item = config_setting_add(list, NULL,  CONFIG_TYPE_GROUP);
+		config_setting_t *val;
+
+		val = config_setting_add(item, "ip", CONFIG_TYPE_STRING);
+		config_setting_set_string(val, ipaddr);
+		val = config_setting_add(item, "max", CONFIG_TYPE_INT);
+		config_setting_set_int(val, max);
+		val = config_setting_add(item, "act", CONFIG_TYPE_STRING);
+		config_setting_set_string(val, "DACT");
+		val = config_setting_add(item, "auth_act", CONFIG_TYPE_INT);
+		config_setting_set_int(val, 0);
+
 		for (i = 1; i < MAX_LIST_NUM; i++) {
 			if (ALLOW_LIST[i].used == 0) {
 				ALLOW_LIST[i].index = i;
@@ -471,7 +619,7 @@ int actcfg_http_client(int id, int ip_exist, char *ipaddr, int change_to_act)
     config_setting_t *setting;
 
     if ((setting = config_lookup(&CFG, CF_ALLOW_LIST)) == NULL) {
-        APPLOG(APPLOG_ERR, "allow list cfg not exist");
+        APPLOG(APPLOG_ERR, "%s() allow list cfg not exist", __func__);
         goto CF_ACT_CLIENT_ERR;
     } else {
         config_setting_t *group;
@@ -551,13 +699,15 @@ int actcfg_http_client(int id, int ip_exist, char *ipaddr, int change_to_act)
 				for (j = 0; j < MAX_LIST_NUM; j++) {
 					if (ALLOW_LIST[i].client[j].occupied != 1)
 						continue;
-					APPLOG(APPLOG_ERR, "DBG delete thrd %d sess %d",
-						ALLOW_LIST[i].client[j].thrd_idx, ALLOW_LIST[i].client[j].sess_idx);
+					APPLOG(APPLOG_DEBUG, "%s() delete thrd %d sess %d",
+							__func__,
+							ALLOW_LIST[i].client[j].thrd_idx, 
+							ALLOW_LIST[i].client[j].sess_idx);
 					thrd_idx = ALLOW_LIST[i].client[j].thrd_idx;
 					set_intl_req_msg(&intl_req, ALLOW_LIST[i].client[j].thrd_idx, 0,
 							ALLOW_LIST[i].client[j].sess_idx, ALLOW_LIST[i].client[j].session_id, 0, HTTP_INTL_SESSION_DEL);
 					if (-1 == msgsnd(THRD_WORKER[thrd_idx].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0)) {
-						APPLOG(APPLOG_ERR, "some err in %s msgq_idx %ld thrd_idx %d session_idx %d ",
+						APPLOG(APPLOG_ERR, "%s() msg snd fail!!! (msgq_idx %ld thrd_idx %d session_idx %d)",
 								__func__, intl_req.msgq_index, intl_req.tag.thrd_index, intl_req.tag.session_index);
 						continue;
 					}
@@ -580,7 +730,7 @@ int chgcfg_client_max_cnt(int id, char *ipaddr, int max)
     config_setting_t *setting;
 
     if ((setting = config_lookup(&CFG, CF_ALLOW_LIST)) == NULL) {
-        APPLOG(APPLOG_ERR, "allow list cfg not exist");
+        APPLOG(APPLOG_ERR, "%s() allow list cfg not exist", __func__);
         goto CF_CHG_CLIENT_MAX_ERR;
     } else {
 		config_setting_t *group;
@@ -664,7 +814,7 @@ int delcfg_client_ipaddr(int id, char *ipaddr)
     //const char *str;
 
     if ((setting = config_lookup(&CFG, CF_ALLOW_LIST)) == NULL) {
-        APPLOG(APPLOG_ERR, "allow list cfg not exist");
+        APPLOG(APPLOG_ERR, "%s() allow list cfg not exist");
         goto CF_DEL_CLI_IPADDR_ERR;
     } else {
 		config_setting_t *group;
@@ -725,7 +875,7 @@ int delcfg_client_ipaddr(int id, char *ipaddr)
 
 		/* if all ipaddr withdraw */
 		list_count = config_setting_length(list); {
-			APPLOG(APPLOG_ERR, "name (%s) have item (%d)", group->name, list_count);
+			APPLOG(APPLOG_DEBUG, "%s() check, name (%s) have item (%d)", __func__, group->name, list_count);
 		}
 		if (list_count == 0) {
 			for (i = 1; i < MAX_LIST_NUM; i++) {
@@ -760,7 +910,7 @@ int delcfg_client_hostname(int id)
     config_setting_t *setting;
 
     if ((setting = config_lookup(&CFG, CF_ALLOW_LIST)) == NULL) {
-        APPLOG(APPLOG_ERR, "allow list cfg not exist");
+        APPLOG(APPLOG_ERR, "%s() allow list cfg not exist", __func__);
         goto CF_DEL_CLI_HOSTNAME_ERR;
     } else {
         config_setting_t *group;
@@ -778,7 +928,7 @@ int delcfg_client_hostname(int id)
             goto CF_DEL_CLI_HOSTNAME_ERR;
         list_count = config_setting_length(list);
         if (list_count != 0) {
-            APPLOG(APPLOG_ERR, "%s have %d item", group->name, list_count);
+            APPLOG(APPLOG_DEBUG, "%s() check, %s have %d item", __func__, group->name, list_count);
             goto CF_DEL_CLI_HOSTNAME_ERR;
         }
 

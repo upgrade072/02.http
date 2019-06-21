@@ -3,6 +3,7 @@
 extern allow_list_t  ALLOW_LIST[MAX_LIST_NUM];
 extern https_ctx_t *HttpsCtx[MAX_THRD_NUM];
 extern http2_session_data SESS[MAX_THRD_NUM][MAX_SVR_NUM];
+extern server_conf SERVER_CONF;
 
 https_ctx_t *get_context(int thrd_idx, int ctx_idx, int used)
 {
@@ -32,8 +33,13 @@ void assign_new_ctx_info(https_ctx_t *https_ctx, http2_session_data *session_dat
 	https_ctx->user_ctx.head.session_index = session_data->session_index;
 	https_ctx->user_ctx.head.session_id = session_data->session_id;
 	https_ctx->user_ctx.head.stream_id = stream_data->stream_id;
-	sprintf(https_ctx->user_ctx.head.destHost, "%s", session_data->hostname);
 	sprintf(https_ctx->user_ctx.head.destType, "%s", session_data->type);
+	sprintf(https_ctx->user_ctx.head.destHost, "%s", session_data->hostname);
+
+	if (session_data->is_direct_session) {
+		https_ctx->is_direct_ctx = 1;
+		https_ctx->relay_fep_tag = session_data->relay_fep_tag;
+	}
 }
 
 void assign_rcv_ctx_info(https_ctx_t *https_ctx, AhifHttpCSMsgType *ResMsg)
@@ -193,4 +199,85 @@ void write_list(char *buff) {
         }
     }
 	resLen += sprintf(buff + resLen, "------------------------------------------------------------------------------------------------------------------\n");
+}
+
+
+// https outbound, log write with in 1step
+void log_pkt_send(char *prefix, nghttp2_nv *hdrs, int hdrs_len, char *body, int body_len)
+{
+    FILE *temp_file = NULL;
+    size_t file_size = 0;
+    char *ptr = NULL;
+
+    if (SERVER_CONF.pkt_log != 1)
+        return;
+
+    temp_file = open_memstream(&ptr, &file_size); // buff size auto-grow
+    if (temp_file == NULL) {
+        APPLOG(APPLOG_ERR, "{{{PKT}}} in %s fail to call open_memstream!", __func__);
+        return;
+    }
+    print_headers(temp_file, hdrs, hdrs_len);
+    util_dumphex(temp_file, body, body_len);
+
+    // 1) close file
+    fclose(temp_file);
+    // 2) use ptr
+    APPLOG(APPLOG_ERR, "{{{PKT}}} HTTPS SEND %s\n\
+--------------------------------------------------------------------------------------------------\n\
+%s\
+==================================================================================================\n",
+    prefix, ptr);
+    // 3) free ptr
+    free(ptr);
+}
+
+// https inbound, logwrite step 1 of 2 (headres receive)
+void log_pkt_head_recv(https_ctx_t *https_ctx, const uint8_t *name, size_t namelen, const uint8_t *value, size_t valuelen)
+{
+    if (SERVER_CONF.pkt_log != 1)
+        return;
+
+    if (https_ctx->recv_log_file == NULL) {
+        https_ctx->recv_log_file = open_memstream(&https_ctx->log_ptr, &https_ctx->file_size);
+		if (https_ctx->recv_log_file == NULL) {
+			APPLOG(APPLOG_ERR, "{{{PKT}}} in %s fail to call open_memstream!", __func__);
+			return;
+		}
+    }
+    print_header(https_ctx->recv_log_file, name, namelen, value, valuelen);
+}
+
+// https inbound, logwrite step 2 of 2 (all of body received or stream closed)
+void log_pkt_end_stream(int stream_id, https_ctx_t *https_ctx)
+{
+    if (SERVER_CONF.pkt_log != 1)
+        return;
+
+    if (https_ctx->recv_log_file == NULL) {
+        https_ctx->recv_log_file = open_memstream(&https_ctx->log_ptr, &https_ctx->file_size);
+		if (https_ctx->recv_log_file == NULL) {
+			APPLOG(APPLOG_ERR, "{{{PKT}}} in %s fail to call open_memstream!", __func__);
+			return;
+		}
+    }
+	if (https_ctx->user_ctx.head.bodyLen > 0)
+		util_dumphex(https_ctx->recv_log_file, https_ctx->user_ctx.body, https_ctx->user_ctx.head.bodyLen);
+
+    // 1) close file
+    fclose(https_ctx->recv_log_file);
+	https_ctx->recv_log_file = NULL;
+    // 2) use ptr
+   APPLOG(APPLOG_ERR, "{{{PKT}}} HTTPS RECV http sess/stream(%d:%d) ctx(%d:%d)\n\
+--------------------------------------------------------------------------------------------------\n\
+%s\
+==================================================================================================\n",
+    https_ctx->session_id,
+	stream_id,
+	https_ctx->user_ctx.head.thrd_index,
+	https_ctx->user_ctx.head.ctx_id,
+	https_ctx->log_ptr);
+    // 3) free ptr
+    free(https_ctx->log_ptr);
+	https_ctx->log_ptr = NULL;
 }

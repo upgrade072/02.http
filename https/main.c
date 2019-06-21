@@ -5,10 +5,10 @@ char myProcName[COMM_MAX_NAME_LEN];
 char mySysType[COMM_MAX_VALUE_LEN];
 char mySvrId[COMM_MAX_VALUE_LEN];
 
-#ifdef LOG_APP
+//#ifdef LOG_APP
 int logLevel = APPLOG_DEBUG;
 int *lOG_FLAG = &logLevel;
-#endif
+//#endif
 
 int httpsQid, ixpcQid;
 
@@ -25,6 +25,10 @@ allow_list_t ALLOW_LIST[MAX_LIST_NUM];
 http_stat_t HTTP_STAT;
 
 hdr_index_t VHDR_INDEX[2][MAX_HDR_RELAY_CNT];
+
+// for lb ctx print
+extern lb_global_t LB_CONF;
+extern lb_ctx_t LB_CTX;
 
 static unsigned char next_proto_list[256];
 static size_t next_proto_list_len;
@@ -68,8 +72,8 @@ static SSL_CTX *create_ssl_ctx(const char *key_file, const char *cert_file) {
 
 	ssl_ctx = SSL_CTX_new(SSLv23_server_method());
 	if (!ssl_ctx) {
-		APPLOG(APPLOG_ERR, "Could not create SSL/TLS context: %s",
-				ERR_error_string(ERR_get_error(), NULL));
+		APPLOG(APPLOG_ERR, "%s(), Could not create SSL/TLS context: %s",
+				__func__, ERR_error_string(ERR_get_error(), NULL));
 	}
 	SSL_CTX_set_options(ssl_ctx,
 			SSL_OP_ALL | SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 |
@@ -78,17 +82,17 @@ static SSL_CTX *create_ssl_ctx(const char *key_file, const char *cert_file) {
 
 	ecdh = EC_KEY_new_by_curve_name(NID_X9_62_prime256v1);
 	if (!ecdh) {
-		APPLOG(APPLOG_ERR, "EC_KEY_new_by_curv_name failed: %s",
-				ERR_error_string(ERR_get_error(), NULL));
+		APPLOG(APPLOG_ERR, "%s() EC_KEY_new_by_curv_name failed: %s",
+				__func__, ERR_error_string(ERR_get_error(), NULL));
 	}
 	SSL_CTX_set_tmp_ecdh(ssl_ctx, ecdh);
 	EC_KEY_free(ecdh);
 
 	if (SSL_CTX_use_PrivateKey_file(ssl_ctx, key_file, SSL_FILETYPE_PEM) != 1) {
-		APPLOG(APPLOG_ERR, "Could not read private key file %s", key_file);
+		APPLOG(APPLOG_ERR, "%s() Could not read private key file %s", __func__, key_file);
 	}
 	if (SSL_CTX_use_certificate_chain_file(ssl_ctx, cert_file) != 1) {
-		APPLOG(APPLOG_ERR, "Could not read certificate file %s", cert_file);
+		APPLOG(APPLOG_ERR, "%s() Could not read certificate file %s", __func__, cert_file);
 	}
 
 	next_proto_list[0] = NGHTTP2_PROTO_VERSION_ID_LEN;
@@ -110,8 +114,8 @@ static SSL *create_ssl(SSL_CTX *ssl_ctx) {
 	SSL *ssl;
 	ssl = SSL_new(ssl_ctx);
 	if (!ssl) {
-		APPLOG(APPLOG_ERR, "Could not create SSL/TLS session object: %s",
-				ERR_error_string(ERR_get_error(), NULL));
+		APPLOG(APPLOG_ERR, "%s() Could not create SSL/TLS session object: %s",
+				__func__, ERR_error_string(ERR_get_error(), NULL));
 	}
 	return ssl;
 }
@@ -190,12 +194,12 @@ static http2_session_data *create_http2_session_data(app_context *app_ctx,
 
 	if ((rv = getnameinfo(addr, (socklen_t)addrlen, host, sizeof(host), NULL, 0, 
 					NI_NUMERICHOST)) != 0) {
-        APPLOG(APPLOG_DEBUG, "%s)%d) (%s) getnameinfo fail", __func__, __LINE__, host);
+        APPLOG(APPLOG_DEBUG, "%s():%d (%s) getnameinfo fail", __func__, __LINE__, host);
 		return NULL;
     }
 
 	if ((allowlist_index = check_allow(host)) < 0) {
-        APPLOG(APPLOG_DEBUG, "%s)%d) (%s) allow list find fail", __func__, __LINE__, host);
+        APPLOG(APPLOG_DETAIL, "%s():%d (conn from: %s) allow list fail to find (or connection full)", __func__, __LINE__, host);
 		return NULL;
     }
 
@@ -204,9 +208,8 @@ static http2_session_data *create_http2_session_data(app_context *app_ctx,
 	 * 종료 시 해당 세션의 ctx 수집 과정에서 신규 생성된 세션과의 충돌이 생기지 않도록 한다 
 	 */
 	index = find_least_conn_worker();
-    int pos;
     for (i = 0 ; i < MAX_SVR_NUM; i++) {
-        pos = (SESS_IDX + i) % MAX_SVR_NUM;
+        int pos = (SESS_IDX + i) % MAX_SVR_NUM;
         if (SESS[index][pos].used == 0) {
             found = 1;
             SESS_IDX = sess_idx = pos;
@@ -235,41 +238,73 @@ static http2_session_data *create_http2_session_data(app_context *app_ctx,
 	/* use when session DACT */
 	add_to_allowlist(allowlist_index, index, sess_idx, session_data->session_id);
 
-	ssl = create_ssl(app_ctx->ssl_ctx);
-	APPLOG(APPLOG_ERR, "%s) thread [%d], accept new client, session id (%d)", __func__, index, session_data->session_id);
+	if (app_ctx->ssl_ctx != NULL) {
+		ssl = create_ssl(app_ctx->ssl_ctx);
+		APPLOG(APPLOG_DETAIL, "TLS] %s() thread [%d], accept new client, session id (%d)", 
+				__func__, index, session_data->session_id);
+	} else {
+		APPLOG(APPLOG_DETAIL, "TCP] %s() thread [%d], accept new client, session id (%d)", 
+				__func__, index, session_data->session_id);
+	}
 
 	setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (char *)&val, sizeof(val));
 	session_data->thrd_index = index;
-	session_data->bev = bufferevent_openssl_socket_new(
-			THRD_WORKER[index].evbase, fd, ssl, BUFFEREVENT_SSL_ACCEPTING,
-			BEV_OPT_CLOSE_ON_FREE | BEV_OPT_DEFER_CALLBACKS);
+	if (app_ctx->ssl_ctx != NULL) {
+		APPLOG(APPLOG_DETAIL, "DBG}}} SSL CONNECTED !");
+		sprintf(session_data->scheme, "%s", "https");
+		session_data->bev = bufferevent_openssl_socket_new(
+				THRD_WORKER[index].evbase, fd, ssl, BUFFEREVENT_SSL_ACCEPTING,
+				BEV_OPT_CLOSE_ON_FREE | BEV_OPT_DEFER_CALLBACKS);
+	} else {
+		APPLOG(APPLOG_DETAIL, "DBG}}} TCP CONNECTED !");
+		sprintf(session_data->scheme, "%s", "http");
+		session_data->bev = bufferevent_socket_new(
+				THRD_WORKER[index].evbase, fd,
+				BEV_OPT_CLOSE_ON_FREE | BEV_OPT_DEFER_CALLBACKS);
+	}
+#if 0
 	bufferevent_enable(session_data->bev, EV_READ | EV_WRITE);
+#endif
 
 	session_data->client_addr = strdup(host);
 	session_data->client_port = ntohs(get_in_port(addr));
 
+	/* for direct relay */
+	if (app_ctx->is_direct_sock) {
+		session_data->is_direct_session = 1;
+		session_data->relay_fep_tag = app_ctx->relay_fep_tag;
+	}
+
+	/* schlee, if tcp connection, never happen EVENT_CONNECTED */
+	if (app_ctx->ssl_ctx == NULL) {
+		eventcb(session_data->bev, BEV_EVENT_CONNECTED, session_data);
+	}
+
     /* schlee, if evhandler not assigned, it cause send_ping core error */
     bufferevent_setcb(session_data->bev, readcb, writecb, eventcb, session_data);
+	bufferevent_enable(session_data->bev, EV_READ | EV_WRITE);
 
 	return session_data;
 }
 
 static void delete_http2_session_data(http2_session_data *session_data) {
 	http2_stream_data *stream_data;
-	SSL *ssl = bufferevent_openssl_get_ssl(session_data->bev);
 
 	session_data->connected = 0;
 
 	/* stat HTTP_DISCONN */
 	http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_DISCONN);
 
-	APPLOG(APPLOG_ERR, "%s) peer %s disconnected", __func__, session_data->client_addr);
+	APPLOG(APPLOG_DETAIL, "%s() peer %s disconnected", __func__, session_data->client_addr);
 	THRD_WORKER[session_data->thrd_index].client_num --;
 	ALLOW_LIST[session_data->allowlist_index].curr --;
 	del_from_allowlist(session_data->allowlist_index, session_data->thrd_index, session_data->session_index);
 
-	if (ssl) {
-		SSL_shutdown(ssl);
+	if (!strcmp(session_data->scheme, "https")) {
+		SSL *ssl = bufferevent_openssl_get_ssl(session_data->bev);
+		if (ssl) {
+			SSL_shutdown(ssl);
+		}
 	}
 	bufferevent_free(session_data->bev);
 	nghttp2_session_del(session_data->session);
@@ -291,7 +326,7 @@ static int session_send(http2_session_data *session_data) {
 	int rv;
 	rv = nghttp2_session_send(session_data->session);
 	if (rv != 0) {
-		warnx("Fatal error: %s", nghttp2_strerror(rv));
+		APPLOG(APPLOG_ERR, "Fatal error: %s", nghttp2_strerror(rv));
 		return (-1);
 	}
 	return 0;
@@ -307,13 +342,17 @@ static int session_recv(http2_session_data *session_data) {
 	size_t datalen = evbuffer_get_length(input);
 	unsigned char *data = evbuffer_pullup(input, -1);
 
+	if (session_data->session == NULL) {
+		APPLOG(APPLOG_ERR, "Fatal error: session_data->session is NULL!");
+		return (-1);
+	}
 	readlen = nghttp2_session_mem_recv(session_data->session, data, datalen);
 	if (readlen < 0) {
-		warnx("Fatal error: %s", nghttp2_strerror((int)readlen));
+		APPLOG(APPLOG_ERR, "Fatal error: %s", nghttp2_strerror((int)readlen));
 		return (-1);
 	}
 	if (evbuffer_drain(input, (size_t)readlen) != 0) {
-		warnx("Fatal error: evbuffer_drain failed");
+		APPLOG(APPLOG_ERR, "Fatal error: evbuffer_drain failed");
 		return (-1);
 	}
 	if (session_send(session_data) != 0) {
@@ -359,16 +398,11 @@ static int send_response(nghttp2_session *session, int32_t stream_id,
 
 	rv = nghttp2_submit_response(session, stream_id, nva, nvlen, &data_prd);
 	if (rv != 0) {
-		warnx("Fatal error: %s", nghttp2_strerror(rv));
+		APPLOG(APPLOG_ERR, "Fatal error: %s", nghttp2_strerror(rv));
 		return (-1);
 	}
 
-#ifndef PERFORM
-	fprintf(stderr, "Response headers:\n");
-	print_headers(stderr, nva, nvlen);
-	fwrite(ptr, 1, strlen(ptr), stderr);
-	fprintf(stderr, "\n");
-#endif
+	// Send Response header (this func used in only error case
 
 	return 0;
 }
@@ -380,16 +414,13 @@ static ssize_t ptr_read_callback_ctx(nghttp2_session *session, int32_t stream_id
 	https_ctx_t *https_ctx = (https_ctx_t *)source->ptr;
 	int len = https_ctx->user_ctx.head.bodyLen;
 
-	if (len >= length) {
-		APPLOG(APPLOG_ERR, "%s) length(%d) exceed maximum val(%zu)",
-				__func__, len, length);
-		return 0;
-	} else {
-		memcpy(buf, https_ctx->user_ctx.body, len);
-		//DumpHex(https_ctx->user_ctx.body, len);
-	}
+    if (len >= length) {
+        APPLOG(APPLOG_ERR, "%s() body_len(%d) exceed maximum data_prd_len(%zu)!",
+                __func__, len, length);
+        len = length;
+    }
+    memcpy(buf, https_ctx->user_ctx.body, len);
     *data_flags |= NGHTTP2_DATA_FLAG_EOF;
-
     return len;
 }
 static int send_response_by_ctx(nghttp2_session *session, int32_t stream_id,
@@ -400,8 +431,17 @@ static int send_response_by_ctx(nghttp2_session *session, int32_t stream_id,
 	data_prd.read_callback = ptr_read_callback_ctx;
 
 	rv = nghttp2_submit_response(session, stream_id, nva, nvlen, &data_prd);
+
+	char log_pfx[1024] = {0,};
+	sprintf(log_pfx, "HTTPS ctx(%d:%d) http sess/stream(%d:%d)",
+			https_ctx->user_ctx.head.thrd_index,
+			https_ctx->user_ctx.head.ctx_id,
+			https_ctx->session_id,
+			stream_id);
+	log_pkt_send(log_pfx, nva, nvlen, https_ctx->user_ctx.body, https_ctx->user_ctx.head.bodyLen);
+
 	if (rv != 0) {
-		warnx("Fatal error: %s", nghttp2_strerror(rv));
+		APPLOG(APPLOG_ERR, "Fatal error: %s", nghttp2_strerror(rv));
 		return (-1);
 	}
 
@@ -443,16 +483,12 @@ static int on_header_callback(nghttp2_session *session,
 	char *header_name = (char *)name;
 	char *header_value = (char *)value;
 
-	//fprintf(stderr, "{{{dbg}}}} header %s value %s\n", name, value);
-
 	switch (frame->hd.type) {
 		case NGHTTP2_HEADERS:
 			if (frame->headers.cat != NGHTTP2_HCAT_REQUEST) {
 				break;
 			}
-#ifndef PERFORM
-			print_header(stderr, name, namelen, value, valuelen);
-#endif
+			// Partial http2 header received
 
 			stream_id = frame->hd.stream_id;
 			stream_data = nghttp2_session_get_stream_user_data(session, stream_id);
@@ -463,9 +499,11 @@ static int on_header_callback(nghttp2_session *session,
 			thrd_idx = session_data->thrd_index;
 			idx = stream_data->ctx_id;
 			if ((https_ctx = get_context(thrd_idx, idx, 1)) == NULL) {
-				APPLOG(APPLOG_DEBUG, "%s) get_context fail", __func__);
+				APPLOG(APPLOG_DEBUG, "%s() get_context fail", __func__);
 				break;
 			}
+
+			log_pkt_head_recv(https_ctx, name, namelen, value, valuelen);
 
 			if (!strcmp(header_name, HDR_PATH)) {
 				divide_string(header_value, '?', 
@@ -504,10 +542,11 @@ static int on_begin_headers_callback(nghttp2_session *session,
 	int idx;
 	https_ctx_t *https_ctx = NULL;
 
-	if (frame->hd.type != NGHTTP2_HEADERS ||
-			frame->headers.cat != NGHTTP2_HCAT_REQUEST) {
+	/* this func normally handle data recv */
+	if (frame->hd.type != NGHTTP2_HEADERS || frame->headers.cat != NGHTTP2_HCAT_REQUEST) {
 		return 0;
 	}
+
 	/* stat HTTP_RX_REQ */
 	http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_RX_REQ);
 
@@ -519,14 +558,13 @@ static int on_begin_headers_callback(nghttp2_session *session,
 	idx = Get_CtxId(session_data->thrd_index);
 
 	if (idx < 0) {
-		APPLOG(APPLOG_DEBUG, "%s) Assign Context fail thrd[%d]", __func__, session_data->thrd_index);
+		APPLOG(APPLOG_ERR, "%s() Assign Context fail thrd[%d]!", __func__, session_data->thrd_index);
 		if (error_reply(session, stream_data, 500, ERROR_INTERNAL) != 0) {
 			return NGHTTP2_ERR_CALLBACK_FAILURE;
 		}
 	} else {
-		//fprintf(stderr, "{{{DBG}}} ASSIGN NEW CTX TH %d CTX %d\n", session_data->thrd_index, idx);
 		if ((https_ctx = get_context(session_data->thrd_index, idx, 0)) == NULL) {
-			APPLOG(APPLOG_DEBUG, "%s) get_context fail", __func__);
+			APPLOG(APPLOG_ERR, "%s() get_context fail!", __func__);
 			return NGHTTP2_ERR_CALLBACK_FAILURE;
 		}
 		clear_new_ctx(https_ctx);
@@ -542,9 +580,7 @@ static int on_begin_headers_callback(nghttp2_session *session,
 		save_session_info(https_ctx, session_data->thrd_index, session_data->session_index, session_data->session_id, session_data->client_addr);
 	}
 
-#ifndef PERFORM
-	fprintf(stderr, "Request headers:\n");
-#endif
+	// Request header started from here
 
 	return 0;
 }
@@ -561,25 +597,25 @@ int check_access_token(char *token)
 	ret = jwt_decode(&jwt, token, (const unsigned char *)key, key_len);
 
 	if (ret != 0 || jwt == NULL) {
-		fprintf(stderr, "dbg} jwt parse fail\n");
+		APPLOG(APPLOG_ERR, "{{{JWT}}} jwt parse fail!");
 		return (-1);
 	}
 
 	char *out = jwt_dump_str(jwt, 1);
-	fprintf(stderr, "dbg} recv token (pretty)\n%s\n", out);
+	APPLOG(APPLOG_DETAIL, "{{{JWT}}} recv token (pretty)\n%s", out);
 	free(out);
 
 	long double expiration = jwt_get_grant_int(jwt, "expiration");
 	time_t current = time(NULL);
 	if (expiration == 0 || expiration < current) {
-		fprintf(stderr, "dbg} wrong expiration\n");
+		APPLOG(APPLOG_ERR, "{{{JWT}}} wrong expiration!");
 		jwt_free(jwt);
 		return (-1);
 	}
 
 	const char *audience = jwt_get_grant(jwt, "audience");
 	if (audience == NULL || strcmp(audience, mySvrId)) {
-		fprintf(stderr, "dbg} wrong audience\n");
+		APPLOG(APPLOG_ERR, "{{{JWT}}} wrong audience!");
 		jwt_free(jwt);
 		return (-1);
 	}
@@ -601,9 +637,13 @@ static int on_request_recv(nghttp2_session *session,
 	int ctx_id = stream_data->ctx_id;
 
 	if ((https_ctx = get_context(thrd_idx, ctx_id, 1)) == NULL) {
-		APPLOG(APPLOG_DEBUG, "%s) get_context fail", __func__);
+		APPLOG(APPLOG_ERR, "%s() get_context fail", __func__);
 		return 0;
 	}
+
+	// Whole http body received
+
+	log_pkt_end_stream(stream_data->stream_id, https_ctx);
 
 	if (!https_ctx->user_ctx.head.rsrcUri[0]) {
 		if (error_reply(session, stream_data, 400, ERROR_BADREQ) != 0)
@@ -640,7 +680,7 @@ static int on_request_recv(nghttp2_session *session,
 	if (send_request_to_fep(https_ctx) < 0) {
 		// all context will release in stream close state
 		if (error_reply(session, stream_data, 500, ERROR_INTERNAL) != 0) {
-			APPLOG(APPLOG_DEBUG, "%s) send error_reply fail", __func__);
+			APPLOG(APPLOG_ERR, "%s() send error_reply fail!", __func__);
 		} 
 	}
 	memset(https_ctx->user_ctx.head.contentEncoding, 0x00, sizeof(https_ctx->user_ctx.head.contentEncoding));
@@ -651,17 +691,20 @@ static int on_request_recv(nghttp2_session *session,
 static int on_frame_recv_callback(nghttp2_session *session,
 		const nghttp2_frame *frame, void *user_data) {
 	http2_session_data *session_data = (http2_session_data *)user_data;
-	http2_stream_data *stream_data;
 
 	switch (frame->hd.type) {
+		/* for RCV RST STAT */
+		case NGHTTP2_RST_STREAM:
+			http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_RX_RST);
+			break;
 		case NGHTTP2_PING:
-			session_data->ping_snd = 0;
+			clock_gettime(CLOCK_REALTIME, &session_data->ping_rcv_time);
 			break;
 		case NGHTTP2_DATA:
 		case NGHTTP2_HEADERS:
 			/* Check that the client request has finished */
 			if (frame->hd.flags & NGHTTP2_FLAG_END_STREAM) {
-				stream_data =
+				http2_stream_data *stream_data = 
 					nghttp2_session_get_stream_user_data(session, frame->hd.stream_id);
 				/* For DATA and HEADERS frame, this callback may be called after
 				   on_stream_close_callback. Check that stream still alive. */
@@ -685,7 +728,6 @@ static int on_data_chunk_recv_callback(nghttp2_session *session, uint8_t flags,
 	(void)flags;
 	http2_stream_data *stream_data = NULL;
 	https_ctx_t *https_ctx = NULL;
-	int thrd_idx, idx;
 
 	/* no data, do nothing */
 	if (len == 0) return 0;
@@ -693,11 +735,11 @@ static int on_data_chunk_recv_callback(nghttp2_session *session, uint8_t flags,
 	/* re-assemble */
 	stream_data = nghttp2_session_get_stream_user_data(session, stream_id);
 	if (stream_data) {
-        thrd_idx = session_data->thrd_index;
-        idx = stream_data->ctx_id;
+        int thrd_idx = session_data->thrd_index;
+        int idx = stream_data->ctx_id;
 
 		if ((https_ctx = get_context(thrd_idx, idx, 1)) == NULL) {
-			APPLOG(APPLOG_DEBUG, "%s) get_context fail", __func__);
+			APPLOG(APPLOG_ERR, "%s() get_context fail!", __func__);
 			return 0;
 		}
 
@@ -708,11 +750,9 @@ static int on_data_chunk_recv_callback(nghttp2_session *session, uint8_t flags,
 		memcpy(ptr, data, len);
 		https_ctx->user_ctx.head.bodyLen += len;
 
-#ifndef PERFORM
-		fprintf(stderr, "data += %zu byte\n", len);
-#endif
+		// Partial http2 body received
 	} else {
-		APPLOG(APPLOG_DEBUG, "%s) h2 get stream fail", __func__);
+		APPLOG(APPLOG_DEBUG, "%s() h2 get stream fail!", __func__);
 	}
 
 	return 0;
@@ -741,7 +781,7 @@ static int on_stream_close_callback(nghttp2_session *session, int32_t stream_id,
 	return 0;
 }
 
-static void initialize_nghttp2_session(http2_session_data *session_data) {
+void initialize_nghttp2_session(http2_session_data *session_data) {
 	nghttp2_session_callbacks *callbacks;
 
 	nghttp2_session_callbacks_new(&callbacks);
@@ -765,6 +805,9 @@ static void initialize_nghttp2_session(http2_session_data *session_data) {
 
 	nghttp2_session_server_new(&session_data->session, callbacks, session_data);
 
+	// schlee test code, set session buff 10MB
+	nghttp2_session_set_local_window_size(session_data->session, NGHTTP2_FLAG_NONE, 0, 1 << 30);
+
 	nghttp2_session_callbacks_del(callbacks);
 }
 
@@ -778,7 +821,7 @@ static int send_server_connection_header(http2_session_data *session_data) {
 	/* TODO!!! tuning param */
 	nghttp2_settings_entry iv[5] = {
 		{NGHTTP2_SETTINGS_HEADER_TABLE_SIZE, 65535},
-		{NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS, 1024},
+		{NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS, 65535},
 		{NGHTTP2_SETTINGS_MAX_FRAME_SIZE, 65535},
 		{NGHTTP2_SETTINGS_INITIAL_WINDOW_SIZE, 65535},
 		{NGHTTP2_SETTINGS_MAX_HEADER_LIST_SIZE, 65535}};
@@ -788,7 +831,7 @@ static int send_server_connection_header(http2_session_data *session_data) {
 	rv = nghttp2_submit_settings(session_data->session, NGHTTP2_FLAG_NONE, iv,
 			ARRLEN(iv));
 	if (rv != 0) {
-		warnx("Fatal error: %s", nghttp2_strerror(rv));
+		APPLOG(APPLOG_ERR, "Fatal error: %s", nghttp2_strerror(rv));
 		return (-1);
 	}
 	return 0;
@@ -840,24 +883,26 @@ static void eventcb(struct bufferevent *bev, short events, void *ptr) {
 	if (events & BEV_EVENT_CONNECTED) {
 		const unsigned char *alpn = NULL;
 		unsigned int alpnlen = 0;
-		SSL *ssl;
 		(void)bev;
 
-		APPLOG(APPLOG_ERR, "%s) %s:%d Connected", __func__, session_data->client_addr, session_data->client_port);
+		APPLOG(APPLOG_DETAIL, "%s() %s:%d Connected", __func__, session_data->client_addr, session_data->client_port);
 
-		ssl = bufferevent_openssl_get_ssl(session_data->bev);
+		if (!strcmp(session_data->scheme, "https")) {
+			SSL *ssl = bufferevent_openssl_get_ssl(session_data->bev);
 
-		SSL_get0_next_proto_negotiated(ssl, &alpn, &alpnlen);
+			SSL_get0_next_proto_negotiated(ssl, &alpn, &alpnlen);
 #if OPENSSL_VERSION_NUMBER >= 0x10002000L
-		if (alpn == NULL) {
-			SSL_get0_alpn_selected(ssl, &alpn, &alpnlen);
-		}
+			if (alpn == NULL) {
+				SSL_get0_alpn_selected(ssl, &alpn, &alpnlen);
+			}
 #endif // OPENSSL_VERSION_NUMBER >= 0x10002000L
 
-		if (alpn == NULL || alpnlen != 2 || memcmp("h2", alpn, 2) != 0) {
-			APPLOG(APPLOG_ERR, "%s) %s h2 is not negotiated", __func__, session_data->client_addr);
-			delete_http2_session_data(session_data);
-			return;
+			if (alpn == NULL || alpnlen != 2 || memcmp("h2", alpn, 2) != 0) {
+				APPLOG(APPLOG_ERR, "%s() %s h2 is not negotiated", __func__, session_data->client_addr);
+				delete_http2_session_data(session_data);
+				return;
+			}
+
 		}
 
 		initialize_nghttp2_session(session_data);
@@ -867,17 +912,18 @@ static void eventcb(struct bufferevent *bev, short events, void *ptr) {
 			delete_http2_session_data(session_data);
 			return;
 		}
-  
-        // schlee, ok let's send ping 
-        session_data->connected = CN_CONNECTED;
+
+		// schlee, ok let's send ping 
+		session_data->connected = CN_CONNECTED;
+		clock_gettime(CLOCK_REALTIME, &session_data->ping_rcv_time);
 		return;
 	}
 	if (events & BEV_EVENT_EOF) {
-		APPLOG(APPLOG_ERR, "%s) %s EOF", __func__, session_data->client_addr);
+		APPLOG(APPLOG_DETAIL, "%s() %s EOF", __func__, session_data->client_addr);
 	} else if (events & BEV_EVENT_ERROR) {
-		APPLOG(APPLOG_ERR, "%s) %s network error", __func__, session_data->client_addr);
+		APPLOG(APPLOG_DETAIL, "%s() %s network error", __func__, session_data->client_addr);
 	} else if (events & BEV_EVENT_TIMEOUT) {
-		APPLOG(APPLOG_ERR, "%s) %s timeout", __func__, session_data->client_addr);
+		APPLOG(APPLOG_DETAIL, "%s() %s timeout", __func__, session_data->client_addr);
 	}
 	delete_http2_session_data(session_data);
 }
@@ -888,17 +934,16 @@ static void acceptcb(struct evconnlistener *listener, int fd,
 	app_context *app_ctx = (app_context *)arg;
 	http2_session_data *session_data;
 	(void)listener;
-	char host[NI_MAXHOST];
-	int rv;
 
 	session_data = create_http2_session_data(app_ctx, fd, addr, addrlen);
 
 	if (session_data == NULL) {
-		rv = getnameinfo(addr, (socklen_t)addrlen, host, sizeof(host), NULL, 0, NI_NUMERICHOST);
+		char host[NI_MAXHOST] = {0,};
+		int rv = getnameinfo(addr, (socklen_t)addrlen, host, sizeof(host), NULL, 0, NI_NUMERICHOST);
 		if (rv != 0) {
-			APPLOG(APPLOG_ERR, "%s) create session failed (unknown)", __func__);
+			APPLOG(APPLOG_ERR, "%s() create session failed (unknown)!", __func__);
 		} else {
-			APPLOG(APPLOG_ERR, "%s) create session failed %s", __func__, host);
+			APPLOG(APPLOG_ERR, "%s() create session failed %s!", __func__, host);
 		}
 		/* stat HTTP_DISCONN */
 		http_stat_inc(0, 0, HTTP_CONN);
@@ -929,7 +974,7 @@ static void start_listen(struct event_base *evbase, const char *service,
 
 	rv = getaddrinfo(NULL, service, &hints, &res);
 	if (rv != 0) {
-		APPLOG(APPLOG_ERR, "Could not resolve server address");
+		APPLOG(APPLOG_ERR, "%s() Could not resolve server address", __func__);
 	}
 
 	for (rp = res; rp; rp = rp->ai_next) {
@@ -944,16 +989,17 @@ static void start_listen(struct event_base *evbase, const char *service,
 			return;
 		}
 	}
-	APPLOG(APPLOG_ERR, "Could not start listener");
-
-
+	APPLOG(APPLOG_ERR, "%s() Could not start listener", __func__);
 }
 
 static void initialize_app_context(app_context *app_ctx, SSL_CTX *ssl_ctx,
-		struct event_base *evbase) {
+		struct event_base *evbase, int is_direct_sock, int relay_fep_tag) {
 	memset(app_ctx, 0, sizeof(app_context));
 	app_ctx->ssl_ctx = ssl_ctx;
 	app_ctx->evbase = evbase;
+
+	app_ctx->is_direct_sock = is_direct_sock;
+	app_ctx->relay_fep_tag = relay_fep_tag;
 }
 
 #define MAX_THRD_WAIT_NUM 5
@@ -970,8 +1016,7 @@ void check_thread()
             THRD_WORKER[index].hang_counter = 0;
         }
         if (THRD_WORKER[index].hang_counter >= MAX_THRD_WAIT_NUM) {
-            APPLOG(APPLOG_ERR, "WORKER[%2d] hang detected, restart program", index);
-            fprintf(stderr, "WORKER[%2d] hang detected, restart program\n", index);
+            APPLOG(APPLOG_ERR, "WORKER[%2d] hang detected, restart program!!!", index);
             exit(0);
         }
     }
@@ -1007,17 +1052,20 @@ void main_tick_callback(evutil_socket_t fd, short what, void *arg)
 #ifndef TEST
 	keepalivelib_increase();
 #endif
-	monitor_worker();
-#ifdef TEST
-	IxpcQMsgType Ixpc;
-	stat_function(&Ixpc, SERVER_CONF.worker_num, 0, 1, MSGID_HTTPS_STATISTICS_REPORT);
-#endif
+
+	if (SERVER_CONF.debug_mode == 1) {
+		IxpcQMsgType Ixpc = {0,};
+
+		/* log worker ctx status */
+		monitor_worker();
+		/* log https status */
+		stat_function(&Ixpc, SERVER_CONF.worker_num, 0, 1, MSGID_HTTPS_STATISTICS_REPORT);
+	}
 }
 
 void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 {
 	int read_index = *(int *)arg;
-	int res;
 	intl_req_t intl_req;
 
 	struct http2_session_data *session_data = NULL;
@@ -1031,10 +1079,10 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 	{
 		memset(&intl_req, 0x00, sizeof(intl_req));
 		/* get first msg (Arg 4) */
-		res = msgrcv(THRD_WORKER[read_index].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0, IPC_NOWAIT | MSG_NOERROR); 
+		int res = msgrcv(THRD_WORKER[read_index].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0, IPC_NOWAIT | MSG_NOERROR); 
 		if (res < 0) {
 			if (errno != ENOMSG) {
-				APPLOG(APPLOG_ERR,"[%s] >>> msgrcv fail; err=%d(%s)", __func__, errno, strerror(errno));
+				APPLOG(APPLOG_ERR,"%s() msgrcv fail; err=%d(%s)", __func__, errno, strerror(errno));
 			}
 			return;
 		} else {
@@ -1054,11 +1102,11 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 			case HTTP_INTL_SND_REQ:
 				if (session_data == NULL) {
 					/* legacy session expired and new one already created case */
-					APPLOG(APPLOG_DEBUG, "%s)%d) get_session fail", __func__, __LINE__);
+					APPLOG(APPLOG_DEBUG, "%s():%d get_session fail", __func__, __LINE__);
 					continue;
 				}
 				if (https_ctx == NULL) {
-					APPLOG(APPLOG_DEBUG, "%s)%d) get_context fail TH %d CTX %d", __func__, __LINE__, 
+					APPLOG(APPLOG_DEBUG, "%s():%d get_context fail TH %d CTX %d", __func__, __LINE__, 
 							thrd_index, ctx_id);
 					continue;
 				}
@@ -1082,12 +1130,12 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 				break;
 			case HTTP_INTL_TIME_OUT:
 				if (https_ctx  == NULL) {
-					APPLOG(APPLOG_DEBUG, "%s)%d) get_context fail", __func__, __LINE__);
+					APPLOG(APPLOG_DEBUG, "%s():%d get_context fail", __func__, __LINE__);
 					continue;
 				}
 				if (session_data == NULL) {
 					/* legacy session expired and new one already created case */
-					APPLOG(APPLOG_DEBUG, "%s)%d) get_session fail", __func__, __LINE__);
+					APPLOG(APPLOG_DEBUG, "%s():%d get_session fail", __func__, __LINE__);
 				} else {
 					/* it's same session and alive, send reset */
 					nghttp2_submit_rst_stream(session_data->session, NGHTTP2_FLAG_NONE,
@@ -1107,7 +1155,7 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 			case HTTP_INTL_SESSION_DEL:
 				if (session_data  == NULL) {
 					/* legacy session expired and new one already created case */
-					APPLOG(APPLOG_DEBUG, "%s)%d) get_session fail", __func__, __LINE__);
+					APPLOG(APPLOG_DEBUG, "%s():%d get_session fail", __func__, __LINE__);
 					continue;
 				}
 				delete_http2_session_data(session_data);
@@ -1115,21 +1163,41 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 			case HTTP_INTL_SEND_PING:
 				if (session_data  == NULL) {
 					/* legacy session expired and new one already created case */
-					APPLOG(APPLOG_DEBUG, "%s)%d) get_session fail", __func__, __LINE__);
+					APPLOG(APPLOG_DEBUG, "%s():%d get_session fail", __func__, __LINE__);
 					continue;
 				}
 				/* don't use FLAG_ACK (FLAG_NONE : request, FLAG_ACK : response) */
 				if (nghttp2_submit_ping(session_data->session, NGHTTP2_FLAG_NONE, NULL) != 0) {
 					/* legacy session expired and new one already created case */
-					APPLOG(APPLOG_DEBUG, "%s)%d) h2 submit_ping fail", __func__, __LINE__);
+					APPLOG(APPLOG_DEBUG, "%s():%d h2 submit_ping fail", __func__, __LINE__);
 					continue;
-				} else {
-					session_data->ping_snd ++;
 				}
 				if (session_send(session_data) != 0) {
-					APPLOG(APPLOG_DEBUG, "%s)%d) session_send fail", __func__, __LINE__);
+					APPLOG(APPLOG_DEBUG, "%s():%d session_send fail", __func__, __LINE__);
 					continue;
 				}
+				break;
+			case HTTP_INTL_OVLD:
+				if (https_ctx  == NULL) {
+					APPLOG(APPLOG_DEBUG, "%s():%d get_context fail", __func__, __LINE__);
+					continue;
+				}
+				if (session_data == NULL) {
+					/* legacy session expired and new one already created case */
+					APPLOG(APPLOG_DEBUG, "%s():%d get_session fail", __func__, __LINE__);
+				} else {
+					/* silence discard stream */
+					nghttp2_session_close_stream(session_data->session, stream_id, NGHTTP2_INTERNAL_ERROR);
+				}
+				clear_and_free_ctx(https_ctx);
+				Free_CtxId(thrd_index, ctx_id);
+
+				/* TODO!! STAT!!! */
+				if (session_data != NULL) 
+					http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_PRE_END);
+				else
+					http_stat_inc(0, 0, HTTP_PRE_END);
+
 				break;
 			default:
 				break;
@@ -1159,6 +1227,9 @@ void chk_tmout_callback(evutil_socket_t fd, short what, void *arg)
 			/* normal case */
 			if ((https_ctx = get_context(index, i, 1)) == NULL) 
 				continue;
+			/* this ctx queued in tcp, don't release this */
+			if (https_ctx->tcp_wait == 1)
+				continue;
 
 			/* timeout case */
             if ((THRD_WORKER[index].time_index - https_ctx->recv_time_index) >=
@@ -1171,7 +1242,7 @@ void chk_tmout_callback(evutil_socket_t fd, short what, void *arg)
 				}
 				set_intl_req_msg(&intl_req, index, i, https_ctx->sess_idx, https_ctx->session_id, 0, HTTP_INTL_TIME_OUT);
                 if (-1 == msgsnd(THRD_WORKER[index].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0)) {
-					APPLOG(APPLOG_DEBUG, "%s) msgsnd fail", __func__);
+					APPLOG(APPLOG_DEBUG, "%s() msgsnd fail!!!", __func__);
                 }
 				/* if tmout sended num exceed 1/10 total ctx, wait to next turn */
 				if (snd ++ > MAX_TMOUT_SEND) break;
@@ -1185,6 +1256,9 @@ void send_ping_callback(evutil_socket_t fd, short what, void *arg)
     int thrd_idx, sess_idx;
 	http2_session_data *session_data = NULL;
 	intl_req_t intl_req;
+	struct timespec tm_curr = {0,};
+
+	clock_gettime(CLOCK_REALTIME, &tm_curr);
 
 	for (thrd_idx = 0; thrd_idx < SERVER_CONF.worker_num; thrd_idx++) {
 		for (sess_idx = 0; sess_idx < MAX_SVR_NUM; sess_idx++) {
@@ -1194,17 +1268,23 @@ void send_ping_callback(evutil_socket_t fd, short what, void *arg)
 			if (session_data->connected != CN_CONNECTED)
 				continue;
 			/* if (5sec:  send - ack > 5 ) delete sess */
+#if 0
 			if (session_data->ping_snd > MAX_PING_WAIT) {
-				APPLOG(APPLOG_DEBUG, "%s) session (id: %d) goaway", __func__, session_data->session_id);
+#else
+			if ((tm_curr.tv_sec - session_data->ping_rcv_time.tv_sec) > SERVER_CONF.ping_timeout) {
+#endif
+				APPLOG(APPLOG_ERR, "%s() session (id: %d) goaway~!", __func__, session_data->session_id);
 				set_intl_req_msg(&intl_req, thrd_idx, 0, sess_idx, session_data->session_id, 0, HTTP_INTL_SESSION_DEL);
                 if (-1 == msgsnd(THRD_WORKER[thrd_idx].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0)) {
-					APPLOG(APPLOG_DEBUG, "%s)%d) msgsnd fail", __func__, __LINE__);
+					APPLOG(APPLOG_ERR, "%s():%d msgsnd fail", __func__, __LINE__);
                 }
-			} else { /* else send ping */
+				continue;
+			} 
+			if (session_data->ping_cnt ++ % SERVER_CONF.ping_interval == 0) {
 				set_intl_req_msg(&intl_req, thrd_idx, 0, sess_idx, session_data->session_id, 0, HTTP_INTL_SEND_PING);
-                if (-1 == msgsnd(THRD_WORKER[thrd_idx].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0)) {
-					APPLOG(APPLOG_DEBUG, "%s)%d) msgsnd fail", __func__, __LINE__);
-                }
+				if (-1 == msgsnd(THRD_WORKER[thrd_idx].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0)) {
+					APPLOG(APPLOG_ERR, "%s():%d msgsnd fail", __func__, __LINE__);
+				}
 			}
 		}
 	}
@@ -1261,19 +1341,17 @@ void *workerThread(void *arg)
 
 	event_base_free(evbase);
 
-	APPLOG(APPLOG_ERR, "%s)%d)reach here\n", __func__, __LINE__);
+	APPLOG(APPLOG_ERR, "%s():%d reach here!!!", __func__, __LINE__);
 
 	return NULL;
 }
 
 void create_https_worker()
 {
-	int i, res;
-
-	for (i = 0; i < SERVER_CONF.worker_num; i++) {
-		res = pthread_create(&THRD_WORKER[i].thrd_id, NULL, &workerThread, (void *)&THREAD_NO[i]);
+	for (int i = 0; i < SERVER_CONF.worker_num; i++) {
+		int res = pthread_create(&THRD_WORKER[i].thrd_id, NULL, &workerThread, (void *)&THREAD_NO[i]);
 		if (res != 0) {
-			APPLOG(APPLOG_ERR, "%s) Thread Create Fail (Worker:%2d)", __func__, i);
+			APPLOG(APPLOG_ERR, "%s() Thread Create Fail (Worker:%2dth)", __func__, i);
 			exit(0);
 		} else {
 			pthread_detach(THRD_WORKER[i].thrd_id);
@@ -1290,14 +1368,14 @@ int initialize()
 
 	/*  get env */
     if ((env = getenv(IV_HOME)) == NULL) {
-        fprintf(stderr,"[%s] not found %s environment name\n", __func__, IV_HOME);
+        fprintf(stderr,"{{{INIT}}} [%s] not found %s environment name!\n", __func__, IV_HOME);
         return (-1);
     }
     /* my proc name ... */
     sprintf(myProcName, "%s", "HTTPS");
     /* my sys name ... */
     if( (ptrStr=getenv(MY_SYS_NAME))==NULL ) {
-        fprintf (stderr, "[%s] ERROR getenv %s fail\n", __func__, MY_SYS_NAME);
+        fprintf (stderr, "{{{INIT}}} [%s] ERROR getenv %s fail!\n", __func__, MY_SYS_NAME);
         return -1;
     }
     strcpy(mySysName, ptrStr);
@@ -1307,7 +1385,7 @@ int initialize()
 
 	/* local config loading */
     if (init_cfg() < 0) {
-        fprintf(stderr, "fail to init config\n");
+        fprintf(stderr, "{{{INIT}}} fail to init config!\n");
         return (-1);
     }
 #ifdef LOG_LIB
@@ -1315,32 +1393,32 @@ int initialize()
 	sprintf(log_path, "%s/log/ERR_LOG/%s", getenv(IV_HOME), myProcName);
 	initlog_for_loglib(myProcName, log_path);
 #elif LOG_APP
-    if (config_load_just_log() < 0) {
-        fprintf(stderr, "fail to read config file (log)\n");
-        return (-1);
-    }
     sprintf(fname, "%s/log", getenv(IV_HOME));
     LogInit(myProcName, fname);
-    *lOG_FLAG = SERVER_CONF.log_level;
 #endif
-    APPLOG(APPLOG_ERR, "[Welcome Process Started]");
+    if (config_load_just_log() < 0) {
+        fprintf(stderr, "{{{INIT}}} fail to read config file (log)!\n");
+        return (-1);
+    }
+    *lOG_FLAG = SERVER_CONF.log_level;
+	APPLOG(APPLOG_ERR, "\n\n[[[[[ Welcome Process Started ]]]]]");
 
 	if (config_load() < 0) {
-		APPLOG(APPLOG_ERR, "fail to read config file");
+		APPLOG(APPLOG_ERR, "{{{INIT}}} fail to read config file!");
 		return (-1);
 	} else {
 		print_list();
 	}
 
 	for ( i = 0; i < SERVER_CONF.worker_num; i++) {
-		if (-1 == (THRD_WORKER[i].msg_id = msgget((key_t)(HTTPS_INTL_MSG_KEY_BASE + i), IPC_CREAT | 0666))) {
-			APPLOG(APPLOG_ERR, "fail to create internal msgq id");
+		if (-1 == (THRD_WORKER[i].msg_id = msgget((key_t)(SERVER_CONF.worker_shmkey + i), IPC_CREAT | 0666))) {
+			APPLOG(APPLOG_ERR, "{{{INIT}}} fail to create internal msgq id!");
 			exit( 1);
 		}
 		/* & flushing it & remake */
 		msgctl(THRD_WORKER[i].msg_id, IPC_RMID, NULL);
-		if (-1 == (THRD_WORKER[i].msg_id = msgget((key_t)(HTTPS_INTL_MSG_KEY_BASE + i), IPC_CREAT | 0666))) {
-			APPLOG(APPLOG_ERR, "fail to create internal msgq id");
+		if (-1 == (THRD_WORKER[i].msg_id = msgget((key_t)(SERVER_CONF.worker_shmkey + i), IPC_CREAT | 0666))) {
+			APPLOG(APPLOG_ERR, "{{{INIT}}} fail to create internal msgq id!");
 			exit( 1);
 		}
 	}
@@ -1348,11 +1426,11 @@ int initialize()
 #ifdef OAUTH
     sprintf(fname,"%s/%s", env, SYSCONF_FILE);
     if (conflib_getNthTokenInFileSection (fname, "GENERAL", "SYSTEM_TYPE", 1, mySysType) < 0) {
-        APPLOG(APPLOG_ERR, "cant find SYSTEM_TYPE in (%s)", fname);
+        APPLOG(APPLOG_ERR, "{{{INIT}}} cant find SYSTEM_TYPE in (%s)!", fname);
         return -1;
     }
     if (conflib_getNthTokenInFileSection (fname, "GENERAL", "SERVER_ID", 1, mySvrId) < 0) {
-        APPLOG(APPLOG_ERR, "cant find SERVER_ID in (%s)", fname);
+        APPLOG(APPLOG_ERR, "{{{INIT}}} cant find SERVER_ID in (%s)!", fname);
         return -1;
     }
 #endif
@@ -1364,13 +1442,13 @@ int initialize()
         return (-1);
     key = strtol(tmp,0,0);
     if ((httpsQid = msgget(key,IPC_CREAT|0666)) < 0) {
-        APPLOG(APPLOG_ERR, "[%s] msgget fail; key=0x%x,err=%d(%s)", __func__, key, errno, strerror(errno));
+        APPLOG(APPLOG_ERR, "{{{INIT}}} [%s] msgget fail; key=0x%x,err=%d(%s)!", __func__, key, errno, strerror(errno));
         return (-1);
     }
 	/* flushing & remake */
 	msgctl(httpsQid, IPC_RMID, NULL);
     if ((httpsQid = msgget(key,IPC_CREAT|0666)) < 0) {
-        APPLOG(APPLOG_ERR, "[%s] msgget fail; key=0x%x,err=%d(%s)", __func__, key, errno, strerror(errno));
+        APPLOG(APPLOG_ERR, "{{{INIT}}} [%s] msgget fail; key=0x%x,err=%d(%s)!", __func__, key, errno, strerror(errno));
         return (-1);
     }
 
@@ -1379,7 +1457,7 @@ int initialize()
         return -1;
     key = strtol(tmp,0,0);
     if ((ixpcQid = msgget(key,IPC_CREAT|0666)) < 0) {
-        APPLOG(APPLOG_ERR, "[%s] msgget fail; key=0x%x,err=%d(%s)", __func__, key, errno, strerror(errno));
+        APPLOG(APPLOG_ERR, "{{{INIT}}} [%s] msgget fail; key=0x%x,err=%d(%s)!", __func__, key, errno, strerror(errno));
         return -1;
     }
 #endif
@@ -1388,18 +1466,17 @@ int initialize()
 	for ( i = 0; i < SERVER_CONF.worker_num; i++) {
 		HttpsCtx[i] = calloc (SIZEID, sizeof(https_ctx_t));
 	}
-    /* &initialize */
-    for (i = 0; i < SERVER_CONF.worker_num; i++) {
-        Init_CtxId(i);
-        for (j = 0; j < SIZEID; j++) {
-            HttpsCtx[i][j].occupied = 0;
-        }
-    }
-
+	/* &initialize */
+	for (i = 0; i < SERVER_CONF.worker_num; i++) {
+		Init_CtxId(i);
+		for (j = 0; j < SIZEID; j++) {
+			HttpsCtx[i][j].occupied = 0;
+		}
+	}
 
     /* create header enum:string list for bsearch and relay */
     if (set_relay_vhdr(VHDR_INDEX[0], VH_END) < 0) {
-		APPLOG(APPLOG_ERR, "relay vhdr set fail");
+		APPLOG(APPLOG_ERR, "{{{INIT}}} relay vhdr set fail!");
         return -1;
 	} else {
         print_relay_vhdr(VHDR_INDEX[0], VH_END);
@@ -1422,8 +1499,11 @@ int initialize()
 }
 
 static void main_loop(const char *key_file, const char *cert_file) {
-	SSL_CTX *ssl_ctx;
-	app_context app_ctx;
+	SSL_CTX *ssl_ctx = NULL;
+	app_context comm_app_ctx_tls = {0,};
+	app_context comm_app_ctx_tcp = {0,};
+	app_context direct_app_ctx_tls[MAX_PORT_NUM];
+	app_context direct_app_ctx_tcp[MAX_PORT_NUM];
 	struct event_base *evbase;
 	char port_str[12] = {0,};
 	int i;
@@ -1432,13 +1512,39 @@ static void main_loop(const char *key_file, const char *cert_file) {
 
 	/* create event base */
 	evbase = event_base_new();
-	initialize_app_context(&app_ctx, ssl_ctx, evbase);
 
-	/* initialize listen ports */
+	/* initialize https (over tls) listen ports */
+	initialize_app_context(&comm_app_ctx_tls, ssl_ctx, evbase, 0, 0);
 	for (i = 0; i < MAX_PORT_NUM; i++) {
-		if (SERVER_CONF.listen_port[i]) {
-			sprintf(port_str, "%d", SERVER_CONF.listen_port[i]);
-			start_listen(evbase, port_str, &app_ctx);
+		if (SERVER_CONF.https_listen_port[i]) {
+			sprintf(port_str, "%d", SERVER_CONF.https_listen_port[i]);
+			start_listen(evbase, port_str, &comm_app_ctx_tls);
+		}
+	}
+	/* initialize http (over tcp) listen ports */
+	initialize_app_context(&comm_app_ctx_tcp, NULL, evbase, 0, 0);
+	for (i = 0; i < MAX_PORT_NUM; i++) {
+		if (SERVER_CONF.http_listen_port[i]) {
+			sprintf(port_str, "%d", SERVER_CONF.http_listen_port[i]);
+			start_listen(evbase, port_str, &comm_app_ctx_tcp);
+		}
+	}
+
+	/* if enabled, initial direct relay listen ports, it only https (over tls) support now */
+	if (SERVER_CONF.dr_enabled) {
+		for (i = 0; i < MAX_PORT_NUM; i++) {
+			initialize_app_context(&direct_app_ctx_tls[i], ssl_ctx, evbase, 1, i);
+			if (SERVER_CONF.callback_port_tls[i]) {
+				sprintf(port_str, "%d", SERVER_CONF.callback_port_tls[i]);
+				start_listen(evbase, port_str, &direct_app_ctx_tls[i]);
+			}
+		}
+		for (i = 0; i < MAX_PORT_NUM; i++) {
+			initialize_app_context(&direct_app_ctx_tcp[i], NULL, evbase, 1, i);
+			if (SERVER_CONF.callback_port_tcp[i]) {
+				sprintf(port_str, "%d", SERVER_CONF.callback_port_tcp[i]);
+				start_listen(evbase, port_str, &direct_app_ctx_tcp[i]);
+			}
 		}
 	}
 
@@ -1461,7 +1567,7 @@ static void main_loop(const char *key_file, const char *cert_file) {
 	event_add(ev_ping, &tm_ping);
 
     /* send conn status to OMP FIMD */
-    struct timeval tm_status = {1, 0};
+    struct timeval tm_status = {5, 0};
     struct event *ev_status;
     ev_status = event_new(evbase, -1, EV_PERSIST, send_status_to_omp, NULL);
     event_add(ev_status, &tm_status);
@@ -1474,6 +1580,11 @@ static void main_loop(const char *key_file, const char *cert_file) {
     event_add(ev_main, &tm_milisec);
 #endif
 
+    /* LB stat print */
+    struct timeval lbctx_print_interval = {1, 0};
+    struct event *ev_lbctx_print;
+    ev_lbctx_print = event_new(evbase, -1, EV_PERSIST, fep_stat_print, NULL);
+    event_add(ev_lbctx_print, &lbctx_print_interval);
 	/* start loop */
 	event_base_loop(evbase, EVLOOP_NO_EXIT_ON_EMPTY);
 
@@ -1490,7 +1601,7 @@ int main(int argc, char **argv) {
 	sigaction(SIGPIPE, &act, NULL);
 
 	if (initialize() < 0) {
-		fprintf(stderr,">>>>>> https_initial fail\n");
+		fprintf(stderr,"{{{INIT}}} https_initial fail!!!\n");
 		return (-1);
 	}
 

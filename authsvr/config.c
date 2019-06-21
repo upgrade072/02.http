@@ -16,9 +16,9 @@ void print_nf_list(config_setting_t *elem)
 		fprintf(stderr, "  nfInstanceId : %s\n", nfInstanceId);
 	if ((scope = config_setting_get_member(elem, "scope")) != NULL) {
 		int count = config_setting_length(scope);
-		const char *scope_name;
 		fprintf(stderr, "  scope : ");
 		for (int i = 0; i < count; i++) {
+			const char *scope_name;
 			if ((scope_name = config_setting_get_string_elem(scope, i)) != NULL)
 				fprintf(stderr, "%s ", scope_name);
 		}

@@ -3,6 +3,7 @@
 #include <string.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include "http_comm.h"
 
 int parse_ipv4(char *temp_str, struct sockaddr_in *sa, int *port)
 {
@@ -75,7 +76,7 @@ int parse_http_addr(char *temp_str, struct sockaddr_in *sa, struct sockaddr_in6 
 		//fprintf(stderr, "[%s] input ipv4 %s\n", __func__, temp_str);
 		addr_type = AF_INET;
 	} else {
-		fprintf(stderr, "[%s] input wrong address %s\n", __func__, temp_str);
+		APPLOG(APPLOG_ERR, "%s() input wrong address %s", __func__, temp_str);
 		return (-1);
 	}
 
@@ -95,7 +96,7 @@ int parse_http_addr(char *temp_str, struct sockaddr_in *sa, struct sockaddr_in6 
 	return addr_type;
 
 HTTP_ADDR_PARSE_ERR:
-	fprintf(stderr, "[%s] parse error !!!\n", __func__);
+	APPLOG(APPLOG_ERR, "%s() parse error !!!", __func__);
 	return (-1);
 }
 

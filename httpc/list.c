@@ -34,6 +34,7 @@ void clear_send_ctx(httpc_ctx_t *httpc_ctx)
 
 void clear_and_free_ctx(httpc_ctx_t *httpc_ctx)
 {
+	httpc_ctx->tcp_wait = 0;
 	httpc_ctx->inflight_ref_cnt = 0;
 	httpc_ctx->user_ctx.head.bodyLen = 0;
 	memset(httpc_ctx->user_ctx.head.contentEncoding, 0x00, sizeof(httpc_ctx->user_ctx.head.contentEncoding));
@@ -81,12 +82,6 @@ void save_session_info(httpc_ctx_t *httpc_ctx, int thrd_idx, int sess_idx, int s
 	if (conn_list->token_id > 0) 
 		token = get_access_token(conn_list->token_id);
 
-	/*
-	fprintf(stderr, "{{{dbg}}} conn list (list index: %d) (token id : %d)\n", 
-			conn_list->list_index, conn_list->token_id);
-	fprintf(stderr, "{{{dbg}}} token [%s]\n", token != NULL ? token : "");
-	*/
-
 	sprintf(httpc_ctx->access_token, "%s", token != NULL ? token : "");
 #endif
 }
@@ -106,6 +101,7 @@ int find_least_conn_worker()
     return thrd_id;
 }
 
+// TODO!!! print NRF ref id 
 void print_list(conn_list_status_t conn_status[]) {
     int i, j;
 
@@ -130,34 +126,6 @@ void print_list(conn_list_status_t conn_status[]) {
         }
     }
     APPLOG(APPLOG_ERR, "---------------------------------------------------------------------------------------------------------------");
-}
-
-void print_raw_list() {
-    int i;
-
-    APPLOG(APPLOG_ERR, "- raw table ----------------------------------------------------------------------------------------------------------");
-    APPLOG(APPLOG_ERR, " idx l-id i-id used  act conn host    type    ip                                             port next  max curr  num");
-    for ( i = 0; i < MAX_SVR_NUM; i++) {
-        if (CONN_LIST[i].used != 1)
-            continue;
-        APPLOG(APPLOG_ERR, "%4d %4d %4d %4d %4d %4d %-7s %-7s %-46s %4d %4d %4d %4d %4d",
-                CONN_LIST[i].index,
-                CONN_LIST[i].list_index,
-                CONN_LIST[i].item_index,
-                CONN_LIST[i].used,
-                CONN_LIST[i].act,
-                CONN_LIST[i].conn,
-                CONN_LIST[i].host,
-                CONN_LIST[i].type,
-                CONN_LIST[i].ip,
-                CONN_LIST[i].port,
-                CONN_LIST[i].next_hop,
-                CONN_LIST[i].max_hop,
-                CONN_LIST[i].curr_idx,
-                CONN_LIST[i].counter);
-    }
-    APPLOG(APPLOG_ERR, "----------------------------------------------------------------------------------------------------------------------");
-
 }
 
 /* watch out for buffer size */
@@ -206,7 +174,7 @@ void gather_list(conn_list_status_t CONN_STATUS[]) {
 			int token_id = CONN_LIST[i].token_id;
 			char *access_token = get_access_token(token_id);
 			CONN_STATUS[index].token_exist = (access_token == NULL ? 1 : 0);
-			sprintf(CONN_STATUS[index].access_token, "%s", access_token);
+			sprintf(CONN_STATUS[index].access_token, "%s", access_token == NULL ? "" : access_token);
 #endif
 			index++;
 		}
@@ -244,140 +212,6 @@ void gather_list(conn_list_status_t CONN_STATUS[]) {
 	}
 }
 
-void prepare_order(int list_index)
-{
-    int i;
-
-    for (i = 0; i < MAX_SVR_NUM; i++) {
-        if (CONN_LIST[i].list_index == list_index) {
-            CONN_LIST[i].next_hop = 0;
-            CONN_LIST[i].max_hop = 0;
-            CONN_LIST[i].curr_idx = 0;
-            CONN_LIST[i].counter = 0;
-        }
-    }
-}
-
-void order_list() {
-    conn_list_t *start = NULL, *curr = NULL, *prev = NULL;
-    int i, j, found;
-
-    for ( i = 0; i < MAX_SVR_NUM; i++) {
-        if (CONN_LIST[i].used != 1)
-            continue;
-        if (CONN_LIST[i].next_hop == 0 ) {
-            start = &CONN_LIST[i];
-            start->max_hop = 1;
-            prev = curr = start;
-
-            found = 0;
-            for (j = i + 1 ; j < MAX_SVR_NUM; j++) {
-                curr = &CONN_LIST[j];
-
-                if (CONN_LIST[j].used != 1)
-                    continue;
-                if (CONN_LIST[j].next_hop != 0 )
-                    continue;
-
-				if (!strcmp(curr->host, start->host)) {
-                    curr->next_hop = start->index;
-                    prev->next_hop = curr->index;
-                    start->max_hop ++;
-
-                    prev = curr;
-                    found ++;
-                }
-            }
-            if (found == 0) {
-                start->next_hop = start->index;
-            }
-        }
-    }
-}
-
-conn_list_t *find_packet_index(char *host, int ls_mode) {
-    int i, found = 0, index;
-    conn_list_t *curr = NULL, *start = NULL;
-	int ls_index, ls_send_num;
-
-	for ( i = 0; i < MAX_SVR_NUM; i++) {
-		if (CONN_LIST[i].used != 1)
-			continue;
-		if(!strcmp(host, CONN_LIST[i].host)) {
-			found = 1;
-			break;
-		}
-	}
-    if (!found) {
-        //APPLOG(APPLOG_DEBUG, "warn} %s not found! host (%s)", __func__, host);
-        return NULL;
-	}
-    start = curr = &CONN_LIST[i];
-
-	switch (ls_mode) {
-		case LSMODE_RR:
-			for (i = 0; i < start->curr_idx; i++) {
-				index = curr->next_hop;
-				curr = &CONN_LIST[index];
-			}
-			start->curr_idx = (start->curr_idx + 1) % start->max_hop;
-
-			for (i = 0; i < start->max_hop; i++) {
-				index = curr->next_hop;
-				curr = &CONN_LIST[index];
-
-				if (curr->conn == CN_CONNECTED) {
-#ifndef PERFORM
-					APPLOG(APPLOG_DEBUG, "packet sended via %d", curr->index);
-#endif
-					return curr;
-				}
-			}
-			break;
-
-		case LSMODE_LS:
-            ls_index = 0;
-            ls_send_num = MAX_COUNT_NUM + 1;
-
-            for (i = 0; i < start->max_hop; i++) {
-                index = curr->next_hop;
-                curr = &CONN_LIST[index];
-
-                if (curr->conn == CN_CONNECTED) {
-                    if (curr->counter <= ls_send_num) {
-                        ls_index = curr->index;
-                        ls_send_num = curr->counter;
-                    }
-                }
-            }
-
-            // HIT
-            if (ls_index > 0) {
-                curr = &CONN_LIST[ls_index];
-#ifndef PERFORM
-                APPLOG(APPLOG_DEBUG, "packet sended via %d (port %d)", curr->index, curr->port);
-#endif
-                if (curr->counter + 1 >= MAX_COUNT_NUM) {
-#ifndef PERFORM
-                    APPLOG(APPLOG_DEBUG, "clear counter");
-#endif
-                    for (i = 0; i < start->max_hop; i++) {
-                        index = curr->next_hop;
-                        curr = &CONN_LIST[index];
-                        curr->counter = 0;
-                    }
-                } else {
-                    curr->counter ++;
-                }
-                return curr;
-            }
-			break;
-	}
-
-    APPLOG(APPLOG_DEBUG, "fail to send");
-	return NULL;
-}
-
 #ifdef OAUTH
 acc_token_list_t *get_token_list(int id, int used)
 {
@@ -401,7 +235,7 @@ acc_token_list_t *get_token_list(int id, int used)
 void print_token_list_raw(acc_token_list_t input_token_list[])
 {
 	APPLOG(APPLOG_ERR, "Access Token List Status");
-	APPLOG(APPLOG_ERR, "================================================================================");
+	APPLOG(APPLOG_ERR, "------------------------");
 	for (int i = 0; i < MAX_ACC_TOKEN_NUM; i++) {
 		acc_token_list_t *token_list = &input_token_list[i];
 		if (token_list->occupied != 1)
@@ -419,6 +253,89 @@ void print_token_list_raw(acc_token_list_t input_token_list[])
 			(token_list->status == TA_TRYING) ? "TRYING" : "ACCUIRED",
 			ctime(&token_list->due_date));
 	}
-	APPLOG(APPLOG_ERR, "================================================================================");
+	APPLOG(APPLOG_ERR, "==============================================================================================");
 }
 #endif
+
+// httpc outbound, log write with in 1step
+void log_pkt_send(char *prefix, nghttp2_nv *hdrs, int hdrs_len, char *body, int body_len)
+{
+	FILE *temp_file = NULL;
+	size_t file_size = 0;
+	char *ptr = NULL;
+
+	if (CLIENT_CONF.pkt_log != 1)
+		return;
+
+	temp_file = open_memstream(&ptr, &file_size); // buff size auto-grow
+	if (temp_file == NULL) {
+		APPLOG(APPLOG_ERR, "{{{PKT}}} in %s fail to call open_memstream!", __func__);
+		return;
+	}
+	print_headers(temp_file, hdrs, hdrs_len);
+	if (body_len > 0)
+		util_dumphex(temp_file, body, body_len);
+
+	// 1) close file
+	fclose(temp_file);
+	// 2) use ptr
+	APPLOG(APPLOG_ERR, "{{{PKT}}} %s\n\
+--------------------------------------------------------------------------------------------------\n\
+%s\
+==================================================================================================\n",
+	prefix, ptr);
+	// 3) free ptr
+	free(ptr);
+}
+
+// httpc inbound, logwrite step 1 of 2 (headres receive)
+void log_pkt_head_recv(httpc_ctx_t *httpc_ctx, const uint8_t *name, size_t namelen, const uint8_t *value, size_t valuelen)
+{
+	if (CLIENT_CONF.pkt_log != 1)
+		return;
+
+	if (httpc_ctx->recv_log_file == NULL) {
+		httpc_ctx->recv_log_file = open_memstream(&httpc_ctx->log_ptr, &httpc_ctx->file_size);
+		if (httpc_ctx->recv_log_file == NULL) {
+			APPLOG(APPLOG_ERR, "{{{PKT}}} in %s fail to call open_memstream!", __func__);
+			// TODO fclose (*httpc/s ...)
+			return;
+		}
+	}
+	print_header(httpc_ctx->recv_log_file, name, namelen, value, valuelen);
+}
+
+// httpc inbound, logwrite step 2 of 2 (all of body received or stream closed)
+void log_pkt_end_stream(int stream_id, httpc_ctx_t *httpc_ctx)
+{
+	if (CLIENT_CONF.pkt_log != 1)
+		return;
+
+	if (httpc_ctx->recv_log_file == NULL) {
+		httpc_ctx->recv_log_file = open_memstream(&httpc_ctx->log_ptr, &httpc_ctx->file_size);
+		if (httpc_ctx->recv_log_file == NULL) {
+			APPLOG(APPLOG_ERR, "{{{PKT}}} in %s fail to call open_memstream!", __func__);
+			return;
+		}
+	}
+	// print body to log
+	if (httpc_ctx->user_ctx.head.bodyLen > 0)
+		util_dumphex(httpc_ctx->recv_log_file, httpc_ctx->user_ctx.body, httpc_ctx->user_ctx.head.bodyLen);
+
+	// 1) close file
+	fclose(httpc_ctx->recv_log_file);
+	httpc_ctx->recv_log_file = NULL;
+	// 2) use ptr
+	APPLOG(APPLOG_ERR, "{{{PKT}}} HTTPC RECV http sess/stream(%d:%d) ahifCid(%d)]\n\
+--------------------------------------------------------------------------------------------------\n\
+%s\
+==================================================================================================\n",
+	httpc_ctx->session_id, 
+	stream_id, 
+	httpc_ctx->user_ctx.head.ahifCid,
+	httpc_ctx->log_ptr);
+	// 3) free ptr
+	free(httpc_ctx->log_ptr);
+	httpc_ctx->log_ptr = NULL;
+}
+

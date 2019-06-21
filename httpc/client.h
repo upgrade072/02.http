@@ -43,19 +43,21 @@
 #include <lbengine.h>
 
 #define TM_INTERVAL		20000   // every 20 ms check, 
-#if 0
-#define TMOUT_NORSP		200     // 20ms * 200 = 4 sec timeout
-#else
 #define TMOUT_VECTOR    50      // CLIENT_CONF.tmout_sec * TMOUT_VECTOR = N sec
-#endif
 
 /* For LOG */
 extern char lOG_PATH[64];
 
 typedef struct client_conf {
+	int debug_mode;
 	int log_level;
     int worker_num;
+    int worker_shmkey;
+    int httpc_status_shmkey;
     int timeout_sec;
+	int ping_interval;
+	int ping_timeout;
+	int pkt_log;
 
 	config_setting_t *lb_config;
 } client_conf_t;
@@ -153,30 +155,27 @@ typedef struct access_token_res {
 
 #define MAX_COUNT_NUM	1024
 typedef struct conn_list {
-	int index; // 0, 1, 2, 3, ....
-	int used; // if 1 : conn retry, 0 : don't do anything
-	int conn; // if 0 : disconnected, 1 : connected
+	int index;	// 0, 1, 2, 3, ....
+	int used;	// if 1 : conn retry, 0 : don't do anything
+	int conn;	// if 0 : disconnected, 1 : connected
+	int act;	// 1: act, 0: deact
 
-//  char schema[MAX_SCHEMA_NAME];	// https, http
-	char host[AHIF_MAX_DESTHOST_LEN];	// localhost, 127.0.0.1, 192.168.8.1 ...
-	char type[AHIF_COMM_NAME_LEN];
+	char scheme[12];					// https (over TLS) | http (over TCP)
+	char type[AHIF_COMM_NAME_LEN];		// UDM | PCF | ...
+	char host[AHIF_MAX_DESTHOST_LEN];	// udm_fep_01 
+	char ip[INET6_ADDRSTRLEN];			// 192.168.100.100
+	int	port;							// 8888
+
 	int list_index;
 	int item_index;
-
-	char ip[INET6_ADDRSTRLEN];
-	int	port;		// 8888
-	int act;		// 1: act, 0: deact
-
-	int next_hop;
-	int max_hop;
-	int curr_idx;	// 
-	int counter;	// sended packet num
 
 	int thrd_index;
 	int session_index;
 	int session_id;
 
 	int token_id;
+
+	int reconn_candidate;				// stream_id is full, trigger reconnect
 } conn_list_t;
 
 typedef enum conn_status {
@@ -211,7 +210,14 @@ typedef struct httpc_ctx {
 
 	/* for lb-fep-peer */
 	int fep_tag;				// index of thread (fep 1 / 2 / 3)
-	pthread_t recv_thread_id;	// is it usefull ???? (may not use) 
+	
+	// if iovec pushed into tcp queue, worker can't cancel this
+	char tcp_wait;
+
+	/* for recv log */
+	FILE *recv_log_file;
+	size_t file_size;
+	char *log_ptr;
 } httpc_ctx_t;
 
 typedef enum intl_req_mtype {
@@ -233,6 +239,7 @@ typedef struct http2_session_data {
 	//struct evdns_base *dnsbase;
 	struct bufferevent *bev;
 
+	char scheme[12];
 	char authority[128];
 	int authority_len;
 
@@ -243,15 +250,17 @@ typedef struct http2_session_data {
 	int session_index; 
 	int session_id;		// unique id
 	int used;			// 1 : used, 0 : free
-
 	int connected;
-	int ping_snd;
+
+	int ping_cnt;
+	struct timespec ping_rcv_time;
 } http2_session_data_t;
 
 typedef struct lb_global {
     int bundle_bytes;
     int bundle_count;
 	int flush_tmval;
+	int heartbeat_enable;
 
 	int total_fep_num;
 	int context_num;
@@ -261,6 +270,41 @@ typedef struct lb_global {
 	config_setting_t *cf_peer_connect_port;
 	const char *peer_lb_address;
 } lb_global_t;
+
+typedef struct compare_input {
+    char *type;
+    char *host;
+    char *ip;
+    int port;
+    int index;
+} compare_input_t;
+
+#if 0
+// move to lbengine/tcp_ctx_t
+typedef int (*FUNC_PTR)(void *, void *);
+
+typedef struct select_node {
+    int depth;
+    int select_vector;
+    int last_selected;
+
+    char name[1024];
+    int val;
+
+    GNode *node_ptr;        // my gnode pointer
+    FUNC_PTR func_ptr;      // compare function
+    conn_list_t *leaf_ptr;
+} select_node_t;
+
+typedef enum select_node_depth {
+    SN_TYPE = 0,
+    SN_HOST,
+    SN_IP,
+    SN_PORT,
+    SN_CONN_ID,
+    SN_MAX
+} select_node_depth_t;
+#endif
 
 /* ------------------------- config.c --------------------------- */
 int     init_cfg();
@@ -288,11 +332,13 @@ void    write_list(conn_list_status_t CONN_STATUS[], char *buff);
 void    gather_list(conn_list_status_t CONN_STATUS[]);
 void    prepare_order(int list_index);
 void    order_list();
-conn_list_t *find_packet_index(char *host, int ls_mode);
 #ifdef OAUTH
 acc_token_list_t *get_token_list(int id, int used);
 void print_token_list_raw(acc_token_list_t input_token_list[]);
 #endif
+void    log_pkt_send(char *prefix, nghttp2_nv *hdrs, int hdrs_len, char *body, int body_len);
+void    log_pkt_head_recv(httpc_ctx_t *httpc_ctx, const uint8_t *name, size_t namelen, const uint8_t *value, size_t valuelen);
+void    log_pkt_end_stream(int stream_id, httpc_ctx_t *httpc_ctx);
 
 /* ------------------------- client.c --------------------------- */
 int     send_request(http2_session_data_t *session_data, int thrd_index, int ctx_id);
@@ -340,7 +386,7 @@ char    *get_access_token(int token_id);
 /* ------------------------- lb.c --------------------------- */
 httpc_ctx_t     *get_null_recv_ctx(tcp_ctx_t *tcp_ctx);
 httpc_ctx_t     *get_assembled_ctx(tcp_ctx_t *tcp_ctx, char *ptr);
-void    send_to_worker(conn_list_t *httpc_conn, httpc_ctx_t *recv_ctx);
+void    send_to_worker(tcp_ctx_t *tcp_ctx, conn_list_t *httpc_conn, httpc_ctx_t *recv_ctx);
 void    set_iovec(tcp_ctx_t *dest_tcp_ctx, httpc_ctx_t *recv_ctx, const char *dest_ip, iovec_item_t *push_req, void (*cbfunc)(), void *cbarg);
 void    push_callback(evutil_socket_t fd, short what, void *arg);
 void    iovec_push_req(tcp_ctx_t *dest_tcp_ctx, iovec_item_t *push_req);
@@ -351,10 +397,39 @@ tcp_ctx_t       *search_dest_via_tag(httpc_ctx_t *httpc_ctx, GNode *root_node);
 void    send_response_to_fep(httpc_ctx_t *httpc_ctx);
 void    send_to_peerlb(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx);
 void    send_to_remote(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx);
+void    heartbeat_process(httpc_ctx_t *recv_ctx, tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx);
 void    check_and_send(tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx);
 void    lb_buff_readcb(struct bufferevent *bev, void *arg);
 void    load_lb_config(client_conf_t *cli_conf, lb_global_t *lb_conf);
+int     get_httpcs_buff_used(tcp_ctx_t *tcp_ctx);
+void    clear_context_stat(tcp_ctx_t *tcp_ctx);
 void    fep_stat_print(evutil_socket_t fd, short what, void *arg);
 void    *fep_stat_thread(void *arg);
-void    attach_lb_thread(lb_global_t *lb_conf, main_ctx_t *main_ctx);
+void    attach_lb_thread(lb_global_t *lb_conf, lb_ctx_t *lb_ctx);
 int     create_lb_thread();
+
+/* ------------------------- select.c --------------------------- */
+int     sn_cmp_type(void *input, void *compare);
+int     sn_cmp_host(void *input, void *compare);
+int     sn_cmp_ip(void *input, void *compare);
+int     sn_cmp_port(void *input, void *compare);
+int     sn_cmp_conn_id(void *input, void *compare);
+char    *depth_to_str(int depth);
+GNode   *new_select_data(compare_input_t *comm_input, int depth, conn_list_t *conn_list);
+int     depth_compare(int depth, select_node_t *select_node, compare_input_t *comm_input);
+select_node_t   *search_select_node(GNode *parent_node, compare_input_t *comm_input, int depth);
+select_node_t   *add_select_node(GNode *parent_node, compare_input_t *comm_input, int depth, conn_list_t *conn_list);
+void    create_compare_data_with_list(conn_list_t *conn_list, compare_input_t *comm_input);
+void    create_compare_data_with_pkt(AhifHttpCSMsgHeadType *pkt_head, compare_input_t *comm_input);
+void    reorder_select_node(select_node_t *root_node);
+gboolean        traverse_memset(GNode *node, gpointer data);
+conn_list_t     *search_conn_list(GNode *curr_node, compare_input_t *comm_input, select_node_t *root_node);
+conn_list_t     *find_packet_index(select_node_t *root_select, AhifHttpCSMsgHeadType *pkt_head);
+void    create_select_node(select_node_t *root_node);
+void    destroy_select_node(select_node_t *root_node);
+void    rebuild_select_node(select_node_t *root_node);
+void    refresh_select_node(evutil_socket_t fd, short what, void *arg);
+void    set_refresh_select_node(GNode *root_node);
+void    init_refresh_select_node(lb_ctx_t *lb_ctx);
+void    once_refresh_select_node(GNode *root_node);
+void    trig_refresh_select_node(lb_ctx_t *lb_ctx);

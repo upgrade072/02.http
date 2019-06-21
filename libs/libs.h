@@ -16,6 +16,7 @@
 #include <stm_msgtypes_udmudr.h>
 #endif
 
+#if 0
 #ifdef LOG_LIB
 #include <loglib.h>
 #elif LOG_APP
@@ -28,6 +29,7 @@
 #elif LOG_APP
 #else
 #define APPLOG(level, fmt, ...) fprintf(stderr, fmt "\n", ##__VA_ARGS__)
+#endif
 #endif
 
 
@@ -54,12 +56,6 @@ int     new_item(int list_index, const char *name, int port);
 int     get_item(int list_index, const char *name, int port);
 int     del_item(int list_index, const char *name, int port);
 
-/* ------------------------- libid.c --------------------------- */
-int     Init_CtxId(int thrd_idx);
-int     Get_CtxId(int thrd_idx);
-int     Free_CtxId(int thrd_idx, uint id);
-int     Check_CtxId(int thrd_idx, uint id);
-
 /* ------------------------- libutil.c --------------------------- */
 void    DumpHex(const void* data, size_t size);
 unsigned        long create_unique_id(unsigned long u_id);
@@ -77,5 +73,11 @@ void    print_headers(FILE *f, nghttp2_nv *nva, size_t nvlen);
 
 /* ------------------------- liblog.c --------------------------- */
 int     initlog_for_loglib(char *appName, char *path);
+
+/* ------------------------- libid.c --------------------------- */
+int     Init_CtxId(int thrd_idx);
+int     Get_CtxId(int thrd_idx);
+int     Free_CtxId(int thrd_idx, uint id);
+int     Check_CtxId(int thrd_idx, uint id);
 
 #endif

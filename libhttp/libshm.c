@@ -4,15 +4,15 @@ static int shm_http_id;
 
 extern shm_http_t *SHM_HTTP_PTR;
 
-int get_http_shm(void)
+int get_http_shm(int httpc_status_shmkey)
 {
-	if ((shm_http_id = shmget((size_t)HTTPC_SHM_MEM_KEY, SHM_HTTP_SIZE, IPC_CREAT|0666)) < 0) {
-		fprintf(stderr, "http shmget fail, check if shm size changed\n");
+	if ((shm_http_id = shmget((size_t)httpc_status_shmkey, SHM_HTTP_SIZE, IPC_CREAT|0666)) < 0) {
+		APPLOG(APPLOG_ERR, "http shmget fail, check if shm size changed!!!");
 		return (-1);
 	}
 
 	if ((SHM_HTTP_PTR = (shm_http_t *)shmat(shm_http_id, NULL, 0)) == (shm_http_t *)-1) {
-		fprintf(stderr, "http shared memory attach failed\n");
+		APPLOG(APPLOG_ERR, "http shared memory attach failed!!!");
 		return (-1);
 	}
 

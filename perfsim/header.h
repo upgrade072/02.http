@@ -4,6 +4,7 @@ try this with json-c (https://github.com/jehiah/json-c)
 */
 
 #include <libs.h>
+
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
@@ -20,16 +21,11 @@ try this with json-c (https://github.com/jehiah/json-c)
 #include <inttypes.h>
 #include <errno.h>
 #include <time.h>
-
-#ifdef LOG_LIB
-#include <loglib.h>
-#elif LOG_APP
-#include <appLog.h>
-#endif
+#include <ctype.h>
 
 #include <commlib.h>
+#include <shmQueue.h>
 #include <ahif_msgtypes.h>
-#include <http_comm.h> // schlee! for TEMP MACRO disable APPLOG
 
 // JSON related -----------------------------------------------------------
 
@@ -79,6 +75,9 @@ typedef struct {
     char rsrc[128];
     char method[128];
     char type[128];
+    char dest[128];
+    char func[128];
+    char farg[256];
     int interval;
 } perf_step_t;
 
@@ -177,6 +176,10 @@ typedef struct {
     struct event *ev_timeout;
     cbarg_t param;
     cb_tmout_arg_t tmout;
+
+	int func_exist;
+	char func_name[128];
+	char func_arg[1024];
 } app_ctx_t;
 
 typedef struct {
@@ -254,6 +257,7 @@ int     set_key_change(const char *key, json_object *input_obj, parse_res_t *par
 void    change_keyvalue(json_object *input_obj, parse_res_t *parse);
 void    replace_obj(json_object *input_obj, parse_res_t *parse);
 void    recurse_obj(json_object *input_obj, parse_res_t *parse, int action);
+void    recurse_obj_single(json_object *input_obj, const char *farg, char *buff, size_t buff_len, int *find);
 
 /* ------------------------- main.c --------------------------- */
 app_ctx_t       *get_ctx(int thrd_idx, int ctx_idx);
@@ -274,6 +278,7 @@ void    unset_timeout_event(app_ctx_t *ctx);
 void    main_tick_callback(evutil_socket_t fd, short what, void *arg);
 int     check_result(json_object *resp_obj, app_ctx_t *ctx);
 void    check_fwd_field(json_object *resp_obj, app_ctx_t *ctx);
+int     check_func_arg(json_object *resp_obj, app_ctx_t *ctx);
 int     make_cid(int thrd_id, int ctx_id);
 void    resolve_cid(int cid, int *thrd_idx, int *ctx_idx);
 int     make_ahif_header(app_ctx_t *ctx, int current_step, AhifAppMsgType *txMsg, json_object *curr_obj);
@@ -301,3 +306,8 @@ void    view_context_use();
 
 /* ------------------------ somewhere library ----------------- */
 double commlib_getCurrTime_double (void);
+
+/* ------------------------- func.c --------------------------- */
+void    execute_function(app_ctx_t *ctx, AhifAppMsgType *txMsg);
+void    func_run(app_ctx_t *ctx, AhifAppMsgType *txMsg);
+void    fn_000(char *uri, AhifAppMsgType *txMsg);

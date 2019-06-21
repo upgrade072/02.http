@@ -45,27 +45,38 @@
 /* for lb */
 #include <lbengine.h>
 
+#include <nghttp2_session.h>
+
 #define OUTPUT_WOULDBLOCK_THRESHOLD (1 << 16)
 
 /* For LOG */
 extern char lOG_PATH[64];
 
 #define TM_INTERVAL     20000  // every 20ms
-#if 0
-#define TMOUT_NORSP     200	   // 20ms * 200 = 4sec timeout
-#else
-#define TMOUT_VECTOR    50      // SERVER_CONF.tmout_sec * TMOUT_VECTOR = N sec
-#endif
+#define TMOUT_VECTOR    50    // SERVER_CONF.tmout_sec * TMOUT_VECTOR = N sec
 
 #define MAX_PORT_NUM	12
 typedef struct server_conf {
+	int debug_mode;
 	int log_level;
-	int listen_port[MAX_PORT_NUM];
+	int https_listen_port[MAX_PORT_NUM];
+	int http_listen_port[MAX_PORT_NUM];
 	int worker_num;
+	int worker_shmkey;
 	int timeout_sec;
+	int ping_interval;
+	int ping_timeout;
+	int pkt_log;
+
 	char cert_file[128];
 	char key_file[128];
 	char credential[MAX_ACC_TOKEN_LEN];
+
+	/* for direct relay to fep */
+	int	dr_enabled;							// 0 (not) 1 (true)
+	const char *callback_ip;				// for callback uri ipaddr 
+	int callback_port_tls[MAX_PORT_NUM];	// for callback uri port
+	int callback_port_tcp[MAX_PORT_NUM];	// for callback uri port
 
     config_setting_t *lb_config;
 } server_conf;
@@ -104,6 +115,10 @@ typedef enum conn_status {
 typedef struct app_context {
 	SSL_CTX *ssl_ctx;
 	struct event_base *evbase;
+
+	// for fep direct relay
+	int is_direct_sock;
+	int relay_fep_tag;
 } app_context;
 
 typedef struct thrd_context {
@@ -131,8 +146,10 @@ typedef struct http2_session_data {
 
 	char *client_addr;
 	int client_port;
-	char hostname[AHIF_MAX_DESTHOST_LEN];
+
+	char scheme[12]; 
 	char type[AHIF_COMM_NAME_LEN];
+	char hostname[AHIF_MAX_DESTHOST_LEN];
 
 	int list_index;		// hostname index
 	int thrd_index;
@@ -142,11 +159,15 @@ typedef struct http2_session_data {
 	int used; // 1 : used, 0 : free
 
 	int connected;
-	int ping_snd;
+	int ping_cnt;
+	struct timespec ping_rcv_time;
 
 #ifdef OAUTH
 	int auth_act;
 #endif
+	// for direct relay
+	int is_direct_session;
+	int relay_fep_tag;
 } http2_session_data;
 
 typedef struct https_ctx {
@@ -167,14 +188,26 @@ typedef struct https_ctx {
     iovec_item_t push_req;
 
 	int fep_tag;
-	pthread_t recv_thread_id;
+	//pthread_t recv_thread_id;
+
+	int is_direct_ctx;
+	int relay_fep_tag;
+
+	// if iovec pushed into tcp queue, worker can't cancel this
+	char tcp_wait;
+
+	/* for recv log */
+	FILE *recv_log_file;
+	size_t file_size;
+	char *log_ptr;
 } https_ctx_t;
 
 typedef enum intl_req_mtype {
     HTTP_INTL_SND_REQ = 0,
     HTTP_INTL_TIME_OUT,
 	HTTP_INTL_SESSION_DEL, 
-	HTTP_INTL_SEND_PING
+	HTTP_INTL_SEND_PING,
+	HTTP_INTL_OVLD
 } intl_req_mtype_t;
 
 typedef struct intl_req {
@@ -188,6 +221,7 @@ typedef struct lb_global {
     int bundle_bytes;
     int bundle_count;
     int flush_tmval;
+	int heartbeat_enable;
 
     int total_fep_num;
     int context_num;
@@ -221,6 +255,9 @@ int     add_to_allowlist(int list_idx, int thrd_idx, int sess_idx, int session_i
 int     del_from_allowlist(int list_idx, int thrd_idx, int sess_idx);
 void    print_list();
 void    write_list(char *buff);
+void    log_pkt_send(char *prefix, nghttp2_nv *hdrs, int hdrs_len, char *body, int body_len);
+void    log_pkt_head_recv(https_ctx_t *https_ctx, const uint8_t *name, size_t namelen, const uint8_t *value, size_t valuelen);
+void    log_pkt_end_stream(int stream_id, https_ctx_t *https_ctx);
 
 /* ------------------------- main.c --------------------------- */
 int     get_in_port(struct sockaddr *sa);
@@ -234,6 +271,7 @@ void    thrd_tick_callback(evutil_socket_t fd, short what, void *arg);
 void    chk_tmout_callback(evutil_socket_t fd, short what, void *arg);
 void    send_ping_callback(evutil_socket_t fd, short what, void *arg);
 void    send_status_to_omp(evutil_socket_t fd, short what, void *arg);
+void	initialize_nghttp2_session(http2_session_data *session_data);
 void    *workerThread(void *arg);
 void    create_https_worker();
 int     initialize();
@@ -259,8 +297,12 @@ void    set_iovec(tcp_ctx_t *dest_tcp_ctx, https_ctx_t *https_ctx, const char *d
 void    push_callback(evutil_socket_t fd, short what, void *arg);
 void    iovec_push_req(tcp_ctx_t *dest_tcp_ctx, iovec_item_t *push_req);
 tcp_ctx_t       *get_loadshare_turn(https_ctx_t *https_ctx);
+tcp_ctx_t       *get_direct_dest(https_ctx_t *https_ctx);
+void    gb_clean_ctx(https_ctx_t *https_ctx);
+void    set_callback_tag(https_ctx_t *https_ctx, tcp_ctx_t *fep_tcp_ctx);
 int     send_request_to_fep(https_ctx_t *https_ctx);
-void    send_to_worker(https_ctx_t *recv_ctx);
+void    send_to_worker(tcp_ctx_t *tcp_ctx, https_ctx_t *recv_ctx, int intl_msg_type);
+void    heartbeat_process(https_ctx_t *recv_ctx, tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx, int staCause);
 void    check_and_send(tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx);
 void    lb_buff_readcb(struct bufferevent *bev, void *arg);
 int     get_httpcs_buff_used(tcp_ctx_t *tcp_ctx);
@@ -268,6 +310,5 @@ void    clear_context_stat(tcp_ctx_t *tcp_ctx);
 void    fep_stat_print(evutil_socket_t fd, short what, void *arg);
 void    *fep_stat_thread(void *arg);
 void    load_lb_config(server_conf *svr_conf, lb_global_t *lb_conf);
-void    attach_lb_thread(lb_global_t *lb_conf, main_ctx_t *main_ctx);
+void    attach_lb_thread(lb_global_t *lb_conf, lb_ctx_t *lb_ctx);
 int     create_lb_thread();
-

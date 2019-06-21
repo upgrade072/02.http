@@ -137,7 +137,7 @@ int send_response_mml(IxpcQMsgType *rxIxpcMsg, char *resbuf, char resCode, char 
 #endif
         return -1;
     } 
-	fprintf(stderr, "sndMsg Success sendLen(%d)\n", txLen);
-	fprintf(stderr, "(%s)\n", txResMsg->body);
+	APPLOG(APPLOG_DETAIL, "sndMsg Success sendLen(%d)", txLen);
+	APPLOG(APPLOG_DETAIL, "(%s)", txResMsg->body);
     return 0;
 }

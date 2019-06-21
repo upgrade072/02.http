@@ -1,5 +1,4 @@
 #include "header.h"
-#include <ctype.h>
 
 /* global */
 float BULK_SND;
@@ -30,10 +29,8 @@ extern stat_t STAT;
 extern sndrcv_t SNDRCV;
 
 /* log */
-#ifdef LOG_APP
 int logLevel = APPLOG_DEBUG;
 int *lOG_FLAG = &logLevel;
-#endif
 
 app_ctx_t *get_ctx(int thrd_idx, int ctx_idx)
 {
@@ -94,18 +91,56 @@ int initialize()
     }
 
     /* log initialize */
+#ifdef LOG_LIB
+	char log_path[1024] = {0,};
+	sprintf(log_path, "%s/log/ERR_LOG/%s", getenv(IV_HOME), my_name);
+	initlog_for_loglib(my_name, log_path);
+#elif LOG_APP
     sprintf(fname, "%s/log", getenv(IV_HOME));
-#ifdef LOG_APP
     LogInit(my_name, fname);
-#endif
     APPLOG(APPLOG_ERR, "\n\n\n\n\n[Welcome Process Started]");
+#endif
 
     /* shmq initialize */
+#if 0
     sprintf(fname, "%s/%s", getenv(IV_HOME), AHIF_CONF_FILE);
     if ((appRxQid = shmqlib_getQid (fname, "AHIF_TO_APP_SHMQ", my_name, SHMQLIB_MODE_GETTER)) < 0)
         return (-1);
     if ((appTxQid = shmqlib_getQid (fname, "APP_TO_AHIF_SHMQ", my_name, SHMQLIB_MODE_PUTTER)) < 0)
         return (-1);
+#else
+	char token[8][CONFLIB_MAX_TOKEN_LEN];
+
+    sprintf(fname, "%s/%s", getenv(IV_HOME), AHIF_CONF_FILE);
+
+	if (conflib_getNTokenInFileSection (fname, "APP_Q_INFO", my_name, 4, token) < 4) {
+		fprintf(stderr, "conflib_getNTokenInFileSection fail. filename=[%s], section=[%s], procName=[%s]\n",
+				fname, "APP_Q_INFO", my_name);
+		return -1;
+	}
+
+	int rxKey  = strtol (token[1],0,0);
+	int txKey  = strtol (token[2],0,0);
+	int numRow = strtol (token[3],0,0);
+	int maxLen = strtol (token[4],0,0);
+	int shmSiz = strtol (token[5],0,0);
+
+	if ((appRxQid = shmqlib_init(rxKey, numRow, maxLen, shmSiz, SHMQLIB_MODE_GETTER)) < 0) {
+		fprintf(stderr, "shmqlib_init fail. filename=[%s], section=[%s], procName=[%s], rxKey=0x%x\n",
+				fname, "APP_Q_INFO", my_name, rxKey);
+		return -1;
+	} else {
+		fprintf (stderr, "[%s] appRxQid=[%d]\n", __func__, appRxQid);
+	}
+
+	if ((appTxQid = shmqlib_init(txKey, numRow, maxLen, shmSiz, SHMQLIB_MODE_PUTTER)) < 0) {
+		fprintf(stderr, "shmqlib_init fail. filename=[%s], section=[%s], procName=[%s], rxKey=0x%x\n",
+				fname, "APP_Q_INFO", my_name, txKey);
+		return -1;
+	} else {
+		fprintf (stderr, "[%s] appTxQid=[%d]\n", __func__, appTxQid);
+	}
+#endif
 
     /* sender thread initialize */
     for (int index = 0; index < PERF_CONF.sender_thread_num; index++) {
@@ -127,7 +162,7 @@ int initialize()
         Init_CtxId(index);
     }
 
-#ifndef TEST
+#ifndef LOCAL
     if (keepalivelib_init(my_name) < 0) {
         fprintf(stderr, "keepalive init fail");
         return (-1);
@@ -172,15 +207,21 @@ int set_scenario_at_thread(int thrd_idx, thrd_ctx_t *thrd_ctx)
             fprintf(stderr, "CAUTION JSON FILE [%s] FORMAT FAIL\n", step->filename);
             return(-1);
         }
+#if 0
         thrd_ctx->base_obj[index] = json_object_get(base_obj);
 
-        if (base_obj == NULL) {
+        if (base_obj == (struct json_object*)error_ptr(-1)) {
             fprintf(stderr, "fail to get json from file (%s)\n", step->filename);
             return(-1);
+#else
+        if ((thrd_ctx->base_obj[index] = json_object_get(base_obj)) == NULL) {
+            fprintf(stderr, "fail to get json from file (%s)\n", step->filename);
+            return(-1);
+#endif
         } else {
             thrd_ctx->step_exist[index] = 1;
             fprintf(stderr, "\tsender thrd[%2d] step(%2d) sendfile(%s) initialed\n", thrd_idx, index, step->filename);
-#ifdef TEST
+#ifdef DEBUG
             char tmp_file[256] = {0,};
 
             sprintf(tmp_file, "./temp.json");
@@ -191,7 +232,7 @@ int set_scenario_at_thread(int thrd_idx, thrd_ctx_t *thrd_ctx)
         }
     }
 
-	return 0;
+	return (0);
 }
 
 int create_thread()
@@ -239,7 +280,7 @@ int create_thread()
     }
 #endif
 
-	return 0;
+	return (0);
 }
 
 void *receiverThread(void *arg)
@@ -247,12 +288,12 @@ void *receiverThread(void *arg)
     int index = *(int *)arg;
     char rxMsg[sizeof(AhifAppMsgType) + 1024] = {0,};
     AhifAppMsgType *recvMsg = (AhifAppMsgType *)&rxMsg;
-    int msgSize = 0, sleep_cnt = 0;
+    int sleep_cnt = 0;
 
     while (1)
     {
         pthread_mutex_lock(&SHMQ_READ_MUTEX);
-        msgSize = shmqlib_getMsg(appRxQid, rxMsg);
+        int msgSize = shmqlib_getMsg(appRxQid, rxMsg);
         pthread_mutex_unlock(&SHMQ_READ_MUTEX);
 
         if (msgSize <= 0) {
@@ -293,7 +334,7 @@ void *senderThread(void *arg)
     /* never reach here */
     event_base_free(evbase);
 
-	return NULL;
+	return (void *)NULL;
 }
 
 void *manageThread(void *arg)
@@ -309,7 +350,7 @@ void *manageThread(void *arg)
     /* never reach here */
     event_base_free(evbase);
 
-	return NULL;
+	return (void *)NULL;
 }
 
 void send_action(evutil_socket_t fd, short what, void *arg)
@@ -357,8 +398,11 @@ void send_action(evutil_socket_t fd, short what, void *arg)
     replace_obj(curr_obj, fwd);
 
     /* make ahif header */
-    AhifAppMsgType txMsg;
+    AhifAppMsgType txMsg = {0,};
     shmq_len = make_ahif_header(ctx, current_step, &txMsg, curr_obj);
+
+	/* function */
+	execute_function(ctx, &txMsg);
 
     /* for DEBUG */
     if (PERF_CONF.validate_mode) {
@@ -405,6 +449,7 @@ void recv_action(int recv_thrd_idx, AhifAppMsgType *recvMsg)
 {
     int thrd_idx = 0, ctx_idx = 0;
     int cid = recvMsg->head.appCid;
+    //int respCode = recvMsg->head.respCode;
     app_ctx_t *ctx = NULL;
     thrd_ctx_t *thrd_ctx = NULL;
     json_object *resp_obj = NULL;
@@ -461,13 +506,13 @@ void recv_action(int recv_thrd_idx, AhifAppMsgType *recvMsg)
             pf_recv_stat_inc(recv_thrd_idx, ctx->thrd_idx, PF_FAIL);
             goto END_CALL;
         }
-    }
+	}
 
-PARSE_JSON_FROM_MSG:
+/* PARSE_JSON_FROM_MSG: */
 
     /* make json obj from resp */
     if ((resp_obj = json_tokener_parse(recvMsg->body)) == NULL) {
-#ifdef TEST
+#ifdef DEBUG
         fprintf(stderr, "resp but json parse fail (cid:%d)\n", ctx->cid);
 #endif
         /* some message response have no body */
@@ -499,7 +544,7 @@ PARSE_JSON_FROM_MSG:
 
     /* check result from resp */
     if (check_result(resp_obj, ctx) < 0) {
-#ifdef TEST
+#ifdef DEBUG
         fprintf(stderr, "resp but result fail (cid:%d)\n", ctx->cid);
 #endif
         /* this call fail */
@@ -508,12 +553,21 @@ PARSE_JSON_FROM_MSG:
         goto END_CALL;
     }
 
+	/* set next step function with func_arg */
+	if (check_func_arg(resp_obj, ctx) < 0) {
+        /* this call fail */
+        pf_recv_stat_inc(recv_thrd_idx, ctx->thrd_idx, PF_RCV_CAUSE_FAIL);
+        pf_recv_stat_inc(recv_thrd_idx, ctx->thrd_idx, PF_FAIL);
+        goto END_CALL;
+	}
+
+
 DONT_CHECK_RESULT:
 
     /* check next step exist, if last it count success */
     if (ctx->curr_step >= MAX_PF_STEP_NUM ||
            thrd_ctx->step_exist[ctx->curr_step + 1] != 1) {
-#ifdef TEST
+#ifdef DEBUG
         fprintf(stderr, "resp reach to step-end (cid:%d)\n", ctx->cid);
 #endif
         /* this call succ */
@@ -521,17 +575,29 @@ DONT_CHECK_RESULT:
         goto END_CALL;
     }
 
-MOVE_TO_NEXT:
+/* MOVE_TO_NEXT: */
+
+	if (recvMsg->head.respCode < 200 || recvMsg->head.respCode >= 300) {
+		goto END_CALL;
+	}
 
     if (resp_obj) {
         /* check forward obj exist */
         check_fwd_field(resp_obj, ctx);
+
+		// RELEASE json object
         json_object_put(resp_obj);
     }
 
     /* move step_count & call send_action */
+#if 0
     event_base_once(thrd_ctx->evbase, -1, EV_TIMEOUT, send_action, &ctx->param, &thrd_ctx->interval_milisec[ctx->curr_step]);
     ctx->curr_step ++;
+#else
+	int sleep_step = ctx->curr_step;
+	ctx->curr_step++;
+    event_base_once(thrd_ctx->evbase, -1, EV_TIMEOUT, send_action, &ctx->param, &thrd_ctx->interval_milisec[sleep_step]);
+#endif
     return;
 
 END_CALL:
@@ -559,6 +625,7 @@ void free_ctx_proc(evutil_socket_t fd, short what, void *arg)
     app_ctx_t *ctx = arg;
 
     Free_CtxId(ctx->thrd_idx, ctx->ctx_idx);
+	memset(ctx, 0x00, sizeof(app_ctx_t));
     ctx->occupied = 0;
 }
 
@@ -608,7 +675,7 @@ void main_tick_callback(evutil_socket_t fd, short what, void *arg)
 
 int check_result(json_object *resp_obj, app_ctx_t *ctx)
 {
-#ifdef TEST
+#ifdef DEBUG
     fprintf(stderr, "response!\n%s\n", json_object_to_json_string(resp_obj));
     fprintf(stderr, "ctx curr step is [%d]\n", ctx->curr_step);
 #endif
@@ -622,7 +689,7 @@ int check_result(json_object *resp_obj, app_ctx_t *ctx)
     parse.result[0].state = JS_INIT;
     sprintf(parse.result[0].name, "%s", PERF_CONF.scenario.success[ctx->curr_step].name);
     recurse_obj(resp_obj, &parse, JS_WANT_FIND);
-#ifdef TEST
+#ifdef DEBUG
     fprintf(stderr, "recv res ]\n");
     print_parse_result(&parse);
 #endif
@@ -648,12 +715,30 @@ void check_fwd_field(json_object *resp_obj, app_ctx_t *ctx)
                 PERF_CONF.scenario.forward[ctx->curr_step].obj[i].obj_name);
     }
     recurse_obj(resp_obj, parse, JS_WANT_FIND);
-#ifdef TEST
+#ifdef DEBUG
     fprintf(stderr, "we found fwd ]\n");
     print_parse_result(parse);
 #endif
 
     return;
+}
+
+int check_func_arg(json_object *resp_obj, app_ctx_t *ctx)
+{
+	/* relay func & arg to next step */
+	perf_scenario_t *scen_config = &PERF_CONF.scenario;
+	int find = 0;
+
+	if (strlen(scen_config->step[ctx->curr_step].farg) != 0) {
+		recurse_obj_single(resp_obj, scen_config->step[ctx->curr_step].farg, ctx->func_arg, sizeof(ctx->func_arg), &find);
+		ctx->func_exist = find;
+		sprintf(ctx->func_name, "%s", find == 1 ? scen_config->step[ctx->curr_step].func : "");
+		if (!find) {
+			return (-1); // error case
+		}
+	}
+
+	return 0;
 }
 
 int make_cid(int thrd_id, int ctx_id)
@@ -684,18 +769,24 @@ int make_ahif_header(app_ctx_t *ctx, int current_step, AhifAppMsgType *txMsg, js
     sprintf(txMsg->head.rsrcName, "%s", step->rsrc);
     sprintf(txMsg->head.httpMethod, "%s", step->method);
     sprintf(txMsg->head.destType, "%s", step->type);
+    sprintf(txMsg->head.destHost, "%s", step->dest);
     txMsg->head.opTimer = 3;
 
-#ifdef TEST
-    fprintf(stderr, "DBG AH [%s] [%s] [%s] setting done\n",
-            step->rsrc, step->method, step->type);
+#ifdef DEBUG
+    fprintf(stderr, "DBG AH [%s] [%s] [%s] [%s] setting done\n",
+            step->rsrc, step->method, step->type, step->dest);
     fprintf(stderr, "DBG will push obj]\n%s\n", json_object_to_json_string(curr_obj));
 #endif
 
     body_len = sprintf(txMsg->body, "%s", json_object_to_json_string(curr_obj));
     txMsg->head.bodyLen = body_len;
 
-    return (AHIF_APP_MSG_HEAD_LEN + txMsg->head.bodyLen);
+    if (PERF_CONF.validate_mode) {
+        fprintf(stderr, "\nDBG request body (len %d)]]]]\n", body_len);
+        DumpHex(txMsg->body, body_len);
+    }
+
+    return (AHIF_APP_MSG_HEAD_LEN + AHIF_VHDR_LEN + txMsg->head.bodyLen);
 }
 
 void save_call_end_info(send_recv_statistic_t *arg, double start_tm, double end_tm, int snd_byte, int rcv_byte)
@@ -708,7 +799,7 @@ void save_call_end_info(send_recv_statistic_t *arg, double start_tm, double end_
 
 void ctx_timeout(evutil_socket_t fd, short what, void *arg)
 {
-#ifdef TEST
+#ifdef DEBUG
     fprintf(stderr, "timeout occured\n");
 #endif
     cb_tmout_arg_t *param = arg;
@@ -743,7 +834,7 @@ void ctx_timeout(evutil_socket_t fd, short what, void *arg)
             free_ctx(ctx);
         } else {
             /* do not anything, already responsed or free-ed */
-#ifdef TEST
+#ifdef DEBUG
             fprintf(stderr, "it's already free-ed object, OK case\n");
 #endif
         }
@@ -771,7 +862,7 @@ void set_key_val(app_ctx_t *ctx)
                 scen_config->key[i].pfx,
                 KEY_NUMBER,
                 scen_config->key[i].epfx);
-#ifdef TEST
+#ifdef DEBUG
         fprintf(stderr, "DBG key %s : %s\n",
                 ctx->key_value.result[index].name,
                 ctx->key_value.result[index].buf);
@@ -841,7 +932,7 @@ void restore_term()
 void gather_remain_stat()
 {
     for (int i = 0; i < (MAX_PF_STEP_NUM + 5); i++) { // max step
-#ifndef TEST
+#ifndef LOCAL
         keepalivelib_increase();
 #endif
         event_base_once(MNG_THREAD.evbase, -1, EV_TIMEOUT, main_tick_callback, NULL, NULL);
@@ -882,7 +973,7 @@ int main()
     while (RUNNING) {
         /* 1 call per 1 sec */
         if (PERF_CONF.validate_mode) {
-#ifndef TEST
+#ifndef LOCAL
             keepalivelib_increase();
 #endif
             if (snd_count < PERF_CONF.validate_mode) {
@@ -906,7 +997,7 @@ int main()
             }
             /* sec move */
             if (snd_count >= 100) { 
-#ifndef TEST
+#ifndef LOCAL
                 keepalivelib_increase();
 #endif
                 snd_count = 0;
