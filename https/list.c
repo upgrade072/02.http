@@ -44,12 +44,21 @@ void assign_new_ctx_info(https_ctx_t *https_ctx, http2_session_data *session_dat
 
 void assign_rcv_ctx_info(https_ctx_t *https_ctx, AhifHttpCSMsgType *ResMsg)
 {
+#if 0
 	sprintf(https_ctx->user_ctx.head.contentEncoding, "%s", ResMsg->head.contentEncoding);
+#endif
 	https_ctx->user_ctx.head.respCode = ResMsg->head.respCode;
 	https_ctx->user_ctx.head.vheaderCnt = ResMsg->head.vheaderCnt;
 	memcpy(&https_ctx->user_ctx.vheader, ResMsg->vheader, sizeof(hdr_relay) * ResMsg->head.vheaderCnt);
+#if 0
 	https_ctx->user_ctx.head.bodyLen = ResMsg->head.bodyLen;
 	memcpy(&https_ctx->user_ctx.body, ResMsg->body, ResMsg->head.bodyLen);
+#else
+	https_ctx->user_ctx.head.queryLen = ResMsg->head.queryLen;
+	https_ctx->user_ctx.head.bodyLen = ResMsg->head.bodyLen;
+	memcpy(&https_ctx->user_ctx.data, ResMsg->data, 
+			ResMsg->head.queryLen + ResMsg->head.bodyLen);
+#endif
 }
 
 void clear_and_free_ctx(https_ctx_t *https_ctx)
@@ -261,8 +270,16 @@ void log_pkt_end_stream(int stream_id, https_ctx_t *https_ctx)
 			return;
 		}
     }
-	if (https_ctx->user_ctx.head.bodyLen > 0)
+	if (https_ctx->user_ctx.head.bodyLen > 0) {
+#if 0
 		util_dumphex(https_ctx->recv_log_file, https_ctx->user_ctx.body, https_ctx->user_ctx.head.bodyLen);
+#else
+		// dump only body
+		util_dumphex(https_ctx->recv_log_file, 
+				https_ctx->user_ctx.data + https_ctx->user_ctx.head.queryLen,
+				https_ctx->user_ctx.head.bodyLen);
+#endif
+	}
 
     // 1) close file
     fclose(https_ctx->recv_log_file);

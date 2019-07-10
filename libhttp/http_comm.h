@@ -16,7 +16,6 @@
 #define HTTP_PREPARE_STREAM_LIMIT 1000000000
 
 #ifdef LOG_LIB
-//#define APPLOG(level, fmt, ...) logPrint(ELI, FL, fmt "\n", ##__VA_ARGS__)
 int *lOG_FLAG;
 #define APPLOG_NONE   LL0
 #define APPLOG_ERR    LL1
@@ -25,29 +24,10 @@ int *lOG_FLAG;
 #define APPLOG_DEBUG  LL4
 #define APPLOG(level, fmt, ...); {if (level <= *lOG_FLAG) logPrint(ELI, FL, fmt "\n", ##__VA_ARGS__);}
 #elif LOG_APP
-#else
+#elif LOG_PRINT
 #define APPLOG(level, fmt, ...) fprintf(stderr, fmt "\n", ##__VA_ARGS__)
 #endif
 
-/* HTTPCS STACK VALUE ==> move to .cfg */
-#if 0
-#ifndef TEST
-//#define HTTPC_SEMAPHORE_NAME		"httpc_sem_status"
-#define HTTPC_SHM_MEM_KEY			0x00520000
-#define HTTPC_INTL_MSG_KEY_BASE		0x00520100 // ~ 0x00520111
-#define HTTPS_INTL_MSG_KEY_BASE		0x00520200 // ~ 0x00520211
-#else
-//#define HTTPC_SEMAPHORE_NAME		"httpc_sem_status_test"
-#define HTTPC_SHM_MEM_KEY			0x00620000
-#define HTTPC_INTL_MSG_KEY_BASE		0x00620100 // ~ 0x00620111
-#define HTTPS_INTL_MSG_KEY_BASE		0x00620200 // ~ 0x00620211
-#endif
-#endif
-
-#define AHIF_HTTPC_SEND_SIZE(a) AHIF_HTTPCS_MSG_HEAD_LEN + AHIF_VHDR_LEN + a.head.bodyLen
-#define HTTPC_AHIF_SEND_SIZE(a) AHIF_HTTPCS_MSG_HEAD_LEN + AHIF_VHDR_LEN + a.head.bodyLen
-#define HTTPS_AHIF_SEND_SIZE	HTTPC_AHIF_SEND_SIZE
-#define AHIF_HTTPS_SEND_SIZE	AHIF_HTTPC_SEND_SIZE
 
 typedef enum http_encode_scheme {
 	HTTP_EN_RFC3986 = 0,
@@ -64,8 +44,10 @@ typedef enum http_encode_scheme {
 #define HDR_STATUS					":status"
 /* virtual header : non semi-colon start */
 #define HDR_AUTHORIZATION			"authorization"		// authorization: Bearer token_raw
+#define HDR_CONTENT_TYPE			"content-type"		// it used by NRF (http) request lib
+#if 0 // move to vhdr use
 #define HDR_CONTENT_ENCODING		"content-encoding"
-#define HDR_CONTENT_TYPE			"content-type"
+#endif
 
 typedef struct HttpCSAhifTagType {
 	int thrd_index;
@@ -198,6 +180,6 @@ hdr_index_t     *search_vhdr(hdr_index_t hdr_index[], int array_size, char *vhdr
 int     parse_ipv4(char *temp_str, struct sockaddr_in *sa, int *port);
 int     parse_ipv6(char *temp_str, struct sockaddr_in6 *sa6, int *port);
 int     parse_http_addr(char *temp_str, struct sockaddr_in *sa, struct sockaddr_in6 *sa6, int *port);
-void	divide_string(char *input, int delim, char *head, ssize_t head_size, char *tail, ssize_t tail_size);
+int		divide_string(char *input, int delim, char *head, ssize_t head_size, char *tail, ssize_t tail_size);
 
 #endif /* __HTTP_COMMON_H__ */

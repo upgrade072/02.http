@@ -9,6 +9,8 @@ VH_START,
 VH_CONTENT_TYPE,
 VH_LOCATION,
 VH_ACCEPT,
+VH_ACCEPT_ENCODING,
+VH_CONTENT_ENCODING,
 VH_END
 } http_vheader;
 #define HTTP_VHEADER "\
@@ -16,6 +18,8 @@ VH_START\n\
 content-type\n\
 location\n\
 accept\n\
+accept-encoding\n\
+content-encoding\n\
 VH_END\n"
 
 #define MAX_HDR_RELAY_CNT 12

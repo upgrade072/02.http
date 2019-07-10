@@ -26,7 +26,7 @@ void clear_send_ctx(httpc_ctx_t *httpc_ctx)
 {
 	httpc_ctx->inflight_ref_cnt = 0;
 	httpc_ctx->user_ctx.head.bodyLen = 0;
-	memset(httpc_ctx->user_ctx.head.contentEncoding, 0x00, sizeof(httpc_ctx->user_ctx.head.contentEncoding));
+	//memset(httpc_ctx->user_ctx.head.contentEncoding, 0x00, sizeof(httpc_ctx->user_ctx.head.contentEncoding));
 
 	memset(httpc_ctx->user_ctx.vheader, 0x00, sizeof(hdr_relay) * httpc_ctx->user_ctx.head.vheaderCnt);
 	httpc_ctx->user_ctx.head.vheaderCnt = 0;
@@ -37,7 +37,7 @@ void clear_and_free_ctx(httpc_ctx_t *httpc_ctx)
 	httpc_ctx->tcp_wait = 0;
 	httpc_ctx->inflight_ref_cnt = 0;
 	httpc_ctx->user_ctx.head.bodyLen = 0;
-	memset(httpc_ctx->user_ctx.head.contentEncoding, 0x00, sizeof(httpc_ctx->user_ctx.head.contentEncoding));
+	//memset(httpc_ctx->user_ctx.head.contentEncoding, 0x00, sizeof(httpc_ctx->user_ctx.head.contentEncoding));
 	httpc_ctx->occupied = 0;
 }
 
@@ -319,8 +319,15 @@ void log_pkt_end_stream(int stream_id, httpc_ctx_t *httpc_ctx)
 		}
 	}
 	// print body to log
-	if (httpc_ctx->user_ctx.head.bodyLen > 0)
+	if (httpc_ctx->user_ctx.head.bodyLen > 0) {
+#if 0
 		util_dumphex(httpc_ctx->recv_log_file, httpc_ctx->user_ctx.body, httpc_ctx->user_ctx.head.bodyLen);
+#else
+		util_dumphex(httpc_ctx->recv_log_file, 
+				httpc_ctx->user_ctx.data + httpc_ctx->user_ctx.head.queryLen,
+				httpc_ctx->user_ctx.head.bodyLen);
+#endif
+	}
 
 	// 1) close file
 	fclose(httpc_ctx->recv_log_file);

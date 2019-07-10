@@ -163,8 +163,10 @@ static int on_header_callback(nghttp2_session *session,
 
 			if (!strcmp(header_name, HDR_STATUS)) {
 				httpc_ctx->user_ctx.head.respCode = atoi(header_value);
+#if 0 // it move to vhdr
 			} else if (!strcmp(header_name, HDR_CONTENT_ENCODING)) {
 				sprintf(httpc_ctx->user_ctx.head.contentEncoding, "%s", header_value);
+#endif
 			} else {
 				/* vHeader relay */
 				if (set_defined_header(VHDR_INDEX[1], header_name, header_value, &httpc_ctx->user_ctx) != -1) {
@@ -231,7 +233,12 @@ static ssize_t ptr_read_callback(nghttp2_session *session, int32_t stream_id,
 				__func__, httpc_ctx->ctx_idx, len, length);
 		len = length;
 	}
+#if 0
 	memcpy(buf, httpc_ctx->user_ctx.body, len);
+#else
+	// ahif.data [query|body|...] this callback want body send
+	memcpy(buf, httpc_ctx->user_ctx.data + httpc_ctx->user_ctx.head.queryLen, len);
+#endif
 	clear_send_ctx(httpc_ctx);
 	*data_flags |= NGHTTP2_DATA_FLAG_EOF;
 	return len;
@@ -241,11 +248,18 @@ static int submit_request(http2_session_data_t *session_data, httpc_ctx_t *httpc
 	int32_t stream_id;
 
     char request_path[AHIF_MAX_RESOURCE_URI_LEN + 1 + AHIF_MAX_QUERY_PARAMETER_LEN] = {0,}; // rsrc ? query
+#if 0
     if (strlen(httpc_ctx->user_ctx.head.queryParam)) {
         sprintf(request_path, "%s?%s", httpc_ctx->user_ctx.head.rsrcUri, httpc_ctx->user_ctx.head.queryParam);
     } else {
         sprintf(request_path, "%s", httpc_ctx->user_ctx.head.rsrcUri);
     }
+#else
+	sprintf(request_path, "%s", httpc_ctx->user_ctx.head.rsrcUri);
+	if (httpc_ctx->user_ctx.head.queryLen > 0) {
+		memcpy(request_path + strlen(request_path), httpc_ctx->user_ctx.data, httpc_ctx->user_ctx.head.queryLen);
+	}
+#endif
 
 	nghttp2_nv hdrs[MAX_HDR_RELAY_CNT + 5] = {
 		MAKE_NV(HDR_METHOD, httpc_ctx->user_ctx.head.httpMethod, strlen(httpc_ctx->user_ctx.head.httpMethod)),
@@ -280,14 +294,26 @@ static int submit_request(http2_session_data_t *session_data, httpc_ctx_t *httpc
 				hdrs_len, &data_prd, stream_data);
 		sprintf(log_pfx, "HTTPC SEND ahifcid(%d) http sess/stream(%d:%d)]", 
 				httpc_ctx->user_ctx.head.ahifCid, httpc_ctx->session_id, stream_id);
+#if 0
 		log_pkt_send(log_pfx, hdrs, hdrs_len, httpc_ctx->user_ctx.body, httpc_ctx->user_ctx.head.bodyLen);
+#else
+		log_pkt_send(log_pfx, hdrs, hdrs_len, 
+				httpc_ctx->user_ctx.data + httpc_ctx->user_ctx.head.queryLen, 
+				httpc_ctx->user_ctx.head.bodyLen);
+#endif
 
 	} else {
 		stream_id = nghttp2_submit_request(session_data->session, NULL, hdrs, 
 				hdrs_len, NULL, stream_data);
 		sprintf(log_pfx, "HTTPC SEND ahifcid(%d) http sess/stream(%d:%d)]", 
 				httpc_ctx->user_ctx.head.ahifCid, httpc_ctx->session_id, stream_id);
+#if 0
 		log_pkt_send(log_pfx, hdrs, hdrs_len, httpc_ctx->user_ctx.body, httpc_ctx->user_ctx.head.bodyLen);
+#else
+		log_pkt_send(log_pfx, hdrs, hdrs_len, 
+				httpc_ctx->user_ctx.data + httpc_ctx->user_ctx.head.queryLen, 
+				httpc_ctx->user_ctx.head.bodyLen);
+#endif
 
 		clear_send_ctx(httpc_ctx); // clear now
 	}
@@ -342,7 +368,11 @@ static int on_data_chunk_recv_callback(nghttp2_session *session, uint8_t flags,
 		}
 
 		/* volatile issue */
+#if 0
 		char *ptr = httpc_ctx->user_ctx.body;
+#else
+		char *ptr = httpc_ctx->user_ctx.data + httpc_ctx->user_ctx.head.queryLen; // ahif.data [query|data|...]
+#endif
 		volatile int curr_len = httpc_ctx->user_ctx.head.bodyLen;
 		ptr += curr_len;
 		memcpy(ptr, data, len);

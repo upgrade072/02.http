@@ -73,6 +73,8 @@ typedef struct {
     int occupied;
     char filename[256];
     char rsrc[128];
+    char query[128];
+    int encoding_val;
     char method[128];
     char type[128];
     char dest[128];

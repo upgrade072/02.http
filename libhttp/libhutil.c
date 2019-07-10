@@ -101,15 +101,17 @@ HTTP_ADDR_PARSE_ERR:
 }
 
 
-void divide_string(char *input, int delim, char *head, ssize_t head_size, char *tail, ssize_t tail_size)
+int divide_string(char *input, int delim, char *head, ssize_t head_size, char *tail, ssize_t tail_size)
 {
     char *delim_ptr;
 
     if ((delim_ptr = strchr(input, delim)) == NULL) {
         snprintf(head, head_size, "%s", input);
-        return;
+        return 0;
     } else {
         snprintf(head, (delim_ptr + 1 - input) % head_size, "%s", input);
-        snprintf(tail, tail_size, "%s", delim_ptr + 1);
+        snprintf(tail, tail_size, "%s", delim_ptr);
+		//APPLOG(APPLOG_ERR, "{{{DBG}}} rsrc_uri(%s) query(data)[%s]", head, tail);
+		return strlen(tail);
     }
 }

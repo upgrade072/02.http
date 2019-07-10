@@ -195,6 +195,8 @@ int load_scenario_suit(config_setting_t *root, int index)
     /* load scenario */
     config_setting_t *file = config_setting_get_member(scenario, "file");
     config_setting_t *rsrc = config_setting_get_member(scenario, "rsrc");
+    config_setting_t *query = config_setting_get_member(scenario, "query");
+    config_setting_t *encoding = config_setting_get_member(scenario, "encoding");
     config_setting_t *method = config_setting_get_member(scenario, "method");
     config_setting_t *type = config_setting_get_member(scenario, "type");
     config_setting_t *dest = config_setting_get_member(scenario, "dest");
@@ -209,16 +211,24 @@ int load_scenario_suit(config_setting_t *root, int index)
 
     int file_num = config_setting_length(file);
     int rsrc_num = config_setting_length(rsrc);
+    int query_num = config_setting_length(query);
+    int encoding_num = config_setting_length(encoding);
     int method_num = config_setting_length(method);
     int type_num = config_setting_length(type);
     int dest_num = config_setting_length(dest);
     int func_num = config_setting_length(func);
     int farg_num = config_setting_length(farg);
 
-    if ((file_num != method_num) || (file_num != rsrc_num) || (file_num != type_num) || (file_num != dest_num)
-			|| (file_num != func_num) || (file_num != farg_num)) {
-        fprintf(stderr, "\n\tfile(%2d)/rsrc(%2d)/method(%2d)/type(%2d)/dest(%2d)/func(%2d)/farg(%2d) number not same\n", 
-                file_num, rsrc_num, method_num, type_num, dest_num, func_num, farg_num);
+	if ((file_num != method_num) || 
+			(file_num != rsrc_num) || 
+			(file_num != query_num) || 
+			(file_num != encoding_num) || 
+			(file_num != type_num) || 
+			(file_num != dest_num) ||
+			(file_num != func_num) || 
+			(file_num != farg_num)) {
+        fprintf(stderr, "\n\tfile(%2d)/rsrc(%2d)/query(%2d)/encoding(%2d)/method(%2d)/type(%2d)/dest(%2d)/func(%2d)/farg(%2d) number not same\n", 
+                file_num, rsrc_num, query_num, encoding_num, method_num, type_num, dest_num, func_num, farg_num);
         goto CF_SCEN_FAIL;
     }
 
@@ -232,6 +242,8 @@ int load_scenario_suit(config_setting_t *root, int index)
     for (int i = 0; i < file_num; i++) {
         const char *file_name = config_setting_get_string_elem(file, i);
         const char *rsrc_name = config_setting_get_string_elem(rsrc, i);
+        const char *query_name = config_setting_get_string_elem(query, i);
+        int encoding_val = config_setting_get_int_elem(encoding, i);
         const char *method_name = config_setting_get_string_elem(method, i);
         const char *type_name = config_setting_get_string_elem(type, i);
         const char *dest_name = config_setting_get_string_elem(dest, i);
@@ -241,8 +253,8 @@ int load_scenario_suit(config_setting_t *root, int index)
         char cmd[256] = {0, };
         int res;
 
-        fprintf(stderr, "\tstep(%d) load file[%s] rsrc[%s] method[%s] type[%s] dest[%s] func[%s] farg[%s] interval[%d]\n", 
-                i, file_name, rsrc_name, method_name, type_name, dest_name, func_name, farg_name, interval_num);
+        fprintf(stderr, "\tstep(%d) load file[%s] rsrc[%s] query[%s] encoding[%d] method[%s] type[%s] dest[%s] func[%s] farg[%s] interval[%d]\n", 
+                i, file_name, rsrc_name, query_name, encoding_val, method_name, type_name, dest_name, func_name, farg_name, interval_num);
         sprintf(cmd, "stat %s/data/%s/%s > /dev/null", getenv(IV_HOME), FILE_LOCATION, file_name);
         if ((res = system(cmd)) != 0) {
             fprintf(stderr, "\tcmd [%s] fail\n", cmd);
@@ -251,6 +263,8 @@ int load_scenario_suit(config_setting_t *root, int index)
             scen_config->step[i].occupied = 1;
             sprintf(scen_config->step[i].filename, "%s/data/%s/%s", getenv(IV_HOME), FILE_LOCATION, file_name);
             sprintf(scen_config->step[i].rsrc, "%s", rsrc_name);
+            sprintf(scen_config->step[i].query, "%s", query_name);
+			scen_config->step[i].encoding_val = encoding_val;
             sprintf(scen_config->step[i].method, "%s", method_name);
             sprintf(scen_config->step[i].type, "%s", type_name);
             sprintf(scen_config->step[i].dest, "%s", dest_name);

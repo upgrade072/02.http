@@ -439,7 +439,12 @@ void send_action(evutil_socket_t fd, short what, void *arg)
         pf_step_inc(ctx->thrd_idx, ctx->curr_step);
 
         ctx->curr_state = PF_CTX_SENDED;
+#if 0
         ctx->snd_byte = txMsg.head.bodyLen;
+#else
+        ctx->snd_byte += txMsg.head.queryLen;
+        ctx->snd_byte += txMsg.head.bodyLen;
+#endif
 
         set_timeout_event(thrd_ctx, ctx);
     }
@@ -474,7 +479,11 @@ void recv_action(int recv_thrd_idx, AhifAppMsgType *recvMsg)
 
     /* check more validation (shmq-lib broken issue) */
     if (ctx->occupied != 1 ||
+#if 0
             recvMsg->head.bodyLen >= AHIF_MAX_MSG_LEN ||
+#else
+            (recvMsg->head.queryLen + recvMsg->head.bodyLen) >= AHIF_MAX_MSG_LEN ||
+#endif
             recvMsg->head.respCode > 999) {
         /* stat fail */
         pf_recv_stat_inc(recv_thrd_idx, 0, PF_INTL_ERR);
@@ -492,7 +501,11 @@ void recv_action(int recv_thrd_idx, AhifAppMsgType *recvMsg)
             ctx->start_tm,
             curr_tm,
             ctx->snd_byte,
+#if 0
             recvMsg->head.bodyLen);
+#else
+            recvMsg->head.queryLen + recvMsg->head.bodyLen);
+#endif
     set_call_end_info(&call_end_arg);
     /* stat timeout */
     pf_recv_stat_inc(recv_thrd_idx, ctx->thrd_idx, PF_RECV);
@@ -511,7 +524,11 @@ void recv_action(int recv_thrd_idx, AhifAppMsgType *recvMsg)
 /* PARSE_JSON_FROM_MSG: */
 
     /* make json obj from resp */
+#if 0
     if ((resp_obj = json_tokener_parse(recvMsg->body)) == NULL) {
+#else
+    if ((resp_obj = json_tokener_parse(recvMsg->data + recvMsg->head.queryLen)) == NULL) {
+#endif
 #ifdef DEBUG
         fprintf(stderr, "resp but json parse fail (cid:%d)\n", ctx->cid);
 #endif
@@ -525,7 +542,11 @@ void recv_action(int recv_thrd_idx, AhifAppMsgType *recvMsg)
         pf_recv_stat_inc(recv_thrd_idx, ctx->thrd_idx, PF_FAIL);
         if (PERF_CONF.validate_mode) {
             fprintf(stderr, "\nRESP DUMP RES[%d] BODYLEN[%d] ]\n", recvMsg->head.respCode, recvMsg->head.bodyLen);
+#if 0
             DumpHex(recvMsg->body, recvMsg->head.bodyLen);
+#else
+            DumpHex(recvMsg->data + recvMsg->head.queryLen, recvMsg->head.bodyLen);
+#endif
         }
         goto END_CALL;
     }
@@ -767,6 +788,13 @@ int make_ahif_header(app_ctx_t *ctx, int current_step, AhifAppMsgType *txMsg, js
     txMsg->head.appCid  = ctx->cid;
     sprintf(txMsg->head.appVer, "%s", "R100");
     sprintf(txMsg->head.rsrcName, "%s", step->rsrc);
+	if (strlen(step->query)) {
+		txMsg->head.queryLen = sprintf(txMsg->data, "%s", step->query);
+	}
+	if (step->encoding_val) {
+		txMsg->vheader[0].vheader_id = VH_CONTENT_ENCODING;
+		sprintf(txMsg->vheader[0].vheader_body, "%s", "gzip");
+	}
     sprintf(txMsg->head.httpMethod, "%s", step->method);
     sprintf(txMsg->head.destType, "%s", step->type);
     sprintf(txMsg->head.destHost, "%s", step->dest);
@@ -778,15 +806,27 @@ int make_ahif_header(app_ctx_t *ctx, int current_step, AhifAppMsgType *txMsg, js
     fprintf(stderr, "DBG will push obj]\n%s\n", json_object_to_json_string(curr_obj));
 #endif
 
+#if 0
     body_len = sprintf(txMsg->body, "%s", json_object_to_json_string(curr_obj));
+#else
+    body_len = sprintf(txMsg->data + txMsg->head.queryLen, "%s", json_object_to_json_string(curr_obj));
+#endif
     txMsg->head.bodyLen = body_len;
 
     if (PERF_CONF.validate_mode) {
         fprintf(stderr, "\nDBG request body (len %d)]]]]\n", body_len);
+#if 0
         DumpHex(txMsg->body, body_len);
+#else
+        DumpHex(txMsg->data + txMsg->head.queryLen, body_len);
+#endif
     }
 
+#if 0
     return (AHIF_APP_MSG_HEAD_LEN + AHIF_VHDR_LEN + txMsg->head.bodyLen);
+#else
+    return (AHIF_APP_MSG_HEAD_LEN + AHIF_VHDR_LEN + txMsg->head.queryLen + txMsg->head.bodyLen);
+#endif
 }
 
 void save_call_end_info(send_recv_statistic_t *arg, double start_tm, double end_tm, int snd_byte, int rcv_byte)

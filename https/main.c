@@ -419,7 +419,12 @@ static ssize_t ptr_read_callback_ctx(nghttp2_session *session, int32_t stream_id
                 __func__, len, length);
         len = length;
     }
+#if 0
     memcpy(buf, https_ctx->user_ctx.body, len);
+#else
+	// ahif.data [query|body|...] this callback only want body
+    memcpy(buf, https_ctx->user_ctx.data + https_ctx->user_ctx.head.queryLen, len);
+#endif
     *data_flags |= NGHTTP2_DATA_FLAG_EOF;
     return len;
 }
@@ -438,7 +443,13 @@ static int send_response_by_ctx(nghttp2_session *session, int32_t stream_id,
 			https_ctx->user_ctx.head.ctx_id,
 			https_ctx->session_id,
 			stream_id);
+#if 0
 	log_pkt_send(log_pfx, nva, nvlen, https_ctx->user_ctx.body, https_ctx->user_ctx.head.bodyLen);
+#else
+	log_pkt_send(log_pfx, nva, nvlen, 
+			https_ctx->user_ctx.data + https_ctx->user_ctx.head.queryLen, 
+			https_ctx->user_ctx.head.bodyLen);
+#endif
 
 	if (rv != 0) {
 		APPLOG(APPLOG_ERR, "Fatal error: %s", nghttp2_strerror(rv));
@@ -506,19 +517,29 @@ static int on_header_callback(nghttp2_session *session,
 			log_pkt_head_recv(https_ctx, name, namelen, value, valuelen);
 
 			if (!strcmp(header_name, HDR_PATH)) {
+#if 0
 				divide_string(header_value, '?', 
 						https_ctx->user_ctx.head.rsrcUri,
 						sizeof(https_ctx->user_ctx.head.rsrcUri),
 						https_ctx->user_ctx.head.queryParam,
 						sizeof(https_ctx->user_ctx.head.queryParam));
+#else
+				https_ctx->user_ctx.head.queryLen = divide_string(header_value, '?', 
+						https_ctx->user_ctx.head.rsrcUri,
+						sizeof(https_ctx->user_ctx.head.rsrcUri),
+						https_ctx->user_ctx.data,
+						sizeof(https_ctx->user_ctx.data));
+#endif
 			} else if (!strcmp(header_name, HDR_SCHEME)) {
 				sprintf(https_ctx->user_ctx.head.scheme, "%s", header_value);
 			} else if (!strcmp(header_name, HDR_AUTHORITY)) {
 				sprintf(https_ctx->user_ctx.head.authority, "%s", header_value);
 			} else if (!strcmp(header_name, HDR_METHOD)) {
 				sprintf(https_ctx->user_ctx.head.httpMethod, "%s", header_value);
+#if 0	// move to vhdr
 			} else if (!strcmp(header_name, HDR_CONTENT_ENCODING)) {
 				sprintf(https_ctx->user_ctx.head.contentEncoding, "%s", header_value);
+#endif
 #ifdef OAUTH
 			} else if (!strcmp(header_name, HDR_AUTHORIZATION)) {
 				sprintf(https_ctx->access_token, "%s", header_value); // Bearer token_raw
@@ -683,7 +704,9 @@ static int on_request_recv(nghttp2_session *session,
 			APPLOG(APPLOG_ERR, "%s() send error_reply fail!", __func__);
 		} 
 	}
+#if 0
 	memset(https_ctx->user_ctx.head.contentEncoding, 0x00, sizeof(https_ctx->user_ctx.head.contentEncoding));
+#endif
 
 	return 0;
 }
@@ -744,7 +767,11 @@ static int on_data_chunk_recv_callback(nghttp2_session *session, uint8_t flags,
 		}
 
 		/* volatile issue */
+#if 0
 		char *ptr = https_ctx->user_ctx.body;
+#else
+		char *ptr = https_ctx->user_ctx.data + https_ctx->user_ctx.head.queryLen; // ahif.data [query|data|...]
+#endif
 		volatile int curr_len = https_ctx->user_ctx.head.bodyLen;
 		ptr += curr_len;
 		memcpy(ptr, data, len);

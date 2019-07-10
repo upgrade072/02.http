@@ -32,6 +32,7 @@ httpc_ctx_t *get_assembled_ctx(tcp_ctx_t *tcp_ctx, char *ptr)
 	char *vheader = ptr + sizeof(AhifHttpCSMsgHeadType);
 	int vheaderCnt = head->vheaderCnt;
 
+#if 0
 	char *body = ptr + sizeof(AhifHttpCSMsgHeadType) + (sizeof(hdr_relay) * vheaderCnt);
 	int bodyLen = head->bodyLen;
 
@@ -41,6 +42,17 @@ httpc_ctx_t *get_assembled_ctx(tcp_ctx_t *tcp_ctx, char *ptr)
 	memcpy(&recv_ctx->user_ctx.head, ptr, sizeof(AhifHttpCSMsgHeadType));
 	memcpy(&recv_ctx->user_ctx.vheader, vheader, (sizeof(hdr_relay) * vheaderCnt));
 	memcpy(&recv_ctx->user_ctx.body, body, bodyLen);
+#else
+	char *data = ptr + sizeof(AhifHttpCSMsgHeadType) + (sizeof(hdr_relay) * vheaderCnt);
+	int dataLen = head->queryLen + head->bodyLen;
+
+	if((recv_ctx = get_null_recv_ctx(tcp_ctx)) == NULL)
+		return NULL;
+
+	memcpy(&recv_ctx->user_ctx.head, ptr, sizeof(AhifHttpCSMsgHeadType));
+	memcpy(&recv_ctx->user_ctx.vheader, vheader, (sizeof(hdr_relay) * vheaderCnt));
+	memcpy(&recv_ctx->user_ctx.data, data, dataLen);
+#endif
 
 	return recv_ctx;
 }
@@ -76,7 +88,12 @@ void send_to_worker(tcp_ctx_t *tcp_ctx, conn_list_t *httpc_conn, httpc_ctx_t *re
 
 	memcpy(&httpc_ctx->user_ctx.head, &recv_ctx->user_ctx.head, AHIF_HTTPCS_MSG_HEAD_LEN);
 	memcpy(&httpc_ctx->user_ctx.vheader, &recv_ctx->user_ctx.vheader, sizeof(hdr_relay) * recv_ctx->user_ctx.head.vheaderCnt);
+#if 0
 	memcpy(&httpc_ctx->user_ctx.body, &recv_ctx->user_ctx.body, recv_ctx->user_ctx.head.bodyLen);
+#else
+	memcpy(&httpc_ctx->user_ctx.data, &recv_ctx->user_ctx.data, 
+			recv_ctx->user_ctx.head.queryLen + recv_ctx->user_ctx.head.bodyLen);
+#endif
 
 	httpc_ctx->user_ctx.head.mtype = MTYPE_HTTP2_RESPONSE_HTTPC_TO_AHIF;	// in advance set
 
@@ -126,8 +143,14 @@ void set_iovec(tcp_ctx_t *dest_tcp_ctx, httpc_ctx_t *recv_ctx, const char *dest_
 	}
 	// body
 	if (user_ctx->head.bodyLen) {
+#if 0
 		push_req->iov[item_cnt].iov_base = user_ctx->body;
 		push_req->iov[item_cnt].iov_len = user_ctx->head.bodyLen;
+#else
+		// response only have body (not have query)
+		push_req->iov[item_cnt].iov_base = user_ctx->data;
+		push_req->iov[item_cnt].iov_len = user_ctx->head.bodyLen;
+#endif
 		item_cnt++;
 		total_bytes += user_ctx->head.bodyLen;
 	}
