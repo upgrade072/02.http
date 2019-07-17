@@ -11,7 +11,7 @@ int logLevel = APPLOG_DEBUG;
 int *lOG_FLAG = &logLevel;
 //#endif
 
-int httpcQid, ixpcQid;
+int httpcQid, ixpcQid, mmibQid;
 
 int THREAD_NO[MAX_THRD_NUM] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
 int SESSION_ID;
@@ -1200,7 +1200,11 @@ void main_loop()
     event_add(ev_conn, &tm_conn);
 
 	/* send conn status to OMP FIMD */
-    struct timeval tm_status = {5, 0};
+#ifdef MMIB_STATUS /* for nssf, use this info in fep to check connection */
+	struct timeval tm_status = {1, 0};
+#else
+	struct timeval tm_status = {5, 0};
+#endif
     struct event *ev_status;
     ev_status = event_new(evbase, -1, EV_PERSIST, send_status_to_omp, NULL);
     event_add(ev_status, &tm_status);
@@ -1340,6 +1344,17 @@ int initialize()
 		APPLOG(APPLOG_ERR, "{{{INIT}}} [%s] msgget fail; key=0x%x,err=%d(%s)!", __func__, key, errno, strerror(errno));
 		return -1;
 	}
+
+#ifdef MMIB_STATUS
+	/* create send-(mmib) mq */
+	if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", "MMIB", 3, tmp) < 0)
+		return -1;
+	key = strtol(tmp,0,0);
+	if ((mmibQid = msgget(key,IPC_CREAT|0666)) < 0) {
+		APPLOG(APPLOG_ERR, "{{{INIT}}} [%s] msgget fail; key=0x%x,err=%d(%s)!", __func__, key, errno, strerror(errno));
+		return -1;
+	}
+#endif
 #endif
 
 	/* alloc context memory */

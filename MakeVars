@@ -1,5 +1,5 @@
 
-### TARGET : epcf, ausf, perf, test, nssf
+### TARGET : nssf, epcf, ausf, perf, test
 TARGET      = nssf
 
 ## HOLDSESS : do not close session in no more read/write exist
@@ -8,7 +8,7 @@ INC_PATH    = -I. -I../../../include -I../../../libsrc/COMM
 LIB_PATH    = -L../../../lib
 
 ifeq ($(TARGET),nssf)
-CFLAGS		+= -DLOG_LIB -DOAUTH -DSTAT_SFM -DOVLD_API
+CFLAGS		+= -DLOG_LIB -DOAUTH -DSTAT_SFM -DOVLD_API -DMMIB_STATUS
 else ifeq ($(TARGET),epcf)
 CFLAGS		+= -DLOG_LIB -DOAUTH -DSTAT_SFM
 else ifeq ($(TARGET),ausf)

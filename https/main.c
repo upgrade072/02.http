@@ -10,7 +10,7 @@ int logLevel = APPLOG_DEBUG;
 int *lOG_FLAG = &logLevel;
 //#endif
 
-int httpsQid, ixpcQid;
+int httpsQid, ixpcQid, mmibQid;
 
 int THREAD_NO[MAX_THRD_NUM] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
 int SESSION_ID;
@@ -262,9 +262,6 @@ static http2_session_data *create_http2_session_data(app_context *app_ctx,
 				THRD_WORKER[index].evbase, fd,
 				BEV_OPT_CLOSE_ON_FREE | BEV_OPT_DEFER_CALLBACKS);
 	}
-#if 0
-	bufferevent_enable(session_data->bev, EV_READ | EV_WRITE);
-#endif
 
 	session_data->client_addr = strdup(host);
 	session_data->client_port = ntohs(get_in_port(addr));
@@ -419,12 +416,8 @@ static ssize_t ptr_read_callback_ctx(nghttp2_session *session, int32_t stream_id
                 __func__, len, length);
         len = length;
     }
-#if 0
-    memcpy(buf, https_ctx->user_ctx.body, len);
-#else
 	// ahif.data [query|body|...] this callback only want body
     memcpy(buf, https_ctx->user_ctx.data + https_ctx->user_ctx.head.queryLen, len);
-#endif
     *data_flags |= NGHTTP2_DATA_FLAG_EOF;
     return len;
 }
@@ -443,13 +436,9 @@ static int send_response_by_ctx(nghttp2_session *session, int32_t stream_id,
 			https_ctx->user_ctx.head.ctx_id,
 			https_ctx->session_id,
 			stream_id);
-#if 0
-	log_pkt_send(log_pfx, nva, nvlen, https_ctx->user_ctx.body, https_ctx->user_ctx.head.bodyLen);
-#else
 	log_pkt_send(log_pfx, nva, nvlen, 
 			https_ctx->user_ctx.data + https_ctx->user_ctx.head.queryLen, 
 			https_ctx->user_ctx.head.bodyLen);
-#endif
 
 	if (rv != 0) {
 		APPLOG(APPLOG_ERR, "Fatal error: %s", nghttp2_strerror(rv));
@@ -460,6 +449,7 @@ static int send_response_by_ctx(nghttp2_session *session, int32_t stream_id,
 }
 
 /* CAUTION!!! : data_prd only ref pointer(not copyed), must use under static values */
+static const char ERROR_NULLBODY[] = "";
 static const char ERROR_BADREQ[] = "{cause:\"bad request\"}";
 static const char ERROR_INTERNAL[] = "{cause:\"internal error\"}";
 static const char ERROR_AUTHORIZATION[] = "{cause:\"authorization error\"}";
@@ -523,29 +513,17 @@ static int on_header_callback(nghttp2_session *session,
 			log_pkt_head_recv(https_ctx, name, namelen, value, valuelen);
 
 			if (!strcmp(header_name, HDR_PATH)) {
-#if 0
-				divide_string(header_value, '?', 
-						https_ctx->user_ctx.head.rsrcUri,
-						sizeof(https_ctx->user_ctx.head.rsrcUri),
-						https_ctx->user_ctx.head.queryParam,
-						sizeof(https_ctx->user_ctx.head.queryParam));
-#else
 				https_ctx->user_ctx.head.queryLen = divide_string(header_value, '?', 
 						https_ctx->user_ctx.head.rsrcUri,
 						sizeof(https_ctx->user_ctx.head.rsrcUri),
 						https_ctx->user_ctx.data,
 						sizeof(https_ctx->user_ctx.data));
-#endif
 			} else if (!strcmp(header_name, HDR_SCHEME)) {
 				sprintf(https_ctx->user_ctx.head.scheme, "%s", header_value);
 			} else if (!strcmp(header_name, HDR_AUTHORITY)) {
 				sprintf(https_ctx->user_ctx.head.authority, "%s", header_value);
 			} else if (!strcmp(header_name, HDR_METHOD)) {
 				sprintf(https_ctx->user_ctx.head.httpMethod, "%s", header_value);
-#if 0	// move to vhdr
-			} else if (!strcmp(header_name, HDR_CONTENT_ENCODING)) {
-				sprintf(https_ctx->user_ctx.head.contentEncoding, "%s", header_value);
-#endif
 #ifdef OAUTH
 			} else if (!strcmp(header_name, HDR_AUTHORIZATION)) {
 				sprintf(https_ctx->access_token, "%s", header_value); // Bearer token_raw
@@ -574,16 +552,24 @@ static int on_begin_headers_callback(nghttp2_session *session,
 		return 0;
 	}
 
+	/* get stream data */
+	stream_data = create_http2_stream_data(session_data, frame->hd.stream_id);
+	nghttp2_session_set_stream_user_data(session, frame->hd.stream_id,
+			stream_data);
+
 	/* stat HTTP_RX_REQ */
 	http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_RX_REQ);
 #ifdef OVLD_API
 	/* for nssf overload control */
-	api_ovld_is_ctrl(session_data->thrd_index,  API_PROTO_HTTPS, 0);
-#endif
+	int ovld_reason_code = api_ovld_is_ctrl(session_data->thrd_index, API_PROTO_HTTPS, 0);
+	if (ovld_reason_code > 299) {
+		char *error_str = get_error_reason(API_PROTO_HTTPS, 0);
+		int res = error_reply(session, stream_data, ovld_reason_code, 
+				error_str != NULL ? error_str : ERROR_NULLBODY);
 
-	stream_data = create_http2_stream_data(session_data, frame->hd.stream_id);
-	nghttp2_session_set_stream_user_data(session, frame->hd.stream_id,
-			stream_data);
+		return res == 0 ? 0 : NGHTTP2_ERR_CALLBACK_FAILURE;
+	}
+#endif
 
 	/* assign context when receive begin-header, remove it when remove_http2_stream_data() called */
 	idx = Get_CtxId(session_data->thrd_index);
@@ -714,9 +700,6 @@ static int on_request_recv(nghttp2_session *session,
 			APPLOG(APPLOG_ERR, "%s() send error_reply fail!", __func__);
 		} 
 	}
-#if 0
-	memset(https_ctx->user_ctx.head.contentEncoding, 0x00, sizeof(https_ctx->user_ctx.head.contentEncoding));
-#endif
 
 	return 0;
 }
@@ -777,11 +760,7 @@ static int on_data_chunk_recv_callback(nghttp2_session *session, uint8_t flags,
 		}
 
 		/* volatile issue */
-#if 0
-		char *ptr = https_ctx->user_ctx.body;
-#else
 		char *ptr = https_ctx->user_ctx.data + https_ctx->user_ctx.head.queryLen; // ahif.data [query|data|...]
-#endif
 		volatile int curr_len = https_ctx->user_ctx.head.bodyLen;
 		ptr += curr_len;
 		memcpy(ptr, data, len);
@@ -851,10 +830,6 @@ void initialize_nghttp2_session(http2_session_data *session_data) {
 /* Send HTTP/2 client connection header, which includes 24 bytes
    magic octets and SETTINGS frame */
 static int send_server_connection_header(http2_session_data *session_data) {
-#if 0
-	nghttp2_settings_entry iv[1] = {
-		{NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS, 100}};
-#else
 	/* TODO!!! tuning param */
 	nghttp2_settings_entry iv[5] = {
 		{NGHTTP2_SETTINGS_HEADER_TABLE_SIZE, 65535},
@@ -862,7 +837,6 @@ static int send_server_connection_header(http2_session_data *session_data) {
 		{NGHTTP2_SETTINGS_MAX_FRAME_SIZE, 65535},
 		{NGHTTP2_SETTINGS_INITIAL_WINDOW_SIZE, 65535},
 		{NGHTTP2_SETTINGS_MAX_HEADER_LIST_SIZE, 65535}};
-#endif
 	int rv;
 
 	rv = nghttp2_submit_settings(session_data->session, NGHTTP2_FLAG_NONE, iv,
@@ -1311,11 +1285,7 @@ void send_ping_callback(evutil_socket_t fd, short what, void *arg)
 			if (session_data->connected != CN_CONNECTED)
 				continue;
 			/* if (5sec:  send - ack > 5 ) delete sess */
-#if 0
-			if (session_data->ping_snd > MAX_PING_WAIT) {
-#else
 			if ((tm_curr.tv_sec - session_data->ping_rcv_time.tv_sec) > SERVER_CONF.ping_timeout) {
-#endif
 				APPLOG(APPLOG_ERR, "%s() session (id: %d) goaway~!", __func__, session_data->session_id);
 				set_intl_req_msg(&intl_req, thrd_idx, 0, sess_idx, session_data->session_id, 0, HTTP_INTL_SESSION_DEL);
                 if (-1 == msgsnd(THRD_WORKER[thrd_idx].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0)) {
@@ -1503,6 +1473,17 @@ int initialize()
         APPLOG(APPLOG_ERR, "{{{INIT}}} [%s] msgget fail; key=0x%x,err=%d(%s)!", __func__, key, errno, strerror(errno));
         return -1;
     }
+
+#ifdef MMIB_STATUS
+    /* create send-(mmib) mq */
+    if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", "MMIB", 3, tmp) < 0)
+        return -1;
+    key = strtol(tmp,0,0);
+    if ((mmibQid = msgget(key,IPC_CREAT|0666)) < 0) {
+        APPLOG(APPLOG_ERR, "{{{INIT}}} [%s] msgget fail; key=0x%x,err=%d(%s)!", __func__, key, errno, strerror(errno));
+        return -1;
+    }
+#endif
 #endif
 
 	/* alloc context memory */
@@ -1619,7 +1600,11 @@ static void main_loop(const char *key_file, const char *cert_file) {
 	event_add(ev_ping, &tm_ping);
 
     /* send conn status to OMP FIMD */
+#ifdef MMIB_STATUS /* for nssf, use this info in fep to check connection */
+    struct timeval tm_status = {1, 0};
+#else
     struct timeval tm_status = {5, 0};
+#endif
     struct event *ev_status;
     ev_status = event_new(evbase, -1, EV_PERSIST, send_status_to_omp, NULL);
     event_add(ev_status, &tm_status);

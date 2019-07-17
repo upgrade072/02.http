@@ -5,7 +5,7 @@
 /* for status */
 extern char mySysName[COMM_MAX_NAME_LEN];
 extern char myProcName[COMM_MAX_NAME_LEN];
-extern int ixpcQid;
+extern int ixpcQid, mmibQid;
 
 /* for statistic */
 extern http_stat_t HTTP_STAT;
@@ -20,6 +20,11 @@ void http_report_status(SFM_HttpConnStatusList *http_status, int msgId)
 	IxpcQMsgType	*txIxpcMsg;
 	int i, totalLen = 0, txLen = 0, len = 0;
 	char *ptr;
+#ifdef MMIB_STATUS
+	int destQid = mmibQid; /* for nssf */
+#else
+	int destQid = ixpcQid;
+#endif
 
 	txIxpcMsg = (IxpcQMsgType*)txGenQMsg.body;
 	ptr = (char *)txIxpcMsg->body;
@@ -61,7 +66,7 @@ void http_report_status(SFM_HttpConnStatusList *http_status, int msgId)
 			txIxpcMsg->head.bodyLen = len;
 			txLen = sizeof(txIxpcMsg->head) + txIxpcMsg->head.bodyLen;
 			//DumpHex(&txGenQMsg, txLen);
-			if (msgsnd(ixpcQid, (void*)&txGenQMsg, txLen, IPC_NOWAIT) < 0) {
+			if (msgsnd(destQid, (void*)&txGenQMsg, txLen, IPC_NOWAIT) < 0) {
 				//APPLOG(APPLOG_ERR, "DBG] http status send fail qid[%s]\n", strerror(errno));
 				return;
 			} else {
@@ -77,7 +82,7 @@ void http_report_status(SFM_HttpConnStatusList *http_status, int msgId)
 	txIxpcMsg->head.bodyLen = len;
 	txLen = sizeof(txIxpcMsg->head) + txIxpcMsg->head.bodyLen;
 	//DumpHex(&txGenQMsg, txLen);
-	if (msgsnd(ixpcQid, (void*)&txGenQMsg, txLen, IPC_NOWAIT) < 0) {
+	if (msgsnd(destQid, (void*)&txGenQMsg, txLen, IPC_NOWAIT) < 0) {
 		//APPLOG(APPLOG_ERR, "DBG] http status send fail qid[%s]\n", strerror(errno));
 		return;
 	}
