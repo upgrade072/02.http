@@ -42,6 +42,10 @@
 /* for lb */
 #include <lbengine.h>
 
+#ifdef OVLD_API /* nssf ovld ctrl */
+#include <api_overload.h>
+#endif
+
 #define TM_INTERVAL		20000   // every 20 ms check, 
 #define TMOUT_VECTOR    50      // CLIENT_CONF.tmout_sec * TMOUT_VECTOR = N sec
 

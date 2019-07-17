@@ -47,6 +47,10 @@
 
 #include <nghttp2_session.h>
 
+#ifdef OVLD_API /* nssf ovld ctrl */
+#include <api_overload.h>
+#endif
+
 #define OUTPUT_WOULDBLOCK_THRESHOLD (1 << 16)
 
 /* For LOG */

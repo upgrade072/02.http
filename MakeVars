@@ -1,29 +1,27 @@
 
-### TARGET : epcf, udmr, ausf, perf, epcf_test, test
-TARGET      = ausf
+### TARGET : epcf, ausf, perf, test, nssf
+TARGET      = nssf
 
 ## HOLDSESS : do not close session in no more read/write exist
 CFLAGS      = -std=gnu99 -g -m64 -Wall -DHOLDSESS  -Wno-unused-label -Wno-missing-braces
 INC_PATH    = -I. -I../../../include -I../../../libsrc/COMM
 LIB_PATH    = -L../../../lib
 
-ifeq ($(TARGET),epcf)
-CFLAGS		+= -DEPCF -DLOG_LIB -DOAUTH
-else ifeq ($(TARGET),epcf_test)
-CFLAGS		+= -DEPCF -DLOG_PRINT -DOAUTH -DTEST
-else ifeq ($(TARGET),udmr)
-CFLAGS		+= -DUDMR -DLOG_APP
+ifeq ($(TARGET),nssf)
+CFLAGS		+= -DLOG_LIB -DOAUTH -DSTAT_SFM -DOVLD_API
+else ifeq ($(TARGET),epcf)
+CFLAGS		+= -DLOG_LIB -DOAUTH -DSTAT_SFM
 else ifeq ($(TARGET),ausf)
-CFLAGS		+= -DAUSF -DLOG_APP -DOAUTH
+CFLAGS		+= -DLOG_APP -DOAUTH
 else ifeq ($(TARGET),perf)
 CFLAGS		+= -DLOG_PRINT
 else ifeq ($(TARGET),test)
 CFLAGS		+= -pg -DTEST -DLOG_PRINT
 endif
 
-ifeq ($(TARGET),epcf)
-LIBS        = -lcomm -lm -lpthread -ldl -lrt
-else ifeq ($(TARGET),epcf_test)
+ifeq ($(TARGET),nssf)
+LIBS        = -lcomm -lm -lpthread -ldl -lrt -l_overload
+else ifeq ($(TARGET),epcf)
 LIBS        = -lcomm -lm -lpthread -ldl -lrt
 else
 LIBS        = -lShmQueue -lcomm -lLog -lpthread -ldl -lrt

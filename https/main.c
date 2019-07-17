@@ -470,6 +470,12 @@ static int error_reply(nghttp2_session *session, http2_stream_data *stream_data,
 	sprintf(err_code_str, "%d", error_code);
 
 	nghttp2_nv hdrs[] = { MAKE_NV(":status", err_code_str, strlen(err_code_str)) };
+
+	char log_pfx[1024] = {0,};
+	sprintf(log_pfx, "HTTPS ctx(N/A) http sess/stream(-:%d) [internal error]",
+			stream_data->stream_id);
+	log_pkt_send(log_pfx, hdrs, 1, error_body, strlen(error_body));
+
 	if (send_response(session, stream_data->stream_id, hdrs, ARRLEN(hdrs),
 				(void *)error_body) != 0) {
 		return (-1);
@@ -570,6 +576,10 @@ static int on_begin_headers_callback(nghttp2_session *session,
 
 	/* stat HTTP_RX_REQ */
 	http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_RX_REQ);
+#ifdef OVLD_API
+	/* for nssf overload control */
+	api_ovld_is_ctrl(session_data->thrd_index,  API_PROTO_HTTPS, 0);
+#endif
 
 	stream_data = create_http2_stream_data(session_data, frame->hd.stream_id);
 	nghttp2_session_set_stream_user_data(session, frame->hd.stream_id,
@@ -1140,6 +1150,12 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 
 				/* assign more virtual header */
 				sprintf(result_code, "%d", https_ctx->user_ctx.head.respCode);
+#ifdef OVLD_API
+				/* for nssf overload control */
+				if (https_ctx->user_ctx.head.respCode > 299) {
+					api_ovld_add_fail(thrd_index, API_PROTO_HTTPS, 0, https_ctx->user_ctx.head.respCode);
+				}
+#endif
 				nghttp2_nv hdrs[MAX_HDR_RELAY_CNT + 2] = { MAKE_NV(":status", result_code, strlen(result_code))};
 				int hdrs_len = 1; /* :status */
 
@@ -1520,6 +1536,15 @@ int initialize()
 #ifndef TEST
     if (keepalivelib_init (myProcName) < 0)
         return (-1);
+#endif
+
+#ifdef OVLD_API
+	/* for nssf overload control */
+	if (api_ovld_init(myProcName, API_PROTO_HTTPS, SERVER_CONF.worker_num) < 0) {
+		APPLOG(APPLOG_ERR, "{{{INIT}}} ovldctrl init fail!");
+	} else {
+		APPLOG(APPLOG_ERR, "{{{INIT}}} ovldctrl init success!");
+	}
 #endif
 
 	return 0;
