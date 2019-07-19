@@ -1,0 +1,324 @@
+COMMAND dis-nf-server OMP MCDM NU STACK~/HTTP~/SERVER
+@PARA   SYS         OPT      SYS_TYPE   LB_TYPE
+@SLOGAN    M6000 DISPLAY NF SERVER STATUS
+@HELP
+Command     : DIS-NF-SERVER  SYS
+
+Description : Display NF Server Conection Status
+
+Class       : Normal User
+
+Parameters  : SYS    = ENUM          : System Name
+                       $SYS_TYPE
+
+@HELP
+
+
+COMMAND add-nf-server OMP MCDM SU STACK~/HTTP~/SERVER
+@PARA   SYS         OPT      SYS_TYPE   LB_TYPE
+@PARA   HOSTNAME   MAND STRING 1  80
+@PARA   TYPE       MAND STRING 1  80
+@SLOGAN    M6001 ADD NF SERVER HOSTNAME TYPE
+@HELP
+Command     : ADD-NF-SERVER  SYS, HOSTNAME, TYPE
+
+Description : Add NF Server Hostname and type
+
+Class       : Super User
+
+Parameters  : SYS    = ENUM          : System Name
+                       $SYS_TYPE
+              HOSTNAME = STRING  (1~80)  : Hostname
+              TYPE     = STRING  (1~80)  : Type
+
+@HELP
+
+
+COMMAND add-nf-svr-ip OMP MCDM SU STACK~/HTTP~/SERVER
+@PARA   SYS         OPT      SYS_TYPE   LB_TYPE
+@PARA   ID                 MAND DECIMAL 1  128
+@PARA   IPADDR     MAND STRING  1  80
+@PARA   PORT       MAND DECIMAL 1  65534
+@PARA   CONN_CNT   MAND DECIMAL 1  4
+@SLOGAN    M6002 ADD NF SERVER / IP PORT
+@HELP
+Command     : ADD-NF-SVR-IP  SYS, ID, IPADDR, PORT, CONN_CNT
+
+Description : Add NF Server IP / Port
+
+Class       : Super User
+
+Parameters  : SYS    = ENUM          : System Name
+                       $SYS_TYPE
+              ID = DECIMAL (1~128)       : Host ID
+              IPADDR = STRING (1~80)     : IP Address
+              PORT = DECIMAL (1~65534)   : Port Number
+              CONN_CNT = DECIMAL (1~4)  : Connection Count
+
+@HELP
+
+
+COMMAND act-nf-server OMP MCDM SU STACK~/HTTP~/SERVER
+@PARA   SYS         OPT      SYS_TYPE   LB_TYPE
+@PARA   ID                 MAND DECIMAL 1  128
+@PARA   IPADDR     OPT  STRING  1  80
+@PARA   PORT       OPT  DECIMAL 1  65534
+@SLOGAN    M6003 ACT NF SERVER
+@HELP
+Command     : ACT-NF-SERVER  SYS, ID, [IDADDR], [PORT]
+
+Description : Act NF Server Hostname
+
+Class       : Super User
+
+Parameters  : SYS    = ENUM          : System Name
+                       $SYS_TYPE
+              ID = DECIMAL (1~128)       : Host ID
+              IPADDR = STRING (1~80)     : IP Address
+              PORT = DECIMAL (1~65534)   : Port Number
+
+@HELP
+
+
+COMMAND dact-nf-server OMP MCDM SU STACK~/HTTP~/SERVER
+@PARA   SYS         OPT      SYS_TYPE   LB_TYPE
+@PARA   ID                 MAND DECIMAL 1  128
+@PARA   IPADDR     OPT  STRING  1  80
+@PARA   PORT       OPT  DECIMAL 1  65534
+@SLOGAN    M6004 DACT NF SERVER
+@HELP
+Command     : DACT-NF-SERVER  SYS, ID, [IDADDR], [PORT]
+
+Description : Dact NF Server Hostname
+
+Class       : Super User
+
+Parameters  : SYS    = ENUM          : System Name
+                       $SYS_TYPE
+              ID = DECIMAL (1~128)       : Host ID
+              IPADDR = STRING (1~80)     : IP Address
+              PORT = DECIMAL (1~65534)   : Port Number
+
+@HELP
+
+
+COMMAND chg-nf-server OMP MCDM SU STACK~/HTTP~/SERVER
+@PARA   SYS         OPT      SYS_TYPE   LB_TYPE
+@PARA   ID                 MAND DECIMAL 1  128
+@PARA   IPADDR     MAND STRING  1  80
+@PARA   PORT       MAND DECIMAL 1  65534
+@PARA   CONN_CNT   MAND DECIMAL 1  4
+@SLOGAN    M6005 CHG NF SERVER CONNECT COUNT
+@HELP
+Command     : CHG-NF-SERVER  SYS, ID, IDADDR, PORT, CONN_CNT
+
+Description : Chg NF Server Connect Count
+
+Class       : Super User
+
+Parameters  : SYS    = ENUM          : System Name
+                       $SYS_TYPE
+              ID = DECIMAL (1~128)       : Host ID
+              IPADDR = STRING (1~80)     : IP Address
+              PORT = DECIMAL (1~65534)   : Port Number
+              CONN_CNT = DECIMAL (1~4)  : Connection Count
+
+@HELP
+
+
+COMMAND del-nf-svr-ip OMP MCDM SU STACK~/HTTP~/SERVER
+@PARA   SYS         OPT      SYS_TYPE   LB_TYPE
+@PARA   ID                 MAND DECIMAL 1  128
+@PARA   IPADDR     MAND STRING  1  80
+@PARA   PORT       MAND DECIMAL 1  65534
+@SLOGAN    M6006 DEL NF SERVER IP / PORT
+@HELP
+Command     : DEL-NF-SVR-IP  SYS, ID, IDADDR, PORT
+
+Description : Del NF Server IP / Port
+
+Class       : Super User
+
+Parameters  : SYS    = ENUM          : System Name
+                       $SYS_TYPE
+              ID = DECIMAL (1~128)       : Host ID
+              IPADDR = STRING (1~80)     : IP Address
+              PORT = DECIMAL (1~65534)   : Port Number
+
+@HELP
+
+
+COMMAND del-nf-server OMP MCDM SU STACK~/HTTP~/SERVER
+@PARA   SYS         OPT      SYS_TYPE   LB_TYPE
+@PARA   ID                 MAND DECIMAL 1  128
+@SLOGAN    M6007 DEL NF SERVER
+@HELP
+Command     : DEL-NF-SERVER  SYS, ID
+
+Description : Del NF Server Hostname
+
+Class       : Super User
+
+Parameters  : SYS    = ENUM          : System Name
+                       $SYS_TYPE
+              ID = DECIMAL (1~128)   : Host ID
+
+@HELP
+
+
+COMMAND dis-nf-client OMP MCDM NU STACK~/HTTP~/CLIENT
+@PARA   SYS         OPT      SYS_TYPE   LB_TYPE
+@SLOGAN    M6008 DISPLAY NF CLIENT STATUS
+@HELP
+Command     : DIS-NF-CLIENT  SYS
+
+Description : Display NF Client Conection Status
+
+Class       : Normal User
+
+Parameters  : SYS    = ENUM          : System Name
+                       $SYS_TYPE
+
+@HELP
+
+
+COMMAND add-nf-client OMP MCDM SU STACK~/HTTP~/CLIENT
+@PARA   SYS         OPT      SYS_TYPE   LB_TYPE
+@PARA   HOSTNAME   MAND STRING 1  80
+@PARA   TYPE       MAND STRING 1  80
+@SLOGAN    M6009 ADD NF CLIENT HOSTNAME TYPE
+@HELP
+Command     : ADD-NF-CLIENT  SYS, HOSTNAME TYPE
+
+Description : Add NF Client Hostname and Type
+
+Class       : Super User
+
+Parameters  : SYS    = ENUM          : System Name
+                       $SYS_TYPE
+              HOSTNAME = STRING  (1~80)  : Hostname
+              TYPE     = STRING  (1~80)  : Type
+
+@HELP
+
+
+COMMAND add-nf-cli-ip OMP MCDM SU STACK~/HTTP~/CLIENT
+@PARA   SYS         OPT      SYS_TYPE   LB_TYPE
+@PARA   ID                 MAND DECIMAL 1  128
+@PARA   IPADDR     MAND STRING  1  80
+@PARA   MAX        MAND DECIMAL 1  65534
+@SLOGAN    M6010 ADD NF CLIENT / IP
+@HELP
+Command     : ADD-NF-CLI-IP  SYS, ID, IPADDR, MAX
+
+Description : Add NF Client IP / Port
+
+Class       : Super User
+
+Parameters  : SYS    = ENUM          : System Name
+                       $SYS_TYPE
+              ID = DECIMAL (1~128)       : Host ID
+              IPADDR = STRING (1~80)     : IP Address
+              MAX = DECIMAL (1~65534)    : Max Accept Number
+
+@HELP
+
+
+COMMAND act-nf-client OMP MCDM SU STACK~/HTTP~/CLIENT
+@PARA   SYS         OPT      SYS_TYPE   LB_TYPE
+@PARA   ID                 MAND DECIMAL 1  128
+@PARA   IPADDR     OPT  STRING  1  80
+@SLOGAN    M6011 ACT NF CLIENT
+@HELP
+Command     : ACT-NF-CLIENT  SYS, ID, [IDADDR]
+
+Description : Act NF Client Hostname
+
+Class       : Super User
+
+Parameters  : SYS    = ENUM          : System Name
+                       $SYS_TYPE
+              ID = DECIMAL (1~128)       : Host ID
+              IPADDR = STRING (1~80)     : IP Address
+
+@HELP
+
+
+COMMAND dact-nf-client OMP MCDM SU STACK~/HTTP~/CLIENT
+@PARA   SYS         OPT      SYS_TYPE   LB_TYPE
+@PARA   ID                 MAND DECIMAL 1  128
+@PARA   IPADDR     OPT  STRING  1  80
+@SLOGAN    M6012 DACT NF CLIENT
+@HELP
+Command     : DACT-NF-CLIENT  SYS, ID, [IDADDR]
+
+Description : Dact NF Client Hostname
+
+Class       : Super User
+
+Parameters  : SYS    = ENUM          : System Name
+                       $SYS_TYPE
+              ID = DECIMAL (1~128)       : Host ID
+              IPADDR = STRING (1~80)     : IP Address
+
+@HELP
+
+
+COMMAND chg-nf-client OMP MCDM SU STACK~/HTTP~/CLIENT
+@PARA   SYS         OPT      SYS_TYPE   LB_TYPE
+@PARA   ID                 MAND DECIMAL 1  128
+@PARA   IPADDR     MAND STRING  1  80
+@PARA   MAX        MAND DECIMAL 1  2048
+@SLOGAN    M6013 CHG NF CLIENT CONNECT COUNT
+@HELP
+Command     : CHG-NF-CLIENT  SYS, ID, IDADDR, MAX
+
+Description : Chg NF Client Connect Count
+
+Class       : Super User
+
+Parameters  : SYS    = ENUM          : System Name
+                       $SYS_TYPE
+              ID = DECIMAL (1~128)       : Host ID
+              IPADDR = STRING (1~80)     : IP Address
+              MAX = DECIMAL (1~65534)    : Max Accept Number
+
+@HELP
+
+
+COMMAND del-nf-cli-ip OMP MCDM SU STACK~/HTTP~/CLIENT
+@PARA   SYS         OPT      SYS_TYPE   LB_TYPE
+@PARA   ID                 MAND DECIMAL 1  128
+@PARA   IPADDR     MAND STRING  1  80
+@SLOGAN    M6014 DEL NF CLIENT IP
+@HELP
+Command     : DEL-NF-CLI-IP  SYS, ID, IPADDR
+
+Description : Del NF Client IP
+
+Class       : Super User
+
+Parameters  : SYS    = ENUM          : System Name
+                       $SYS_TYPE
+              ID = DECIMAL (1~128)    : Host ID
+              IPADDR = STRING (1~80)  : IP Address
+
+@HELP
+
+
+COMMAND del-nf-client OMP MCDM SU STACK~/HTTP~/CLIENT
+@PARA   SYS         OPT      SYS_TYPE   LB_TYPE
+@PARA   ID                 MAND DECIMAL 1  128
+@SLOGAN    M6015 DEL NF CLIENT
+@HELP
+Command     : DEL-NF-CLIENT  SYS, ID
+
+Description : Del NF Client Hostname
+
+Class       : Super User
+
+Parameters  : SYS    = ENUM          : System Name
+                       $SYS_TYPE
+              ID = DECIMAL (1~128)   : Host ID
+
+@HELP

@@ -1,0 +1,25 @@
+[HTTPC]
+Index       = 4
+name        = NF_SERVER
+statCode    = 4002
+insType     = 1
+strCnt      = 1
+strSize     = 128
+strName     = HOSTNAME
+longCnt     = 8
+longName    = HTTP_TX_REQ HTTP_RX_RSP HTTP_CONN HTTP_DISCONN HTTP_TIMEOUT HTTP_RX_RST HTTP_STRM_N_FOUND HTTP_DEST_N_AVAIL
+totalCnt    = 9
+where       = HOSTNAME
+
+[HTTPS]
+Index       = 5
+name        = NF_CLIENT
+statCode    = 4003
+insType     = 1
+strCnt      = 1
+strSize     = 128
+strName     = HOSTNAME
+longCnt     = 8
+longName    = HTTP_RX_REQ HTTP_TX_RSP HTTP_CONN HTTP_DISCONN HTTP_TIMEOUT HTTP_RX_RST HTTP_PRE_END HTTP_STRM_N_FOUND
+totalCnt    = 9
+where       = HOSTNAME

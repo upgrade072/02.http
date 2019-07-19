@@ -24,14 +24,14 @@ typedef enum server_cmd {
 
 MmcHdlrVector   mmcHdlrVecTbl[MAX_CMD_NUM] =
 {
-    { "DIS-HTTP-CLIENT",     func_dis_http_client},
-    { "ADD-HTTP-CLIENT",     func_add_http_client},
-    { "ADD-HTTP-CLI-IP",     func_add_http_cli_ip},
-    { "ACT-HTTP-CLIENT",     func_act_http_client},
-    { "DACT-HTTP-CLIENT",    func_dact_http_client},
-    { "CHG-HTTP-CLIENT",     func_chg_http_client},
-    { "DEL-HTTP-CLI-IP",     func_del_http_cli_ip},
-    { "DEL-HTTP-CLIENT",     func_del_http_client}
+    { "DIS-NF-CLIENT",     func_dis_http_client},
+    { "ADD-NF-CLIENT",     func_add_http_client},
+    { "ADD-NF-CLI-IP",     func_add_http_cli_ip},
+    { "ACT-NF-CLIENT",     func_act_http_client},
+    { "DACT-NF-CLIENT",    func_dact_http_client},
+    { "CHG-NF-CLIENT",     func_chg_http_client},
+    { "DEL-NF-CLI-IP",     func_del_http_cli_ip},
+    { "DEL-NF-CLIENT",     func_del_http_client}
 };
 
 void message_handle(evutil_socket_t fd, short what, void *arg)
