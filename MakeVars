@@ -8,7 +8,7 @@ INC_PATH    = -I. -I../../../include -I../../../libsrc/COMM
 LIB_PATH    = -L../../../lib
 
 ifeq ($(TARGET),nssf)
-CFLAGS		+= -DLOG_LIB -DOAUTH -DSTAT_SFM -DOVLD_API -DMMIB_STATUS
+CFLAGS		+= -DLOG_LIB -DOAUTH -DSTAT_SFM -DOVLD_API
 else ifeq ($(TARGET),epcf)
 CFLAGS		+= -DLOG_LIB -DOAUTH -DSTAT_SFM
 else ifeq ($(TARGET),ausf)

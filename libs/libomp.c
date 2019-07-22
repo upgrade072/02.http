@@ -5,7 +5,7 @@
 /* for status */
 extern char mySysName[COMM_MAX_NAME_LEN];
 extern char myProcName[COMM_MAX_NAME_LEN];
-extern int ixpcQid, mmibQid;
+extern int ixpcQid;
 
 /* for statistic */
 extern http_stat_t HTTP_STAT;
@@ -20,11 +20,7 @@ void http_report_status(SFM_HttpConnStatusList *http_status, int msgId)
 	IxpcQMsgType	*txIxpcMsg;
 	int i, totalLen = 0, txLen = 0, len = 0;
 	char *ptr;
-#ifdef MMIB_STATUS
-	int destQid = mmibQid; /* for nssf */
-#else
 	int destQid = ixpcQid;
-#endif
 
 	txIxpcMsg = (IxpcQMsgType*)txGenQMsg.body;
 	ptr = (char *)txIxpcMsg->body;

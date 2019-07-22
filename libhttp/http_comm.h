@@ -115,6 +115,7 @@ typedef struct index {
 typedef struct conn_list_status {
 	int list_index;
 	int item_index;
+	char scheme[12];
 	char host[AHIF_MAX_DESTHOST_LEN];
 	char type[AHIF_COMM_NAME_LEN];
 	char ip[INET6_ADDRSTRLEN];

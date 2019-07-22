@@ -164,6 +164,7 @@ void gather_list(conn_list_status_t CONN_STATUS[]) {
 				CONN_LIST[i].item_index == -1) {
 			CONN_STATUS[index].list_index = CONN_LIST[i].list_index;
 			CONN_STATUS[index].item_index = CONN_LIST[i].item_index;
+			sprintf(CONN_STATUS[index].scheme, "%s", CONN_LIST[i].scheme);
 			sprintf(CONN_STATUS[index].host, "%s", CONN_LIST[i].host);
 			sprintf(CONN_STATUS[index].type, "%s", CONN_LIST[i].type);
 			sprintf(CONN_STATUS[index].ip, "%s", "-");
@@ -189,6 +190,7 @@ void gather_list(conn_list_status_t CONN_STATUS[]) {
 							find = 1;
 							CONN_STATUS[index].list_index = i;
 							CONN_STATUS[index].item_index = j;
+							sprintf(CONN_STATUS[index].scheme, "%s", CONN_LIST[k].scheme);
 							sprintf(CONN_STATUS[index].host, "%s", CONN_LIST[k].host);
 							sprintf(CONN_STATUS[index].type, "%s", CONN_LIST[k].type);
 							sprintf(CONN_STATUS[index].ip, "%s", CONN_LIST[k].ip);
@@ -346,3 +348,11 @@ void log_pkt_end_stream(int stream_id, httpc_ctx_t *httpc_ctx)
 	httpc_ctx->log_ptr = NULL;
 }
 
+void log_pkt_httpc_error_reply(httpc_ctx_t *httpc_ctx, int resp_code)
+{
+	APPLOG(APPLOG_ERR, "{{{PKT}}} HTTPC INTERNAL ERROR http sess/stream(N/A:N/A) ahifCid(%d)]\n\
+--------------------------------------------------------------------------------------------------\n\
+:status:%d\n\
+==================================================================================================\n",
+	httpc_ctx->user_ctx.head.ahifCid, resp_code);
+}
