@@ -316,9 +316,9 @@ int     destroy_cfg();
 int     config_load_just_log();
 int     config_load();
 int     addcfg_server_hostname(char *hostname, char *type);
-int     addcfg_server_ipaddr(int id, char *ipaddr, int port, int conn_cnt);
+int     addcfg_server_ipaddr(int id, char *scheme, char *ipaddr, int port, int conn_cnt, int token_id);
 int     actcfg_http_server(int id, int ip_exist, char *ipaddr, int port, int change_to_act);
-int     chgcfg_server_conn_cnt(int id, char *ipaddr, int port, int conn_cnt);
+int     chgcfg_server_conn_cnt(int id, char *scheme, char *ipaddr, int port, int conn_cnt, int token_id);
 int     delcfg_server_ipaddr(int id, char *ipaddr, int port);
 int     delcfg_server_hostname(int id);
 

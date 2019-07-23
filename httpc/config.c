@@ -491,7 +491,7 @@ CF_ADD_SVR_HOSTNAME_ERR:
     return (-1);
 }
 
-int addcfg_server_ipaddr(int id, char *ipaddr, int port, int conn_cnt)
+int addcfg_server_ipaddr(int id, char *scheme, char *ipaddr, int port, int conn_cnt, int token_id)
 {
     config_setting_t *setting;
 
@@ -548,14 +548,16 @@ int addcfg_server_ipaddr(int id, char *ipaddr, int port, int conn_cnt)
 
 		val = config_setting_add(item, "ip", CONFIG_TYPE_STRING);
 		config_setting_set_string(val, ipaddr);
+		val = config_setting_add(item, "scheme", CONFIG_TYPE_STRING);
+		config_setting_set_string(val, scheme);
 		val = config_setting_add(item, "port", CONFIG_TYPE_INT);
 		config_setting_set_int(val, port);
 		val = config_setting_add(item, "cnt", CONFIG_TYPE_INT);
 		config_setting_set_int(val, conn_cnt);
+		val = config_setting_add(item, "token_id", CONFIG_TYPE_INT);
+		config_setting_set_int(val, token_id);
 		val = config_setting_add(item, "act", CONFIG_TYPE_STRING);
 		config_setting_set_string(val, "DACT");
-		val = config_setting_add(item, "token_id", CONFIG_TYPE_INT);
-		config_setting_set_int(val, 0);
 
 		for (i = 1; i < MAX_SVR_NUM; i++) {
 			if (CONN_LIST[i].used == 0) {
@@ -566,8 +568,10 @@ int addcfg_server_ipaddr(int id, char *ipaddr, int port, int conn_cnt)
 				CONN_LIST[i].conn = 0;
 				sprintf(CONN_LIST[i].host, "%s", group->name);
 				sprintf(CONN_LIST[i].type, "%s", type);
+				sprintf(CONN_LIST[i].scheme, "%s", scheme);
 				sprintf(CONN_LIST[i].ip, "%s", ipaddr);
 				CONN_LIST[i].port = port;
+				CONN_LIST[i].token_id = token_id;
 				CONN_LIST[i].act = 0;
 				if (++cnt == conn_cnt) break;
 			}
@@ -691,7 +695,7 @@ CF_ACT_SERVER_ERR:
     return (-1);
 }
 
-int chgcfg_server_conn_cnt(int id, char *ipaddr, int port, int conn_cnt)
+int chgcfg_server_conn_cnt(int id, char *scheme, char *ipaddr, int port, int conn_cnt, int token_id)
 {
     config_setting_t *setting;
 
@@ -703,8 +707,10 @@ int chgcfg_server_conn_cnt(int id, char *ipaddr, int port, int conn_cnt)
 		const char *type;
         config_setting_t *list;
         config_setting_t *item_cnt;
+        config_setting_t *item_token;
         int list_count, i, list_index, item_index, cnt = 0;
 		int found = 0;
+		const char *cf_scheme;
 		const char *cf_ip;
 		int cf_port;
 		int cf_cnt;
@@ -727,6 +733,9 @@ int chgcfg_server_conn_cnt(int id, char *ipaddr, int port, int conn_cnt)
 		for (i = 0; i < list_count; i++) {
 			config_setting_t *item = config_setting_get_elem(list, i);
 
+			if (config_setting_lookup_string (item, "scheme", &cf_scheme) == CONFIG_FALSE) {
+				continue;
+			}
 			if (config_setting_lookup_string (item, "ip", &cf_ip) == CONFIG_FALSE) {
 				continue;
 			}
@@ -744,6 +753,8 @@ int chgcfg_server_conn_cnt(int id, char *ipaddr, int port, int conn_cnt)
 					goto CF_CHG_SERVER_CONN_ERR;
 				if ((item_cnt = config_setting_get_member(item, "cnt")) == NULL)
 					goto CF_CHG_SERVER_CONN_ERR;
+				if ((item_token = config_setting_get_member(item, "token_id")) == NULL)
+					goto CF_CHG_SERVER_CONN_ERR;
 				found = 1;
 				item_index = get_item(list_index, ipaddr, port);
 				break;
@@ -755,8 +766,10 @@ int chgcfg_server_conn_cnt(int id, char *ipaddr, int port, int conn_cnt)
 		if (cf_cnt == conn_cnt)
 			goto CF_CHG_SERVER_CONN_ERR;
 
-		/* save setting */
+		/* save setting connection count*/
 		config_setting_set_int(item_cnt, conn_cnt);
+		/* save setting token id*/
+		config_setting_set_int(item_token, token_id);
 
 		/* increase case */
 		if (conn_cnt > cf_cnt) {
@@ -772,8 +785,10 @@ int chgcfg_server_conn_cnt(int id, char *ipaddr, int port, int conn_cnt)
 				CONN_LIST[i].conn = 0;
 				sprintf(CONN_LIST[i].host, "%s", group->name);
 				sprintf(CONN_LIST[i].type, "%s", type);
+				sprintf(CONN_LIST[i].scheme, "%s", scheme);
 				sprintf(CONN_LIST[i].ip, "%s", ipaddr);
 				CONN_LIST[i].port = port;
+				CONN_LIST[i].token_id = token_id;
 				CONN_LIST[i].act = 0;
 				if (++cnt == gap) break;
 			}

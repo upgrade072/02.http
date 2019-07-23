@@ -132,7 +132,7 @@ void print_list(conn_list_status_t conn_status[]) {
 void write_list(conn_list_status_t CONN_STATUS[], char *buff) {
 	int i, j, resLen;
 
-    resLen = sprintf(buff, "\n  ID HOSTNAME   TYPE       IP_ADDR                                         PORT CONN(max/curr)       STATUS\n");
+    resLen = sprintf(buff, "\n  ID HOSTNAME   TYPE   SCHEME   IP_ADDR                            PORT CONN(max/curr)   STATUS        TOKEN_ID\n");
     resLen += sprintf(buff + resLen, "---------------------------------------------------------------------------------------------------------------\n");
 	for ( i = 0; i < MAX_LIST_NUM; i++) {
 		for ( j = 0; j < MAX_CON_NUM; j++) {
@@ -140,15 +140,17 @@ void write_list(conn_list_status_t CONN_STATUS[], char *buff) {
 				continue;
 			if (CONN_STATUS[j].list_index != i)
 				continue;
-			resLen += sprintf(buff + resLen, "%4d %-10s %-10s %-46s %5d (%4d  / %4d)       %s\n",
+			resLen += sprintf(buff + resLen, "%4d %-10s %-6s %-6s   %-33s %5d (%4d  / %4d)   %10s    %d\n",
 					CONN_STATUS[j].list_index,
 					CONN_STATUS[j].host,
 					CONN_STATUS[j].type,
+					CONN_STATUS[j].scheme,
 					CONN_STATUS[j].ip,
 					CONN_STATUS[j].port,
 					CONN_STATUS[j].sess_cnt,
 					CONN_STATUS[j].conn_cnt,
-					(CONN_STATUS[j].conn_cnt > 0) ?  "Connected" : (CONN_STATUS[j].act == 1) ? "Disconnect" : "Deact");
+					(CONN_STATUS[j].conn_cnt > 0) ?  "Connected" : (CONN_STATUS[j].act == 1) ? "Disconnect" : "Deact",
+					CONN_STATUS[j].token_id);
 		}
 	}
     resLen += sprintf(buff + resLen, "---------------------------------------------------------------------------------------------------------------\n");
@@ -174,7 +176,8 @@ void gather_list(conn_list_status_t CONN_STATUS[]) {
 #ifdef OAUTH
 			int token_id = CONN_LIST[i].token_id;
 			char *access_token = get_access_token(token_id);
-			CONN_STATUS[index].token_exist = (access_token == NULL ? 1 : 0);
+			//CONN_STATUS[index].token_exist = (access_token == NULL ? 1 : 0);
+			CONN_STATUS[index].token_id = token_id;
 			sprintf(CONN_STATUS[index].access_token, "%s", access_token == NULL ? "" : access_token);
 #endif
 			index++;
@@ -202,9 +205,10 @@ void gather_list(conn_list_status_t CONN_STATUS[]) {
 						if (CONN_LIST[k].conn == CN_CONNECTED) 
 							CONN_STATUS[index].conn_cnt ++;
 #ifdef OAUTH
-						int token_id = CONN_LIST[i].token_id;
+						int token_id = CONN_LIST[k].token_id;
 						char *access_token = get_access_token(token_id);
-						CONN_STATUS[index].token_exist = (access_token == NULL ? 1 : 0);
+						//CONN_STATUS[index].token_exist = (access_token == NULL ? 1 : 0);
+						CONN_STATUS[index].token_id = token_id;
 						sprintf(CONN_STATUS[index].access_token, "%s", access_token == NULL ? "" : access_token);
 #endif
 					}

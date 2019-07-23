@@ -166,9 +166,11 @@ int func_add_http_svr_ip(IxpcQMsgType *rxIxpcMsg)
 
 	char *resBuf=respMsg;
 	int ID = -1;
+	char SCHEME[64];
 	char IPADDR[64];
 	int PORT = -1;
 	int CONN_CNT = -1;
+	int TOKEN_ID = -1;
 	struct sockaddr_in sa;
 	struct sockaddr_in6 sa6;
 	conn_list_status_t CONN_STATUS[MAX_CON_NUM];
@@ -178,15 +180,22 @@ int func_add_http_svr_ip(IxpcQMsgType *rxIxpcMsg)
 
 	if ((ID = get_mml_para_int(mmlReq, "ID")) < 0)
 		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(ID)");
+	if (get_mml_para_str(mmlReq, "SCHEME", SCHEME) < 0)
+		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(SCHEME)");
 	if (get_mml_para_str(mmlReq, "IPADDR", IPADDR) < 0)
 		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(IPADDR)");
 	if ((PORT = get_mml_para_int(mmlReq, "PORT")) < 0)
 		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(PORT)");
 	if ((CONN_CNT = get_mml_para_int(mmlReq, "CONN_CNT")) < 0)
 		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(CONN_CNT)");
+	if ((TOKEN_ID = get_mml_para_int(mmlReq, "TOKEN_ID")) < 0)
+		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(TOKEN_ID)");
 
 	if (ID >= HTTP_MAX_HOST)
 		return send_mml_res_failMsg(rxIxpcMsg, "INVALID ID");
+	if (strcmp(SCHEME, "https") && strcmp(SCHEME, "http")) {
+		return send_mml_res_failMsg(rxIxpcMsg, "INVALID SCHEME (https|http)");
+	}
 	if (inet_pton(AF_INET, IPADDR, &(sa.sin_addr))) {
 	} else if (inet_pton(AF_INET6, IPADDR, &(sa6.sin6_addr))) {
 	} else {
@@ -196,8 +205,10 @@ int func_add_http_svr_ip(IxpcQMsgType *rxIxpcMsg)
 		return send_mml_res_failMsg(rxIxpcMsg, "INVALID PORT");
 	if (CONN_CNT <= 0 || CONN_CNT > HTTP_MAX_CONN)
 		return send_mml_res_failMsg(rxIxpcMsg, "INVALID CONN_CNT");
+	if (TOKEN_ID < 0 || TOKEN_ID >= MAX_ACC_TOKEN_NUM)
+		return send_mml_res_failMsg(rxIxpcMsg, "INVALID TOKEN_ID");
 
-	if (addcfg_server_ipaddr(ID, IPADDR, PORT, CONN_CNT) < 0)
+	if (addcfg_server_ipaddr(ID, SCHEME, IPADDR, PORT, CONN_CNT, TOKEN_ID) < 0)
 		return send_mml_res_failMsg(rxIxpcMsg, "IPADDR ADD FAIL");
 
 	// node change, remake
@@ -277,9 +288,11 @@ int func_chg_http_server(IxpcQMsgType *rxIxpcMsg)
 
 	char *resBuf=respMsg;
 	int ID = -1;
+	char SCHEME[64];
 	char IPADDR[64];
 	int PORT = -1;
 	int CONN_CNT = -1;
+	int TOKEN_ID = -1;
 	struct sockaddr_in sa;
 	struct sockaddr_in6 sa6;
 	conn_list_status_t CONN_STATUS[MAX_CON_NUM];
@@ -291,13 +304,20 @@ int func_chg_http_server(IxpcQMsgType *rxIxpcMsg)
 		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(ID)");
 	if (get_mml_para_str(mmlReq, "IPADDR", IPADDR) < 0)
 		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(IPADDR)");
+	if (get_mml_para_str(mmlReq, "SCHEME", SCHEME) < 0)
+		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(SCHEME)");
 	if ((PORT = get_mml_para_int(mmlReq, "PORT")) < 0)
 		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(PORT)");
 	if ((CONN_CNT = get_mml_para_int(mmlReq, "CONN_CNT")) < 0)
 		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(CONN_CNT)");
+	if ((TOKEN_ID = get_mml_para_int(mmlReq, "TOKEN_ID")) < 0)
+		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(TOKEN_ID)");
 
 	if (ID >= HTTP_MAX_HOST)
 		return send_mml_res_failMsg(rxIxpcMsg, "INVALID ID");
+	if (strcmp(SCHEME, "https") && strcmp(SCHEME, "http")) {
+		return send_mml_res_failMsg(rxIxpcMsg, "INVALID SCHEME (https|http)");
+	}
 	if (inet_pton(AF_INET, IPADDR, &(sa.sin_addr))) {
 	} else if (inet_pton(AF_INET6, IPADDR, &(sa6.sin6_addr))) {
 	} else {
@@ -307,8 +327,10 @@ int func_chg_http_server(IxpcQMsgType *rxIxpcMsg)
 		return send_mml_res_failMsg(rxIxpcMsg, "INVALID PORT");
 	if (CONN_CNT < 1 || CONN_CNT > HTTP_MAX_CONN) // 1~12 
 		return send_mml_res_failMsg(rxIxpcMsg, "INVALID CONN_CNT");
+	if (TOKEN_ID < 0 || TOKEN_ID >= MAX_ACC_TOKEN_NUM)
+		return send_mml_res_failMsg(rxIxpcMsg, "INVALID TOKEN_ID");
 
-	if (chgcfg_server_conn_cnt(ID, IPADDR, PORT, CONN_CNT) < 0)
+	if (chgcfg_server_conn_cnt(ID, SCHEME, IPADDR, PORT, CONN_CNT, TOKEN_ID) < 0)
 		return send_mml_res_failMsg(rxIxpcMsg, "CONN COUNT CHG FAIL");
 
 	// node change, remake
