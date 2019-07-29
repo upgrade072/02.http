@@ -515,6 +515,7 @@ void recv_action(int recv_thrd_idx, AhifAppMsgType *recvMsg)
         if (recvMsg->head.respCode == 200) {
             goto DONT_CHECK_RESULT;
         } else {
+			fprintf(stderr, "{{{DBG}}} RECV STATUS %d\n", recvMsg->head.respCode);
             pf_recv_stat_inc(recv_thrd_idx, ctx->thrd_idx, PF_RCV_CAUSE_FAIL);
             pf_recv_stat_inc(recv_thrd_idx, ctx->thrd_idx, PF_FAIL);
             goto END_CALL;
@@ -569,6 +570,7 @@ void recv_action(int recv_thrd_idx, AhifAppMsgType *recvMsg)
         fprintf(stderr, "resp but result fail (cid:%d)\n", ctx->cid);
 #endif
         /* this call fail */
+		fprintf(stderr, "{{{DBG}}} JSON PARSING FAIL\n");
         pf_recv_stat_inc(recv_thrd_idx, ctx->thrd_idx, PF_RCV_CAUSE_FAIL);
         pf_recv_stat_inc(recv_thrd_idx, ctx->thrd_idx, PF_FAIL);
         goto END_CALL;
@@ -577,6 +579,16 @@ void recv_action(int recv_thrd_idx, AhifAppMsgType *recvMsg)
 	/* set next step function with func_arg */
 	if (check_func_arg(resp_obj, ctx) < 0) {
         /* this call fail */
+		fprintf(stderr, "{{{DBG}}} FUNC ARG FAIL\n");
+
+        char cmd[256] = {0,};
+        char tmp_file[256] = {0,};
+        sprintf(tmp_file, "./temp.json");
+        json_object_to_file(tmp_file, resp_obj);
+        fprintf(stderr, "\n\n\nFAIL BODY(STEP %2d)]\n", ctx->curr_step);
+        sprintf(cmd, "jslint --format %s\n", tmp_file);
+		system(cmd);
+
         pf_recv_stat_inc(recv_thrd_idx, ctx->thrd_idx, PF_RCV_CAUSE_FAIL);
         pf_recv_stat_inc(recv_thrd_idx, ctx->thrd_idx, PF_FAIL);
         goto END_CALL;
