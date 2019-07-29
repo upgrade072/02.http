@@ -126,8 +126,8 @@ typedef struct conn_list_status {
 	int occupied;
 
 	/* for OAuth 2.0 */
-	int token_exist;
 	char access_token[MAX_ACC_TOKEN_NUM];
+	int token_id;
 } conn_list_status_t;
 
 /* for statistics */

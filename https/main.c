@@ -1615,6 +1615,19 @@ static void main_loop(const char *key_file, const char *cert_file) {
 	SSL_CTX_free(ssl_ctx);
 }
 
+#if 0
+// nghttp2 --enable-debug 와 함께 사용
+- 성능 저하 발생함
+- library 전체 로그 출력/저장으로 분석 어려움 
+void test_debug_func(const char *fmt, va_list args)
+{
+	logPrint(ELI, FL, fmt, args);
+	fprintf(stderr, fmt, args);
+}
+...
+nghttp2_set_debug_vprintf_callback(test_debug_func);
+#endif
+
 int main(int argc, char **argv) {
 	struct sigaction act;
 
