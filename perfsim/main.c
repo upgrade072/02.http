@@ -102,13 +102,6 @@ int initialize()
 #endif
 
     /* shmq initialize */
-#if 0
-    sprintf(fname, "%s/%s", getenv(IV_HOME), AHIF_CONF_FILE);
-    if ((appRxQid = shmqlib_getQid (fname, "AHIF_TO_APP_SHMQ", my_name, SHMQLIB_MODE_GETTER)) < 0)
-        return (-1);
-    if ((appTxQid = shmqlib_getQid (fname, "APP_TO_AHIF_SHMQ", my_name, SHMQLIB_MODE_PUTTER)) < 0)
-        return (-1);
-#else
 	char token[8][CONFLIB_MAX_TOKEN_LEN];
 
     sprintf(fname, "%s/%s", getenv(IV_HOME), AHIF_CONF_FILE);
@@ -140,7 +133,6 @@ int initialize()
 	} else {
 		fprintf (stderr, "[%s] appTxQid=[%d]\n", __func__, appTxQid);
 	}
-#endif
 
     /* sender thread initialize */
     for (int index = 0; index < PERF_CONF.sender_thread_num; index++) {
@@ -207,17 +199,9 @@ int set_scenario_at_thread(int thrd_idx, thrd_ctx_t *thrd_ctx)
             fprintf(stderr, "CAUTION JSON FILE [%s] FORMAT FAIL\n", step->filename);
             return(-1);
         }
-#if 0
-        thrd_ctx->base_obj[index] = json_object_get(base_obj);
-
-        if (base_obj == (struct json_object*)error_ptr(-1)) {
-            fprintf(stderr, "fail to get json from file (%s)\n", step->filename);
-            return(-1);
-#else
         if ((thrd_ctx->base_obj[index] = json_object_get(base_obj)) == NULL) {
             fprintf(stderr, "fail to get json from file (%s)\n", step->filename);
             return(-1);
-#endif
         } else {
             thrd_ctx->step_exist[index] = 1;
             fprintf(stderr, "\tsender thrd[%2d] step(%2d) sendfile(%s) initialed\n", thrd_idx, index, step->filename);
@@ -267,18 +251,6 @@ int create_thread()
     } else {
         pthread_detach(MNG_THREAD.thread_id);
     }
-
-#if 0 // no use
-    pthread_t modify_thrd_id;
-    /* create modify thread */
-    res = pthread_create(&modify_thrd_id, NULL, &modifyThread, NULL);
-    if (res != 0) {
-        fprintf(stderr,"modify thread create fail\n");
-        return (-1);
-    } else {
-        pthread_detach(modify_thrd_id);
-    }
-#endif
 
 	return (0);
 }
@@ -360,7 +332,7 @@ void send_action(evutil_socket_t fd, short what, void *arg)
     //struct event_base *evbase = NULL;
     thrd_ctx_t *thrd_ctx = NULL;
     app_ctx_t *ctx = NULL;
-    json_object *curr_obj;
+    json_object *curr_obj = NULL;
     int current_step = 0;
     int shmq_len = 0;
 
@@ -390,7 +362,10 @@ void send_action(evutil_socket_t fd, short what, void *arg)
     /* make json body */
         /* set keyval */
         /* set forward val */
-    curr_obj = json_object_get(thrd_ctx->base_obj[current_step]);
+	if (json_object_deep_copy(thrd_ctx->base_obj[current_step], &curr_obj, NULL) != 0) {
+		fprintf(stderr, "{{{DBG}}} fail to json_object_deep_copy in [%s]\n", __func__);
+		return;
+	}
 
     /* change key */
     reset_key_val(ctx);
@@ -439,12 +414,8 @@ void send_action(evutil_socket_t fd, short what, void *arg)
         pf_step_inc(ctx->thrd_idx, ctx->curr_step);
 
         ctx->curr_state = PF_CTX_SENDED;
-#if 0
-        ctx->snd_byte = txMsg.head.bodyLen;
-#else
         ctx->snd_byte += txMsg.head.queryLen;
         ctx->snd_byte += txMsg.head.bodyLen;
-#endif
 
         set_timeout_event(thrd_ctx, ctx);
     }
@@ -453,6 +424,7 @@ void send_action(evutil_socket_t fd, short what, void *arg)
 void recv_action(int recv_thrd_idx, AhifAppMsgType *recvMsg)
 {
     int thrd_idx = 0, ctx_idx = 0;
+	int ahifCid = recvMsg->head.ahifCid;
     int cid = recvMsg->head.appCid;
     //int respCode = recvMsg->head.respCode;
     app_ctx_t *ctx = NULL;
@@ -465,9 +437,6 @@ void recv_action(int recv_thrd_idx, AhifAppMsgType *recvMsg)
 
     /* get context by cid */
     if ((ctx = get_ctx(thrd_idx, ctx_idx)) == NULL) {
-#if 0
-        fprintf(stderr, "fail to get ctx t:%02d idx, c:%05d idx\n", thrd_idx, ctx_idx);
-#endif
         /* stat fail */
         pf_recv_stat_inc(recv_thrd_idx, 0, PF_INTL_ERR);
         pf_recv_stat_inc(recv_thrd_idx, 0, PF_FAIL);
@@ -475,15 +444,17 @@ void recv_action(int recv_thrd_idx, AhifAppMsgType *recvMsg)
     } else {
         /* unset timeout */
         unset_timeout_event(ctx);
+
+		/* ptr recv ahif msg (only temp use!) */
+		ctx->rxMsg = recvMsg;
+
+		/* unset obj ptr to NULL */
+		ctx->recv_obj = NULL;
     }
 
     /* check more validation (shmq-lib broken issue) */
     if (ctx->occupied != 1 ||
-#if 0
-            recvMsg->head.bodyLen >= AHIF_MAX_MSG_LEN ||
-#else
             (recvMsg->head.queryLen + recvMsg->head.bodyLen) >= AHIF_MAX_MSG_LEN ||
-#endif
             recvMsg->head.respCode > 999) {
         /* stat fail */
         pf_recv_stat_inc(recv_thrd_idx, 0, PF_INTL_ERR);
@@ -497,22 +468,26 @@ void recv_action(int recv_thrd_idx, AhifAppMsgType *recvMsg)
     ctx->curr_state = PF_CTX_RECEIVED;
 
     /* make recv info */
+	if ((recvMsg->head.queryLen + recvMsg->head.bodyLen) < 0) {
+		fprintf(stderr, "{{{DBG}}} APPCID(%d) AHIFCID(%d) INVALID RECV LEN (BODY :%d) (QUERY :%d)\n",
+				cid,
+				ahifCid,
+				recvMsg->head.queryLen,
+				recvMsg->head.bodyLen);
+		exit(0);
+	}
     save_call_end_info(&call_end_arg,
             ctx->start_tm,
             curr_tm,
             ctx->snd_byte,
-#if 0
-            recvMsg->head.bodyLen);
-#else
             recvMsg->head.queryLen + recvMsg->head.bodyLen);
-#endif
     set_call_end_info(&call_end_arg);
     /* stat timeout */
     pf_recv_stat_inc(recv_thrd_idx, ctx->thrd_idx, PF_RECV);
 
     /* json_parse consume too many cpu, if mode off, don't parse and just check respCode */
     if (PERF_CONF.json_parse == 0) {
-        if (recvMsg->head.respCode == 200) {
+		if (recvMsg->head.respCode >= 200 && recvMsg->head.respCode < 300) {
             goto DONT_CHECK_RESULT;
         } else {
 			fprintf(stderr, "{{{DBG}}} RECV STATUS %d\n", recvMsg->head.respCode);
@@ -525,16 +500,12 @@ void recv_action(int recv_thrd_idx, AhifAppMsgType *recvMsg)
 /* PARSE_JSON_FROM_MSG: */
 
     /* make json obj from resp */
-#if 0
-    if ((resp_obj = json_tokener_parse(recvMsg->body)) == NULL) {
-#else
     if ((resp_obj = json_tokener_parse(recvMsg->data + recvMsg->head.queryLen)) == NULL) {
-#endif
 #ifdef DEBUG
         fprintf(stderr, "resp but json parse fail (cid:%d)\n", ctx->cid);
 #endif
         /* some message response have no body */
-        if (recvMsg->head.respCode == 200) {
+		if (recvMsg->head.respCode >= 200 && recvMsg->head.respCode < 300) {
             goto DONT_CHECK_RESULT;
         }
 
@@ -543,14 +514,12 @@ void recv_action(int recv_thrd_idx, AhifAppMsgType *recvMsg)
         pf_recv_stat_inc(recv_thrd_idx, ctx->thrd_idx, PF_FAIL);
         if (PERF_CONF.validate_mode) {
             fprintf(stderr, "\nRESP DUMP RES[%d] BODYLEN[%d] ]\n", recvMsg->head.respCode, recvMsg->head.bodyLen);
-#if 0
-            DumpHex(recvMsg->body, recvMsg->head.bodyLen);
-#else
             DumpHex(recvMsg->data + recvMsg->head.queryLen, recvMsg->head.bodyLen);
-#endif
         }
         goto END_CALL;
-    }
+    } else {
+		ctx->recv_obj = resp_obj;
+	}
 
     /* for DEBUG */
     if (PERF_CONF.validate_mode) {
@@ -579,7 +548,11 @@ void recv_action(int recv_thrd_idx, AhifAppMsgType *recvMsg)
 	/* set next step function with func_arg */
 	if (check_func_arg(resp_obj, ctx) < 0) {
         /* this call fail */
-		fprintf(stderr, "{{{DBG}}} FUNC ARG FAIL\n");
+		perf_scenario_t *scen_config = &PERF_CONF.scenario;
+		fprintf(stderr, "{{{DBG}}} CID(%d) AHIFCID(%d) FUNC ARG FAIL WE NEED THIS (%s) IN UNDER MSG\n", 
+				cid,
+				ahifCid,
+				scen_config->step[ctx->curr_step].farg);
 
         char cmd[256] = {0,};
         char tmp_file[256] = {0,};
@@ -623,14 +596,9 @@ DONT_CHECK_RESULT:
     }
 
     /* move step_count & call send_action */
-#if 0
-    event_base_once(thrd_ctx->evbase, -1, EV_TIMEOUT, send_action, &ctx->param, &thrd_ctx->interval_milisec[ctx->curr_step]);
-    ctx->curr_step ++;
-#else
 	int sleep_step = ctx->curr_step;
 	ctx->curr_step++;
     event_base_once(thrd_ctx->evbase, -1, EV_TIMEOUT, send_action, &ctx->param, &thrd_ctx->interval_milisec[sleep_step]);
-#endif
     return;
 
 END_CALL:
@@ -684,10 +652,6 @@ void unset_timeout_proc(evutil_socket_t fd, short what, void *arg)
     app_ctx_t *ctx = arg;
 
     if (ctx->ev_timeout == NULL || ctx->curr_state == PF_CTX_INIT) {
-#if 0
-        fprintf(stderr, "%s DBG (idx %d:step %d), wired NULL, returned\n",
-                __func__, ctx->ctx_idx, ctx->curr_step);
-#endif
         return;
     }
     event_free(ctx->ev_timeout);
@@ -818,27 +782,15 @@ int make_ahif_header(app_ctx_t *ctx, int current_step, AhifAppMsgType *txMsg, js
     fprintf(stderr, "DBG will push obj]\n%s\n", json_object_to_json_string(curr_obj));
 #endif
 
-#if 0
-    body_len = sprintf(txMsg->body, "%s", json_object_to_json_string(curr_obj));
-#else
     body_len = sprintf(txMsg->data + txMsg->head.queryLen, "%s", json_object_to_json_string(curr_obj));
-#endif
     txMsg->head.bodyLen = body_len;
 
     if (PERF_CONF.validate_mode) {
         fprintf(stderr, "\nDBG request body (len %d)]]]]\n", body_len);
-#if 0
-        DumpHex(txMsg->body, body_len);
-#else
         DumpHex(txMsg->data + txMsg->head.queryLen, body_len);
-#endif
     }
 
-#if 0
-    return (AHIF_APP_MSG_HEAD_LEN + AHIF_VHDR_LEN + txMsg->head.bodyLen);
-#else
     return (AHIF_APP_MSG_HEAD_LEN + AHIF_VHDR_LEN + txMsg->head.queryLen + txMsg->head.bodyLen);
-#endif
 }
 
 void save_call_end_info(send_recv_statistic_t *arg, double start_tm, double end_tm, int snd_byte, int rcv_byte)

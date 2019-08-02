@@ -182,6 +182,11 @@ typedef struct {
 	int func_exist;
 	char func_name[128];
 	char func_arg[1024];
+
+	/* for AUSF simul, they need this */
+	AhifAppMsgType *rxMsg;
+	json_object *recv_obj;
+
 } app_ctx_t;
 
 typedef struct {
@@ -313,3 +318,4 @@ double commlib_getCurrTime_double (void);
 void    execute_function(app_ctx_t *ctx, AhifAppMsgType *txMsg);
 void    func_run(app_ctx_t *ctx, AhifAppMsgType *txMsg);
 void    fn_000(char *uri, AhifAppMsgType *txMsg);
+void	fn_eap(AhifAppMsgType *rxMsg, json_object *recv_obj, AhifAppMsgType *txMsg);

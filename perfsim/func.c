@@ -20,6 +20,9 @@ void func_run(app_ctx_t *ctx, AhifAppMsgType *txMsg)
 	if (!strcmp(ctx->func_name, "fn_000")) {
 		fn_000(ctx->func_arg, txMsg);
 	}
+	if (!strcmp(ctx->func_name, "fn_eap")) {
+		fn_eap(ctx->rxMsg, ctx->recv_obj, txMsg);
+	}
 }
 
 void fn_000(char *uri, AhifAppMsgType *txMsg)
@@ -44,4 +47,12 @@ void fn_000(char *uri, AhifAppMsgType *txMsg)
 	sprintf(txMsg->head.destHost, "%s", port_num == 9000 ? "AUSF_DIR_FEP00" : "AUSF_DIR_FEP01");
 	sprintf(txMsg->head.destIp, "%s", ip);
 	txMsg->head.destPort = port_num;
+}
+
+// for AUSF simul
+// rxMsg : perfsim recv from AHIF
+//	- recv_obj : JSON OBJ in recv msg (if NULL, something wrong / not exist)
+// txMsg : perfsim send to AHIF
+void fn_eap(AhifAppMsgType *rxMsg, json_object *recv_obj, AhifAppMsgType *txMsg)
+{
 }

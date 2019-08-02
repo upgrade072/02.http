@@ -13,7 +13,7 @@
 #include <sfm_msgtypes.h>
 #include <stm_msgtypes.h>
 #else
-#include <stm_msgtypes_udmudr.h>
+#include <stm_msgtypes_ausf.h>
 #endif
 
 
