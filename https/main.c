@@ -450,11 +450,44 @@ static int send_response_by_ctx(nghttp2_session *session, int32_t stream_id,
 
 /* CAUTION!!! : data_prd only ref pointer(not copyed), must use under static values */
 static const char ERROR_NULLBODY[] = "";
-static const char ERROR_BADREQ[] = "{cause:\"bad request\"}";
-static const char ERROR_INTERNAL[] = "{cause:\"internal error\"}";
-static const char ERROR_AUTHORIZATION[] = "{cause:\"authorization error\"}";
+static const char ERROR_HTTP_S_INVLD_API[]              /* 400 bad request */ = "\
+{\
+  \"title\" : \"receive wrong uri\",\
+  \"status\" : 400,\
+  \"detail\" : \"The HTTP request contains an unsupported API name or API version in the URI.\"\
+}";
+static const char ERROR_HTTP_S_INVLD_MSG_FORMAT[]       /* 400 bad request */ = "\
+{\
+  \"title\" : \"fail to decoding\",\
+  \"status\" : 400,\
+  \"detail\" : \"The HTTP request has an invalid format.\"\
+}";
+static const char ERROR_HTTP_S_MANDATORY_IE_INCORRECT[] /* 400 bad reqeust */ = "\
+{\
+  \"title\" : \"oauth fail\",\
+  \"status\" : 400,\
+  \"detail\" : \"A mandatory IE or conditional IE in data structure, but mandatory required, for an HTTP method was received with a semantically incorrect value.\"\
+}";
+static const char ERROR_HTTP_S_INSUFFICIENT_RESOURCES[] /* 500 internal server error */ = "\
+{\
+  \"title\" : \"fail to assign context\",\
+  \"status\" : 500,\
+  \"detail\" : \"The request is rejected due to insufficient resources.\"\
+}"; 
+static const char ERROR_HTTP_S_SYSTEM_FAILURE[]         /* 500 internal server error */ = "\
+{\
+  \"title\" : \"internal tcp error\",\
+  \"status\" : 500,\
+  \"detail\" : \"The request is rejected due to generic error condition in the NF.\"\
+}"; 
+static const char ERROR_HTTP_S_NF_CONGESTION[]          /* 503 service unavailable */ = "\
+{\
+  \"title\" : \"ovld ctrl occured\",\
+  \"status\" : 503,\
+  \"detail\" : \"The NF experiences congestion and performs overload control, which does not allow the request to be processed.\"\
+}";
 static int error_reply(http2_session_data *session_data, nghttp2_session *session, http2_stream_data *stream_data,
-		int error_code, const char *error_body)
+		int error_code, const char *error_body, int stat_enum)
 {
 	char err_code_str[128] = {0,};
 	sprintf(err_code_str, "%d", error_code);
@@ -470,6 +503,17 @@ static int error_reply(http2_session_data *session_data, nghttp2_session *sessio
 	sprintf(log_pfx, "HTTPS ctx(N/A) http sess/stream(-:%d) [internal error]",
 			stream_data->stream_id);
 	log_pkt_send(log_pfx, hdrs, 1, error_body, strlen(error_body));
+
+	switch (stat_enum) {
+		case HTTP_S_INVLD_API:
+		case HTTP_S_INVLD_MSG_FORMAT:
+		case HTTP_S_MANDATORY_IE_INCORRECT:
+		case HTTP_S_INSUFFICIENT_RESOURCES:
+		case HTTP_S_SYSTEM_FAILURE:
+		case HTTP_S_NF_CONGESTION:
+			http_stat_inc(session_data->thrd_index, session_data->list_index, stat_enum);
+			break;
+	}
 
 	if (send_response(session, stream_data->stream_id, hdrs, ARRLEN(hdrs),
 				(void *)error_body) != 0) {
@@ -570,7 +614,7 @@ static int on_begin_headers_callback(nghttp2_session *session,
 	if (ovld_reason_code > 299) {
 		char *error_str = get_error_reason(API_PROTO_HTTPS, 0);
 		int res = error_reply(session_data, session, stream_data, ovld_reason_code, 
-				error_str != NULL ? error_str : ERROR_NULLBODY);
+				error_str != NULL ? error_str : ERROR_NULLBODY, HTTP_S_NF_CONGESTION);
 
 		return res == 0 ? 0 : NGHTTP2_ERR_CALLBACK_FAILURE;
 	}
@@ -581,7 +625,8 @@ static int on_begin_headers_callback(nghttp2_session *session,
 
 	if (idx < 0) {
 		APPLOG(APPLOG_ERR, "%s() Assign Context fail thrd[%d]!", __func__, session_data->thrd_index);
-		if (error_reply(session_data, session, stream_data, 500, ERROR_INTERNAL) != 0) {
+		if (error_reply(session_data, session, stream_data, 500, 
+					ERROR_HTTP_S_INSUFFICIENT_RESOURCES, HTTP_S_INSUFFICIENT_RESOURCES) != 0) {
 			return NGHTTP2_ERR_CALLBACK_FAILURE;
 		}
 	} else {
@@ -668,7 +713,8 @@ static int on_request_recv(nghttp2_session *session,
 	log_pkt_end_stream(stream_data->stream_id, https_ctx);
 
 	if (!https_ctx->user_ctx.head.rsrcUri[0]) {
-		if (error_reply(session_data, session, stream_data, 400, ERROR_BADREQ) != 0)
+		if (error_reply(session_data, session, stream_data, 400, 
+					ERROR_HTTP_S_INVLD_API, HTTP_S_INVLD_API) != 0)
 			return NGHTTP2_ERR_CALLBACK_FAILURE;
 		return 0;
 	}
@@ -677,18 +723,21 @@ static int on_request_recv(nghttp2_session *session,
 	/* check OAuth 2.0 access token */
 	if (session_data->auth_act > 0) {
 		if (https_ctx->access_token == NULL) {
-			if (error_reply(session_data, session, stream_data, 400, ERROR_AUTHORIZATION) != 0) 
+			if (error_reply(session_data, session, stream_data, 400, 
+						ERROR_HTTP_S_MANDATORY_IE_INCORRECT, HTTP_S_MANDATORY_IE_INCORRECT) != 0) 
 				return NGHTTP2_ERR_CALLBACK_FAILURE;
 			return 0;
 		}
 		int token_len = strlen(https_ctx->access_token);
 		if (token_len <= 7 || strncmp(https_ctx->access_token, "Bearer ", 7)) {
-			if (error_reply(session_data, session, stream_data, 400, ERROR_AUTHORIZATION) != 0) 
+			if (error_reply(session_data, session, stream_data, 400, 
+						ERROR_HTTP_S_MANDATORY_IE_INCORRECT, HTTP_S_MANDATORY_IE_INCORRECT) != 0) 
 				return NGHTTP2_ERR_CALLBACK_FAILURE;
 			return 0;
 		}
 		if (check_access_token(https_ctx->access_token + 7) < 0) {
-			if (error_reply(session_data, session, stream_data, 400, ERROR_AUTHORIZATION) != 0) 
+			if (error_reply(session_data, session, stream_data, 400, 
+						ERROR_HTTP_S_MANDATORY_IE_INCORRECT, HTTP_S_MANDATORY_IE_INCORRECT) != 0) 
 				return NGHTTP2_ERR_CALLBACK_FAILURE;
 			return 0;
 		}
@@ -701,7 +750,8 @@ static int on_request_recv(nghttp2_session *session,
 
 	if (send_request_to_fep(https_ctx) < 0) {
 		// all context will release in stream close state
-		if (error_reply(session_data, session, stream_data, 500, ERROR_INTERNAL) != 0) {
+		if (error_reply(session_data, session, stream_data, 500, 
+					ERROR_HTTP_S_SYSTEM_FAILURE, HTTP_S_SYSTEM_FAILURE) != 0) {
 			APPLOG(APPLOG_ERR, "%s() send error_reply fail!", __func__);
 		} 
 	}

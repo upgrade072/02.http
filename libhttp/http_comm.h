@@ -144,6 +144,12 @@ typedef enum http_statistic_enum {
 	HTTP_PRE_END,	/* ahif cancel https ctx */
 	HTTP_STRM_N_FOUND,
 	HTTP_DEST_N_AVAIL,
+	HTTP_S_INVLD_API,				/* 400 bad request */
+	HTTP_S_INVLD_MSG_FORMAT,		/* 400 bad request */
+	HTTP_S_MANDATORY_IE_INCORRECT,	/* 400 bad reqeust */
+	HTTP_S_INSUFFICIENT_RESOURCES,	/* 500 internal server error */
+	HTTP_S_SYSTEM_FAILURE,			/* 500 internal server error */
+	HTTP_S_NF_CONGESTION,			/* 503 service unavailable */
 	HTTP_STAT_MAX
 } http_statistic_enum_t;
 typedef struct http_statistic {
