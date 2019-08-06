@@ -1,6 +1,6 @@
 
 ### TARGET : nssf, epcf, ausf, perf, test
-TARGET      = ausf
+TARGET      = nssf
 
 ## HOLDSESS : do not close session in no more read/write exist
 CFLAGS      = -std=gnu99 -g -m64 -Wall -DHOLDSESS  -Wno-unused-label -Wno-missing-braces

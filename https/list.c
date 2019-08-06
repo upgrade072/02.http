@@ -44,21 +44,13 @@ void assign_new_ctx_info(https_ctx_t *https_ctx, http2_session_data *session_dat
 
 void assign_rcv_ctx_info(https_ctx_t *https_ctx, AhifHttpCSMsgType *ResMsg)
 {
-#if 0
-	sprintf(https_ctx->user_ctx.head.contentEncoding, "%s", ResMsg->head.contentEncoding);
-#endif
 	https_ctx->user_ctx.head.respCode = ResMsg->head.respCode;
 	https_ctx->user_ctx.head.vheaderCnt = ResMsg->head.vheaderCnt;
 	memcpy(&https_ctx->user_ctx.vheader, ResMsg->vheader, sizeof(hdr_relay) * ResMsg->head.vheaderCnt);
-#if 0
-	https_ctx->user_ctx.head.bodyLen = ResMsg->head.bodyLen;
-	memcpy(&https_ctx->user_ctx.body, ResMsg->body, ResMsg->head.bodyLen);
-#else
 	https_ctx->user_ctx.head.queryLen = ResMsg->head.queryLen;
 	https_ctx->user_ctx.head.bodyLen = ResMsg->head.bodyLen;
 	memcpy(&https_ctx->user_ctx.data, ResMsg->data, 
 			ResMsg->head.queryLen + ResMsg->head.bodyLen);
-#endif
 }
 
 void clear_and_free_ctx(https_ctx_t *https_ctx)
@@ -164,7 +156,7 @@ void print_list()
 {
     int i, j;
 
-    APPLOG(APPLOG_ERR, "  ID   HOSTNAME   TYPE       IP_ADDR                                            CONN(max/curr)   ACT STATUS");
+    APPLOG(APPLOG_ERR, "  ID   HOSTNAME   TYPE       IP_ADDR                                    CONN(max/curr)         OAUTH    STATUS");
 	APPLOG(APPLOG_ERR, "------------------------------------------------------------------------------------------------------------------");
     for ( i = 0; i < MAX_LIST_NUM; i++) {
         for ( j = 0; j < MAX_LIST_NUM; j++) {
@@ -172,14 +164,14 @@ void print_list()
                 continue;
             if (ALLOW_LIST[j].list_index != i)
                 continue;
-            APPLOG(APPLOG_ERR, "%4d   %-10s %-7s %-46s       (%4d  / %4d)  %4d %s",
+            APPLOG(APPLOG_ERR, "%4d   %-10s %-7s %-46s(%4d  / %4d)          %4s    %s",
                     ALLOW_LIST[j].list_index,
                     ALLOW_LIST[j].host,
                     ALLOW_LIST[j].type,
                     ALLOW_LIST[j].ip,
                     ALLOW_LIST[j].max,
                     ALLOW_LIST[j].curr,
-                    ALLOW_LIST[j].act,
+                    (ALLOW_LIST[j].auth_act > 0) ?  "ACT" : "DACT",
                     (ALLOW_LIST[j].curr > 0) ?  "Connected" : (ALLOW_LIST[j].act == 1) ? "Disconnect" : "Deact");
         }
     }
@@ -189,7 +181,7 @@ void print_list()
 void write_list(char *buff) {
     int i, j, resLen;
 
-    resLen = sprintf(buff, "\n  ID   HOSTNAME   TYPE       IP_ADDR                                            CONN(max/curr)       STATUS\n");
+    resLen = sprintf(buff, "\n  ID   HOSTNAME   TYPE       IP_ADDR                                    CONN(max/curr)         OAUTH    STATUS\n");
 	resLen += sprintf(buff + resLen, "------------------------------------------------------------------------------------------------------------------\n");
     for ( i = 0; i < MAX_LIST_NUM; i++) {
         for ( j = 0; j < MAX_LIST_NUM; j++) {
@@ -197,13 +189,14 @@ void write_list(char *buff) {
                 continue;
             if (ALLOW_LIST[j].list_index != i)
                 continue;
-            resLen += sprintf(buff + resLen, "%4d   %-10s %-7s %-46s       (%4d  / %4d)        %s\n",
+            resLen += sprintf(buff + resLen, "%4d   %-10s %-7s %-46s(%4d  / %4d)          %4s    %s\n",
                     ALLOW_LIST[j].list_index,
                     ALLOW_LIST[j].host,
                     ALLOW_LIST[j].type,
                     ALLOW_LIST[j].ip,
                     ALLOW_LIST[j].max,
                     ALLOW_LIST[j].curr,
+                    (ALLOW_LIST[j].auth_act > 0) ?  "ACT" : "DACT",
                     (ALLOW_LIST[j].curr > 0) ?  "Connected" : (ALLOW_LIST[j].act == 1) ? "Disconnect" : "Deact");
         }
     }

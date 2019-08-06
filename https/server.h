@@ -41,6 +41,7 @@
 #include <sys/msg.h>
 #include <pthread.h>
 /* OAuth 2.0 / JWT */
+#include <jansson.h>
 #include <jwt.h>
 /* for lb */
 #include <lbengine.h>
@@ -72,9 +73,11 @@ typedef struct server_conf {
 	int ping_timeout;
 	int pkt_log;
 
+	/* for OAUTH 2.0 */
 	char cert_file[128];
 	char key_file[128];
 	char credential[MAX_ACC_TOKEN_LEN];
+	char uuid_file[128];
 
 	/* for direct relay to fep */
 	int	dr_enabled;							// 0 (not) 1 (true)
@@ -241,7 +244,7 @@ int     config_load();
 int     addcfg_client_hostname(char *hostname, char *type);
 int     addcfg_client_ipaddr(int id, char *ipaddr, int max);
 int     actcfg_http_client(int id, int ip_exist, char *ipaddr, int change_to_act);
-int     chgcfg_client_max_cnt(int id, char *ipaddr, int max);
+int     chgcfg_client_max_cnt_with_auth_act(int id, char *ipaddr, int max, int auth_act);
 int     delcfg_client_ipaddr(int id, char *ipaddr);
 int     delcfg_client_hostname(int id);
 

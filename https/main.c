@@ -453,13 +453,18 @@ static const char ERROR_NULLBODY[] = "";
 static const char ERROR_BADREQ[] = "{cause:\"bad request\"}";
 static const char ERROR_INTERNAL[] = "{cause:\"internal error\"}";
 static const char ERROR_AUTHORIZATION[] = "{cause:\"authorization error\"}";
-static int error_reply(nghttp2_session *session, http2_stream_data *stream_data,
+static int error_reply(http2_session_data *session_data, nghttp2_session *session, http2_stream_data *stream_data,
 		int error_code, const char *error_body)
 {
 	char err_code_str[128] = {0,};
 	sprintf(err_code_str, "%d", error_code);
 
 	nghttp2_nv hdrs[] = { MAKE_NV(":status", err_code_str, strlen(err_code_str)) };
+
+#ifdef OVLD_API
+	/* for nssf overload control */
+	api_ovld_add_fail(session_data->thrd_index, API_PROTO_HTTPS, 0, error_code);
+#endif
 
 	char log_pfx[1024] = {0,};
 	sprintf(log_pfx, "HTTPS ctx(N/A) http sess/stream(-:%d) [internal error]",
@@ -564,7 +569,7 @@ static int on_begin_headers_callback(nghttp2_session *session,
 	int ovld_reason_code = api_ovld_is_ctrl(session_data->thrd_index, API_PROTO_HTTPS, 0);
 	if (ovld_reason_code > 299) {
 		char *error_str = get_error_reason(API_PROTO_HTTPS, 0);
-		int res = error_reply(session, stream_data, ovld_reason_code, 
+		int res = error_reply(session_data, session, stream_data, ovld_reason_code, 
 				error_str != NULL ? error_str : ERROR_NULLBODY);
 
 		return res == 0 ? 0 : NGHTTP2_ERR_CALLBACK_FAILURE;
@@ -576,7 +581,7 @@ static int on_begin_headers_callback(nghttp2_session *session,
 
 	if (idx < 0) {
 		APPLOG(APPLOG_ERR, "%s() Assign Context fail thrd[%d]!", __func__, session_data->thrd_index);
-		if (error_reply(session, stream_data, 500, ERROR_INTERNAL) != 0) {
+		if (error_reply(session_data, session, stream_data, 500, ERROR_INTERNAL) != 0) {
 			return NGHTTP2_ERR_CALLBACK_FAILURE;
 		}
 	} else {
@@ -663,7 +668,7 @@ static int on_request_recv(nghttp2_session *session,
 	log_pkt_end_stream(stream_data->stream_id, https_ctx);
 
 	if (!https_ctx->user_ctx.head.rsrcUri[0]) {
-		if (error_reply(session, stream_data, 400, ERROR_BADREQ) != 0)
+		if (error_reply(session_data, session, stream_data, 400, ERROR_BADREQ) != 0)
 			return NGHTTP2_ERR_CALLBACK_FAILURE;
 		return 0;
 	}
@@ -672,18 +677,18 @@ static int on_request_recv(nghttp2_session *session,
 	/* check OAuth 2.0 access token */
 	if (session_data->auth_act > 0) {
 		if (https_ctx->access_token == NULL) {
-			if (error_reply(session, stream_data, 400, ERROR_AUTHORIZATION) != 0) 
+			if (error_reply(session_data, session, stream_data, 400, ERROR_AUTHORIZATION) != 0) 
 				return NGHTTP2_ERR_CALLBACK_FAILURE;
 			return 0;
 		}
 		int token_len = strlen(https_ctx->access_token);
 		if (token_len <= 7 || strncmp(https_ctx->access_token, "Bearer ", 7)) {
-			if (error_reply(session, stream_data, 400, ERROR_AUTHORIZATION) != 0) 
+			if (error_reply(session_data, session, stream_data, 400, ERROR_AUTHORIZATION) != 0) 
 				return NGHTTP2_ERR_CALLBACK_FAILURE;
 			return 0;
 		}
 		if (check_access_token(https_ctx->access_token + 7) < 0) {
-			if (error_reply(session, stream_data, 400, ERROR_AUTHORIZATION) != 0) 
+			if (error_reply(session_data, session, stream_data, 400, ERROR_AUTHORIZATION) != 0) 
 				return NGHTTP2_ERR_CALLBACK_FAILURE;
 			return 0;
 		}
@@ -696,7 +701,7 @@ static int on_request_recv(nghttp2_session *session,
 
 	if (send_request_to_fep(https_ctx) < 0) {
 		// all context will release in stream close state
-		if (error_reply(session, stream_data, 500, ERROR_INTERNAL) != 0) {
+		if (error_reply(session_data, session, stream_data, 500, ERROR_INTERNAL) != 0) {
 			APPLOG(APPLOG_ERR, "%s() send error_reply fail!", __func__);
 		} 
 	}
@@ -1442,10 +1447,35 @@ int initialize()
         APPLOG(APPLOG_ERR, "{{{INIT}}} cant find SYSTEM_TYPE in (%s)!", fname);
         return -1;
     }
+
+#if 0
     if (conflib_getNthTokenInFileSection (fname, "GENERAL", "SERVER_ID", 1, mySvrId) < 0) {
         APPLOG(APPLOG_ERR, "{{{INIT}}} cant find SERVER_ID in (%s)!", fname);
         return -1;
     }
+#else
+	if (!strlen(SERVER_CONF.uuid_file)) {
+		APPLOG(APPLOG_ERR, "{{{INIT}}} SERVER_CONF.uuid file is NULL!\n");
+		return -1;
+	} else {
+		json_t *json = NULL;
+		json_error_t error = {0,};
+		json_t *uuid = NULL; 
+		json = json_load_file((SERVER_CONF.uuid_file), 0, &error);
+		if (!json) {
+			APPLOG(APPLOG_ERR, "{{{INIT}}} fail to json-read from (%s)!", SERVER_CONF.uuid_file);
+			return -1;
+		} else if ((uuid = json_object_get(json, "VNF_INSTANCE_ID")) == NULL) {
+			APPLOG(APPLOG_ERR, "{{{INIT}}} fail to (%s) doesn't include key (%s)!", SERVER_CONF.uuid_file, "VNF_INSTANCE_ID");
+			return -1;
+		} else {
+			sprintf(mySvrId, "%s", json_string_value(uuid));
+			/* success */
+			APPLOG(APPLOG_ERR, "{{{INIT}}} mySvr UUID is (%s) check from (%s)", mySvrId, SERVER_CONF.uuid_file);
+		}
+	}
+#endif
+
 #endif
 
 	/* create recv-mq */
