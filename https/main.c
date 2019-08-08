@@ -492,7 +492,12 @@ static int error_reply(http2_session_data *session_data, nghttp2_session *sessio
 	char err_code_str[128] = {0,};
 	sprintf(err_code_str, "%d", error_code);
 
+#if 0
 	nghttp2_nv hdrs[] = { MAKE_NV(":status", err_code_str, strlen(err_code_str)) };
+#else
+	nghttp2_nv hdrs[2] = { MAKE_NV(":status", err_code_str, strlen(err_code_str)),
+		MAKE_NV("content-type", "application/json", strlen("application/json")) };
+#endif
 
 #ifdef OVLD_API
 	/* for nssf overload control */
@@ -502,7 +507,7 @@ static int error_reply(http2_session_data *session_data, nghttp2_session *sessio
 	char log_pfx[1024] = {0,};
 	sprintf(log_pfx, "HTTPS ctx(N/A) http sess/stream(-:%d) [internal error]",
 			stream_data->stream_id);
-	log_pkt_send(log_pfx, hdrs, 1, error_body, strlen(error_body));
+	log_pkt_send(log_pfx, hdrs, 2, error_body, strlen(error_body));
 
 	switch (stat_enum) {
 		case HTTP_S_INVLD_API:

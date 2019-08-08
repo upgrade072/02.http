@@ -799,8 +799,6 @@ int chgcfg_client_max_cnt_with_auth_act(int id, char *ipaddr, int max, int auth_
 		/* not found case */
 		if (!found)
 			goto CF_CHG_CLIENT_MAX_ERR;
-		if (cf_max == max)
-			goto CF_CHG_CLIENT_MAX_ERR;
 
 		/* save setting with auth_act */
 		config_setting_set_int(item_max, max);

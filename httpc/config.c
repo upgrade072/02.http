@@ -763,8 +763,6 @@ int chgcfg_server_conn_cnt(int id, char *scheme, char *ipaddr, int port, int con
 		/* not found case */
 		if (!found)
 			goto CF_CHG_SERVER_CONN_ERR;
-		if (cf_cnt == conn_cnt)
-			goto CF_CHG_SERVER_CONN_ERR;
 
 		/* save setting connection count*/
 		config_setting_set_int(item_cnt, conn_cnt);
@@ -776,23 +774,27 @@ int chgcfg_server_conn_cnt(int id, char *scheme, char *ipaddr, int port, int con
 			int gap = conn_cnt - cf_cnt;
 			cnt = 0;
 			for (i = 1; i < MAX_SVR_NUM; i++) {
-				if (CONN_LIST[i].used == 1) 
-					continue;
-				CONN_LIST[i].index = i;
-				CONN_LIST[i].list_index = list_index;
-				CONN_LIST[i].item_index = item_index;
-				CONN_LIST[i].used = 1;
-				CONN_LIST[i].conn = 0;
-				sprintf(CONN_LIST[i].host, "%s", group->name);
-				sprintf(CONN_LIST[i].type, "%s", type);
-				sprintf(CONN_LIST[i].scheme, "%s", scheme);
-				sprintf(CONN_LIST[i].ip, "%s", ipaddr);
-				CONN_LIST[i].port = port;
-				CONN_LIST[i].token_id = token_id;
-				CONN_LIST[i].act = 0;
-				if (++cnt == gap) break;
+				if (CONN_LIST[i].used == 1)  {
+					if (CONN_LIST[i].item_index == item_index)  {
+						CONN_LIST[i].token_id = token_id;
+					}
+				} else if (cnt < gap) {
+					CONN_LIST[i].index = i;
+					CONN_LIST[i].list_index = list_index;
+					CONN_LIST[i].item_index = item_index;
+					CONN_LIST[i].used = 1;
+					CONN_LIST[i].conn = 0;
+					sprintf(CONN_LIST[i].host, "%s", group->name);
+					sprintf(CONN_LIST[i].type, "%s", type);
+					sprintf(CONN_LIST[i].scheme, "%s", scheme);
+					sprintf(CONN_LIST[i].ip, "%s", ipaddr);
+					CONN_LIST[i].port = port;
+					CONN_LIST[i].token_id = token_id;
+					CONN_LIST[i].act = 0;
+					++cnt;
+				}
 			}
-		} else {
+		} else if (conn_cnt < cf_cnt) {
 		/* decrease case */
 			int gap = cf_cnt - conn_cnt;
 			cnt = 0;
@@ -801,8 +803,22 @@ int chgcfg_server_conn_cnt(int id, char *scheme, char *ipaddr, int port, int con
 					continue;
 				if (CONN_LIST[i].list_index == list_index
 						&& CONN_LIST[i].item_index == item_index) {
-					memset(&CONN_LIST[i], 0x00, sizeof(conn_list_t));
-					if (++cnt == gap) break;
+					if (cnt < gap) {
+						memset(&CONN_LIST[i], 0x00, sizeof(conn_list_t));
+						cnt++;
+					} else {
+						CONN_LIST[i].token_id = token_id;
+					}
+				}
+			}
+		} else {
+		/* only change token id */
+			for (i = MAX_SVR_NUM; i > 0; i--) {
+				if (CONN_LIST[i].used == 0) 
+					continue;
+				if (CONN_LIST[i].list_index == list_index
+						&& CONN_LIST[i].item_index == item_index) {
+					CONN_LIST[i].token_id = token_id;
 				}
 			}
 		}
