@@ -904,7 +904,7 @@ int delcfg_server_ipaddr(int id, char *ipaddr, int port)
 
 		/* if all ipaddr withdraw */
 		list_count = config_setting_length(list); {
-			APPLOG(APPLOG_DEBUG, "%s() check, name (%s) have item (%d)", group->name, list_count);
+			APPLOG(APPLOG_DEBUG, "%s() check, name (%s) have item (%d)", __func__, group->name, list_count);
 		}
 		if (list_count == 0) {
 			for (i = 1; i < MAX_SVR_NUM; i++) {

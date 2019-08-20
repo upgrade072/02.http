@@ -246,9 +246,13 @@ static ssize_t ptr_read_callback(nghttp2_session *session, int32_t stream_id,
 static int submit_request(http2_session_data_t *session_data, httpc_ctx_t *httpc_ctx, http2_stream_data *stream_data) {
 	int32_t stream_id;
 
-    char request_path[AHIF_MAX_RESOURCE_URI_LEN + 1 + AHIF_MAX_QUERY_PARAMETER_LEN] = {0,}; // rsrc ? query
+    char request_path[8142] = {0,};
 	sprintf(request_path, "%s", httpc_ctx->user_ctx.head.rsrcUri);
-	if (httpc_ctx->user_ctx.head.queryLen > 0) {
+
+	if ((httpc_ctx->user_ctx.head.queryLen + strlen(request_path)) >= sizeof(request_path)) {
+		APPLOG(APPLOG_ERR, "%s() pathLen + queryLen exceed max request size, query discarded!", __func__);
+	} else if (httpc_ctx->user_ctx.head.queryLen > 0) {
+		sprintf(request_path + strlen(request_path), "%s", "?");
 		memcpy(request_path + strlen(request_path), httpc_ctx->user_ctx.data, httpc_ctx->user_ctx.head.queryLen);
 	}
 

@@ -360,7 +360,7 @@ KEEP_PROCESS:
 
 	if ((recv_ctx = get_assembled_ctx(tcp_ctx, process_ptr)) == NULL) {
 		// TODO!!! it means blocked, all drain ???
-		APPLOG(APPLOG_ERR, "%s() cant process packet, will just dropped, __func__");
+		APPLOG(APPLOG_ERR, "%s() cant process packet, will just dropped", __func__);
 		return packet_process_res(sock_ctx, process_ptr, processed_len);
 	} else {
 		tcp_ctx->tcp_stat.tps ++;
