@@ -247,10 +247,19 @@ static int submit_request(http2_session_data_t *session_data, httpc_ctx_t *httpc
 	int32_t stream_id;
 
     char request_path[8142] = {0,};
-	sprintf(request_path, "%s", httpc_ctx->user_ctx.head.rsrcUri);
 
-	if ((httpc_ctx->user_ctx.head.queryLen + strlen(request_path)) >= sizeof(request_path)) {
-		APPLOG(APPLOG_ERR, "%s() pathLen + queryLen exceed max request size, query discarded!", __func__);
+	if (strlen(httpc_ctx->user_ctx.head.rsrcUri) >= sizeof(request_path)) {
+		APPLOG(APPLOG_ERR, "%s() request_path is null or too long!", __func__);
+		clear_send_ctx(httpc_ctx); // clear now
+		return -1;
+	} else {
+		sprintf(request_path, "%s", httpc_ctx->user_ctx.head.rsrcUri);
+	}
+
+	if ((strlen(request_path) + 1 + httpc_ctx->user_ctx.head.queryLen) >= sizeof(request_path)) {
+		APPLOG(APPLOG_ERR, "%s() pathLen + queryLen exceed max request size!", __func__);
+		clear_send_ctx(httpc_ctx); // clear now
+		return -1;
 	} else if (httpc_ctx->user_ctx.head.queryLen > 0) {
 		sprintf(request_path + strlen(request_path), "%s", "?");
 		memcpy(request_path + strlen(request_path), httpc_ctx->user_ctx.data, httpc_ctx->user_ctx.head.queryLen);

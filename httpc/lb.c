@@ -234,6 +234,7 @@ void stp_err_to_fep(tcp_ctx_t *fep_tcp_ctx, httpc_ctx_t *recv_ctx)
 	/* response only header */
 	recv_ctx->user_ctx.head.vheaderCnt = 0;
 	recv_ctx->user_ctx.head.bodyLen = 0;
+	recv_ctx->user_ctx.head.queryLen = 0;
 
 	/* response to origin fep */
 	//set_iovec(fep_tcp_ctx, recv_ctx, recv_ctx->user_ctx.head.fep_origin_addr, &recv_ctx->push_req, NULL, NULL);

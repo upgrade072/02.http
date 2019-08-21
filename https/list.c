@@ -57,6 +57,8 @@ void clear_and_free_ctx(https_ctx_t *https_ctx)
 {
 	https_ctx->inflight_ref_cnt = 0;
 	https_ctx->user_ctx.head.bodyLen = 0;
+	https_ctx->user_ctx.head.queryLen = 0;
+	https_ctx->user_ctx.head.vheaderCnt = 0;
 	https_ctx->occupied = 0;
 }
           
