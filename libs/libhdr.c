@@ -53,7 +53,11 @@ int assign_more_headers(hdr_index_t HDR_INDEX[], nghttp2_nv *hdrs, int size, int
 	}
 #endif
 
+#if 0
 	for (int i = 0; i < MAX_HDR_RELAY_CNT; i++) {
+#else
+	for (int i = 0; i < appData->head.vheaderCnt; i++) {
+#endif
 		if (hdrs_len >= size)
 			return hdrs_len;
 		if (vheader[i].vheader_id > VH_START && vheader[i].vheader_id < VH_END) {

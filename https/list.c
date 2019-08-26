@@ -24,6 +24,7 @@ void clear_new_ctx(https_ctx_t *https_ctx)
 {
 	https_ctx->inflight_ref_cnt = 0;
     memset(&https_ctx->user_ctx.head, 0x00, AHIF_HTTPCS_MSG_HEAD_LEN);
+	memset(https_ctx->user_ctx.vheader, 0x00, sizeof(hdr_relay) * MAX_HDR_RELAY_CNT);
 }
 
 void assign_new_ctx_info(https_ctx_t *https_ctx, http2_session_data *session_data, http2_stream_data *stream_data)

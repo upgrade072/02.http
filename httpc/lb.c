@@ -31,7 +31,6 @@ httpc_ctx_t *get_assembled_ctx(tcp_ctx_t *tcp_ctx, char *ptr)
 
 	char *vheader = ptr + sizeof(AhifHttpCSMsgHeadType);
 	int vheaderCnt = head->vheaderCnt;
-
 #if 0
 	char *body = ptr + sizeof(AhifHttpCSMsgHeadType) + (sizeof(hdr_relay) * vheaderCnt);
 	int bodyLen = head->bodyLen;
@@ -308,6 +307,14 @@ void send_to_peerlb(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx)
 	return stp_snd_to_peer(peer_tcp_ctx, recv_ctx); /* send relay to peer */
 }
 
+void desthost_case_sensitive(httpc_ctx_t *recv_ctx)
+{
+	for (int i = 0; i < strlen(recv_ctx->user_ctx.head.destHost); i++) {
+		if (recv_ctx->user_ctx.head.destHost[i] == '.')
+			recv_ctx->user_ctx.head.destHost[i] = '_';
+	}
+}
+
 void send_to_remote(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx)
 {
 	conn_list_t *httpc_conn = 0;
@@ -316,6 +323,9 @@ void send_to_remote(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx)
 	/* save fep origin address */
 	if (recv_ctx->user_ctx.head.hopped_cnt == 0) 
 		sprintf(recv_ctx->user_ctx.head.fep_origin_addr, "%s", sock_ctx->client_ip);
+
+	/* our config lib can't use www.aaa.com, modified name is www_aaa_com */
+	desthost_case_sensitive(recv_ctx);
 
 	if ((httpc_conn = find_packet_index(&tcp_ctx->root_select, &recv_ctx->user_ctx.head)) == NULL) {
 		tcp_ctx->tcp_stat.send_to_peer++;
