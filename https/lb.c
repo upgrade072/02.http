@@ -214,8 +214,8 @@ tcp_ctx_t *get_direct_dest(https_ctx_t *https_ctx)
 
 void gb_clean_ctx(https_ctx_t *https_ctx)
 {
-    memset(https_ctx->user_ctx.vheader, 0x00, sizeof(hdr_relay) * https_ctx->user_ctx.head.vheaderCnt);
     https_ctx->user_ctx.head.vheaderCnt = 0;
+    memset(https_ctx->user_ctx.vheader, 0x00, sizeof(hdr_relay) * MAX_HDR_RELAY_CNT);
 	https_ctx->tcp_wait = 0;
 }
 
@@ -287,7 +287,10 @@ void send_to_worker(tcp_ctx_t *tcp_ctx, https_ctx_t *recv_ctx, int intl_msg_type
 
 	// check have same fep tag
 	if (recv_ctx->fep_tag != https_ctx->fep_tag) {
-		APPLOG(APPLOG_DETAIL, "%s() fep tag mismatch (ahif recv %d, orig ctx %d)", __func__, recv_ctx->fep_tag, https_ctx->fep_tag);
+		APPLOG(APPLOG_DETAIL, "%s() fep tag mismatch (ahif recv %d, orig ctx relay:%d tcp:%d) [%s]", 
+				__func__, 
+				recv_ctx->fep_tag, https_ctx->relay_fep_tag, https_ctx->fep_tag, 
+				https_ctx->user_ctx.head.rsrcUri);
 	}
 
 	intl_req_t intl_req = {0,};

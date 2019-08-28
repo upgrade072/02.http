@@ -27,9 +27,8 @@ void clear_send_ctx(httpc_ctx_t *httpc_ctx)
 	httpc_ctx->inflight_ref_cnt = 0;
 	httpc_ctx->user_ctx.head.bodyLen = 0;
 	httpc_ctx->user_ctx.head.queryLen = 0;
-
-	memset(httpc_ctx->user_ctx.vheader, 0x00, sizeof(hdr_relay) * httpc_ctx->user_ctx.head.vheaderCnt);
 	httpc_ctx->user_ctx.head.vheaderCnt = 0;
+	memset(httpc_ctx->user_ctx.vheader, 0x00, sizeof(hdr_relay) * MAX_HDR_RELAY_CNT);
 }
 
 void clear_and_free_ctx(httpc_ctx_t *httpc_ctx)
@@ -38,6 +37,7 @@ void clear_and_free_ctx(httpc_ctx_t *httpc_ctx)
 	httpc_ctx->inflight_ref_cnt = 0;
 	httpc_ctx->user_ctx.head.bodyLen = 0;
 	httpc_ctx->user_ctx.head.queryLen = 0;
+	memset(httpc_ctx->user_ctx.vheader, 0x00, sizeof(hdr_relay) * MAX_HDR_RELAY_CNT);
 	httpc_ctx->user_ctx.head.vheaderCnt = 0;
 	httpc_ctx->occupied = 0;
 }

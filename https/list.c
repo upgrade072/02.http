@@ -60,6 +60,7 @@ void clear_and_free_ctx(https_ctx_t *https_ctx)
 	https_ctx->user_ctx.head.bodyLen = 0;
 	https_ctx->user_ctx.head.queryLen = 0;
 	https_ctx->user_ctx.head.vheaderCnt = 0;
+	memset(https_ctx->user_ctx.vheader, 0x00, sizeof(hdr_relay) * MAX_HDR_RELAY_CNT);
 	https_ctx->occupied = 0;
 }
           

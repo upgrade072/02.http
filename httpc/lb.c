@@ -310,7 +310,7 @@ void send_to_peerlb(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx)
 void desthost_case_sensitive(httpc_ctx_t *recv_ctx)
 {
 	for (int i = 0; i < strlen(recv_ctx->user_ctx.head.destHost); i++) {
-		if (recv_ctx->user_ctx.head.destHost[i] == '.')
+		if (isalnum(recv_ctx->user_ctx.head.destHost[i]) == 0)
 			recv_ctx->user_ctx.head.destHost[i] = '_';
 	}
 }
