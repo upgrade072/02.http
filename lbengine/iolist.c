@@ -51,7 +51,7 @@ static void delete_write_item(write_list_t *write_list, write_item_t *write_item
 
 void print_write_item(write_list_t *write_list)
 {
-    APPLOG(APPLOG_DEBUG, "%s() cnt (%d) bytes (%d)", 
+    APPLOG(APPLOG_DEBUG, "%s() cnt (%d) bytes (%ld)", 
             __func__, write_list->item_cnt, write_list->item_bytes);
 
     write_item_t *write_item = write_list->root;
@@ -82,7 +82,7 @@ ssize_t push_write_item(int fd, write_list_t *write_list, int bundle_cnt, int bu
 		return -1;
 	}
     if (write_list->item_cnt <= 0 || write_list->item_bytes <= 0) {
-		APPLOG(APPLOG_ERR, "{{{LB}}} wrong input in (%s:%d) write_list->item_cnt %d, write_list->item_bytes (%d)!", 
+		APPLOG(APPLOG_ERR, "{{{LB}}} wrong input in (%s:%d) write_list->item_cnt %d, write_list->item_bytes (%ld)!", 
 				__func__, __LINE__,
 				write_list->item_cnt, write_list->item_bytes);
 		return -1;
