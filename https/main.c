@@ -26,6 +26,10 @@ http_stat_t HTTP_STAT;
 
 hdr_index_t VHDR_INDEX[2][MAX_HDR_RELAY_CNT];
 
+#ifdef OVLD_API
+extern int lb_api_ovld_is_ctrl(int trid, int proto, char *host, char *err_str);
+#endif
+
 // for lb ctx print
 extern lb_global_t LB_CONF;
 extern lb_ctx_t LB_CTX;
@@ -613,16 +617,21 @@ static int on_begin_headers_callback(nghttp2_session *session,
 
 	/* stat HTTP_RX_REQ */
 	http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_RX_REQ);
+#if 0
 #ifdef OVLD_API
 	/* for nssf overload control */
-	int ovld_reason_code = api_ovld_is_ctrl(session_data->thrd_index, API_PROTO_HTTPS, 0);
-	if (ovld_reason_code > 299) {
-		char *error_str = get_error_reason(API_PROTO_HTTPS, 0);
+	char *error_str = NULL;
+	int ovld_reason_code = lb_api_ovld_is_ctrl(session_data->thrd_index, API_PROTO_HTTPS, 
+			session_data->hostname, error_str); 
+	if (ovld_reason_code == API_ACTION_DROP) {
+		// TODO LIKE PREARRANGE SOMETHING ...
+	} else if (ovld_reason_code > 299) {
 		int res = error_reply(session_data, session, stream_data, ovld_reason_code, 
 				error_str != NULL ? error_str : ERROR_NULLBODY, HTTP_S_NF_CONGESTION);
 
 		return res == 0 ? 0 : NGHTTP2_ERR_CALLBACK_FAILURE;
 	}
+#endif
 #endif
 
 	/* assign context when receive begin-header, remove it when remove_http2_stream_data() called */
@@ -717,6 +726,27 @@ static int on_request_recv(nghttp2_session *session,
 
 	log_pkt_end_stream(stream_data->stream_id, https_ctx);
 
+#ifdef OVLD_API
+	char *error_str = NULL;
+	int ovld_reason_code = lb_api_ovld_is_ctrl(session_data->thrd_index, API_PROTO_HTTPS, 
+			session_data->hostname, error_str); 
+	if (ovld_reason_code == API_ACTION_DROP) {
+		/* silence discard stream */
+		nghttp2_session_close_stream(session_data->session, stream_data->stream_id, NGHTTP2_INTERNAL_ERROR);
+		clear_and_free_ctx(https_ctx);
+		Free_CtxId(thrd_idx, ctx_id);
+		http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_PRE_END);
+		return 0;
+	} else if (ovld_reason_code > 299) {
+		int res = error_reply(session_data, session, stream_data, ovld_reason_code, 
+				error_str != NULL ? error_str : ERROR_NULLBODY, HTTP_S_NF_CONGESTION);
+
+		clear_and_free_ctx(https_ctx);
+		Free_CtxId(thrd_idx, ctx_id);
+		return res == 0;
+	}
+#endif
+
 	if (!https_ctx->user_ctx.head.rsrcUri[0]) {
 		if (error_reply(session_data, session, stream_data, 400, 
 					ERROR_HTTP_S_INVLD_API, HTTP_S_INVLD_API) != 0)
@@ -764,6 +794,44 @@ static int on_request_recv(nghttp2_session *session,
 	return 0;
 }
 
+void ping_latency_alarm(http2_session_data *session_data, struct timeval *send_tm, struct timeval *recv_tm)
+{
+	char alarm_info[1024] = {0,};
+	char alarm_desc[1024] = {0,};
+
+	// don't make alarm event
+	if (SERVER_CONF.ping_event_ms <= 0)
+		return;
+
+	long long tv_send = send_tm->tv_sec * 1000LL + (send_tm->tv_usec / 1000LL);
+	long long tv_recv = recv_tm->tv_sec * 1000LL + (recv_tm->tv_usec / 1000LL);
+	long long ping_latency = tv_recv - tv_send;
+
+	if (ping_latency >= SERVER_CONF.ping_event_ms && session_data->event_occured == 0) {
+		if (SERVER_CONF.ping_event_code > 0) {
+			sprintf(alarm_info, "HTTPS-%s:%d",  session_data->client_addr, session_data->client_port);
+			sprintf(alarm_desc, "%lld-ms", ping_latency);
+			reportAlarm("HTTPS", SERVER_CONF.ping_event_code, SFM_ALM_MAJOR, alarm_info, alarm_desc);
+		}
+		session_data->event_occured = 1;
+		APPLOG(APPLOG_DEBUG, "%s() session (id:%d) alarm status (%s) [%s:%s]",
+				__func__, session_data->session_id,
+				SERVER_CONF.ping_event_code > 0 ? "sended" : "silence discarded",
+				alarm_info, alarm_desc);
+	} else if (ping_latency < SERVER_CONF.ping_event_ms && session_data->event_occured == 1) {
+		if (SERVER_CONF.ping_event_code > 0) {
+			sprintf(alarm_info, "HTTPS-%s:%d",  session_data->client_addr, session_data->client_port);
+			sprintf(alarm_desc, "%lld-ms", ping_latency);
+			reportAlarm("HTTPS", SERVER_CONF.ping_event_code, SFM_ALM_NORMAL, alarm_info, alarm_desc);
+		}
+		session_data->event_occured = 0;
+		APPLOG(APPLOG_DEBUG, "%s() session (id:%d) alarm status (%s) [%s:%s]",
+				__func__, session_data->session_id,
+				SERVER_CONF.ping_event_code > 0 ? "cleared" : "silence discarded",
+				alarm_info, alarm_desc);
+	}
+}
+
 static int on_frame_recv_callback(nghttp2_session *session,
 		const nghttp2_frame *frame, void *user_data) {
 	http2_session_data *session_data = (http2_session_data *)user_data;
@@ -774,7 +842,10 @@ static int on_frame_recv_callback(nghttp2_session *session,
 			http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_RX_RST);
 			break;
 		case NGHTTP2_PING:
-			clock_gettime(CLOCK_REALTIME, &session_data->ping_rcv_time);
+			if (frame->hd.flags & NGHTTP2_FLAG_ACK) {
+				gettimeofday(&session_data->ping_rcv_time, NULL);
+				ping_latency_alarm(session_data, &session_data->ping_snd_time, &session_data->ping_rcv_time);
+			}
 			break;
 		case NGHTTP2_DATA:
 		case NGHTTP2_HEADERS:
@@ -879,7 +950,12 @@ void initialize_nghttp2_session(http2_session_data *session_data) {
 	nghttp2_session_callbacks_set_on_begin_headers_callback(
 			callbacks, on_begin_headers_callback);
 
+#if 0
 	nghttp2_session_server_new(&session_data->session, callbacks, session_data);
+#else
+	// U+ requirement, dynamic table size 0
+	nghttp2_session_server_new2(&session_data->session, callbacks, session_data, SERVER_CONF.nghttp2_option);
+#endif
 
 	// schlee test code, set session buff 10MB
 	nghttp2_session_set_local_window_size(session_data->session, NGHTTP2_FLAG_NONE, 0, 1 << 30);
@@ -986,7 +1062,7 @@ static void eventcb(struct bufferevent *bev, short events, void *ptr) {
 
 		// schlee, ok let's send ping 
 		session_data->connected = CN_CONNECTED;
-		clock_gettime(CLOCK_REALTIME, &session_data->ping_rcv_time);
+		gettimeofday(&session_data->ping_rcv_time, NULL);
 		return;
 	}
 	if (events & BEV_EVENT_EOF) {
@@ -1244,6 +1320,7 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 					continue;
 				}
 				/* don't use FLAG_ACK (FLAG_NONE : request, FLAG_ACK : response) */
+				gettimeofday(&session_data->ping_snd_time, NULL);
 				if (nghttp2_submit_ping(session_data->session, NGHTTP2_FLAG_NONE, NULL) != 0) {
 					/* legacy session expired and new one already created case */
 					APPLOG(APPLOG_DEBUG, "%s():%d h2 submit_ping fail", __func__, __LINE__);
@@ -1432,6 +1509,21 @@ void create_https_worker()
 	}
 }
 
+int set_http2_option(server_conf *SERVER_CONF)
+{
+	/* create nghttp2 option */
+	if (nghttp2_option_new(&SERVER_CONF->nghttp2_option) < 0) {
+		APPLOG(APPLOG_ERR, "{{{INIT}}} %s fail to create nghttp2 option!", __func__);
+		return -1;
+	}
+
+	/* set setting_header_table_size */
+	nghttp2_option_set_max_deflate_dynamic_table_size(SERVER_CONF->nghttp2_option, SERVER_CONF->http_opt_header_table_size);
+	APPLOG(APPLOG_ERR, "{{{INIT}}} %s set setting_header_table_size to [%d]", __func__, SERVER_CONF->http_opt_header_table_size);
+
+	return 0;
+}
+
 int initialize()
 {
 	char fname[64] = { 0, }; 
@@ -1543,12 +1635,14 @@ int initialize()
         APPLOG(APPLOG_ERR, "{{{INIT}}} [%s] msgget fail; key=0x%x,err=%d(%s)!", __func__, key, errno, strerror(errno));
         return (-1);
     }
+#if 0
 	/* flushing & remake */
 	msgctl(httpsQid, IPC_RMID, NULL);
     if ((httpsQid = msgget(key,IPC_CREAT|0666)) < 0) {
         APPLOG(APPLOG_ERR, "{{{INIT}}} [%s] msgget fail; key=0x%x,err=%d(%s)!", __func__, key, errno, strerror(errno));
         return (-1);
     }
+#endif
 
     /* create send-(ixpc) mq */
     if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", "IXPC", 3, tmp) < 0)
@@ -1587,11 +1681,20 @@ int initialize()
     else
         print_relay_vhdr(VHDR_INDEX[1], VH_END);
 
+	/*  http/2 option load */
+	if (set_http2_option(&SERVER_CONF) < 0) {
+		APPLOG(APPLOG_ERR, "{{{INIT}}} set http/2 option fail!");
+		return -1;
+	}
+
 	/* process start run */
 #ifndef TEST
     if (keepalivelib_init (myProcName) < 0)
         return (-1);
 #endif
+
+	/* check cert once */
+	check_cert(SERVER_CONF.cert_file);
 
 #ifdef OVLD_API
 	/* for nssf overload control */
@@ -1603,6 +1706,11 @@ int initialize()
 #endif
 
 	return 0;
+}
+
+void check_cert_cb(evutil_socket_t fd, short what, void *arg)
+{
+	check_cert(SERVER_CONF.cert_file);
 }
 
 static void main_loop(const char *key_file, const char *cert_file) {
@@ -1662,7 +1770,7 @@ static void main_loop(const char *key_file, const char *cert_file) {
 	event_add(ev_tick, &tic_sec);
 
 	/* check context timeout */
-    struct timeval tm_interval = {0, TM_INTERVAL};
+    struct timeval tm_interval = {0, TM_INTERVAL * 5};
     struct event *ev_timeout;
     ev_timeout = event_new(evbase, -1, EV_PERSIST, chk_tmout_callback, NULL);
     event_add(ev_timeout, &tm_interval);
@@ -1692,8 +1800,16 @@ static void main_loop(const char *key_file, const char *cert_file) {
     struct event *ev_lbctx_print;
     ev_lbctx_print = event_new(evbase, -1, EV_PERSIST, fep_stat_print, NULL);
     event_add(ev_lbctx_print, &lbctx_print_interval);
+
+	/* check cert expire */
+	struct timeval check_cert_interval = { 60 * 60 * 12, 0}; // every 12 hour
+	struct event *ev_cert_check;
+	ev_cert_check = event_new(evbase, -1, EV_PERSIST, check_cert_cb, NULL); 
+	event_add(ev_main, &check_cert_interval);
+
 	/* start loop */
 	event_base_loop(evbase, EVLOOP_NO_EXIT_ON_EMPTY);
+
 
 	/* never reach here */
 	event_base_free(evbase);

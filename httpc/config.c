@@ -9,9 +9,13 @@
 #define CF_TIMEOUT_SEC	    "client_cfg.http_config.timeout_sec"
 #define CF_PING_INTERVAL	"client_cfg.http_config.ping_interval"
 #define CF_PING_TIMEOUT	    "client_cfg.http_config.ping_timeout"
+#define CF_PING_EVENT_MS	"client_cfg.http_config.ping_event_ms"
+#define CF_PING_EVENT_CODE	"client_cfg.http_config.ping_event_code"
 #define CF_PKT_LOG		    "client_cfg.http_config.pkt_log"
 #define CF_LB_CONFIG		"client_cfg.lb_config"
 #define CF_CONNECT_LIST		"connect_list"
+#define CF_HTTP_OPT_HDR_TABLE_SIZE	"client_cfg.http_option.setting_header_table_size"
+#define CF_HTTP_PREPARE_STREAM_ID	"client_cfg.http_option.prepare_close_stream_limit"
 
 extern client_conf_t CLIENT_CONF;
 extern conn_list_t CONN_LIST[MAX_SVR_NUM];
@@ -189,14 +193,60 @@ int config_load()
         APPLOG(APPLOG_ERR, "{{{CFG}}} ping timeout is [%d]", CLIENT_CONF.ping_timeout);
     }
 
+    /* ping event_ms */
+    int ping_event_ms = 0;
+    if (config_lookup_int(&CFG, CF_PING_EVENT_MS, &ping_event_ms) == CONFIG_FALSE) {
+        APPLOG(APPLOG_ERR, "{{{CFG}}} ping event_ms cfg not exist!");
+        goto CF_LOAD_ERR;
+    } else {
+        if (ping_event_ms <= 0) {
+            APPLOG(APPLOG_ERR, "{{{CFG}}} ping event_ms[%d] is lower than 0 it means no event!", ping_event_ms);
+        }
+        CLIENT_CONF.ping_event_ms = ping_event_ms;
+        APPLOG(APPLOG_ERR, "{{{CFG}}} ping event_ms is [%d]", CLIENT_CONF.ping_event_ms);
+    }
+
+    /* ping event_code */
+    int ping_event_code = 0;
+    if (config_lookup_int(&CFG, CF_PING_EVENT_CODE, &ping_event_code) == CONFIG_FALSE) {
+        APPLOG(APPLOG_ERR, "{{{CFG}}} ping event_code cfg not exist!");
+        goto CF_LOAD_ERR;
+    } else {
+        if (ping_event_code <= 0) {
+            APPLOG(APPLOG_ERR, "{{{CFG}}} ping event_code[%d] is lower than 0 it means no event!", ping_event_code);
+        }
+        CLIENT_CONF.ping_event_code = ping_event_code;
+        APPLOG(APPLOG_ERR, "{{{CFG}}} ping event_code is [%d]", CLIENT_CONF.ping_event_code);
+    }
+
     /* pkt_log enable */
     int pkt_log = 0;
     if (config_lookup_int(&CFG, CF_PKT_LOG, &pkt_log) == CONFIG_FALSE) {
         APPLOG(APPLOG_ERR, "{{{CFG}}} pkt log cfg not exist!");
         goto CF_LOAD_ERR;
     } else {
-        CLIENT_CONF.pkt_log = (pkt_log == 1 ? 1 : 0);
+        CLIENT_CONF.pkt_log = pkt_log;
         APPLOG(APPLOG_ERR, "{{{CFG}}} pkt log is [%s]", CLIENT_CONF.pkt_log == 1 ? "ON" : "OFF");
+    }
+
+	/* http/2 option setting header table size */
+    int setting_header_table_size = 0;
+    if (config_lookup_int(&CFG, CF_HTTP_OPT_HDR_TABLE_SIZE, &setting_header_table_size) == CONFIG_FALSE) {
+        APPLOG(APPLOG_ERR, "{{{CFG}}} setting header table size cfg not exist!");
+        goto CF_LOAD_ERR;
+    } else {
+        CLIENT_CONF.http_opt_header_table_size = setting_header_table_size;
+        APPLOG(APPLOG_ERR, "{{{CFG}}} http/2 opt setting header table size is [%d]", CLIENT_CONF.http_opt_header_table_size);
+    }
+
+	/* http/2 option prepare close stream limit */
+    int prepare_close_stream_limit = 0;
+    if (config_lookup_int(&CFG, CF_HTTP_PREPARE_STREAM_ID, &prepare_close_stream_limit) == CONFIG_FALSE) {
+        APPLOG(APPLOG_ERR, "{{{CFG}}} setting prepare_close_stream_limit cfg not exist!");
+        goto CF_LOAD_ERR;
+    } else {
+        CLIENT_CONF.prepare_close_stream_limit = prepare_close_stream_limit;
+        APPLOG(APPLOG_ERR, "{{{CFG}}} setting prepare_close_stream_limit is [%d]", CLIENT_CONF.prepare_close_stream_limit);
     }
 
 	/* lb config load */
@@ -979,5 +1029,43 @@ int delcfg_server_hostname(int id)
     return (0);
 
 CF_DEL_SVR_HOSTNAME_ERR:
+    return (-1);
+}
+
+int chgcfg_server_ping(int interval, int timeout, int ms)
+{
+    config_setting_t *setting;
+
+	if (interval >= 0) {
+		if ((setting = config_lookup(&CFG, CF_PING_INTERVAL)) == NULL) {
+			APPLOG(APPLOG_ERR, "%s() ping.interval cfg not exist", __func__);
+			goto CF_CHG_PING_INTERVAL_ERR;
+		} else {
+			config_setting_set_int(setting, interval);
+		}
+	}
+	if (timeout >= 0) {
+		if ((setting = config_lookup(&CFG, CF_PING_TIMEOUT)) == NULL) {
+			APPLOG(APPLOG_ERR, "%s() ping.timeout cfg not exist", __func__);
+			goto CF_CHG_PING_INTERVAL_ERR;
+		} else {
+			config_setting_set_int(setting, timeout);
+		}
+	}
+	if (ms >= 0)  {
+		if ((setting = config_lookup(&CFG, CF_PING_EVENT_MS)) == NULL) {
+			APPLOG(APPLOG_ERR, "%s() ping.event_ms cfg not exist", __func__);
+			goto CF_CHG_PING_INTERVAL_ERR;
+		} else {
+			config_setting_set_int(setting, ms);
+		}
+	}
+
+    config_set_tab_width(&CFG, 4);
+    config_write_file(&CFG, CONFIG_PATH);
+
+    return (0);
+
+CF_CHG_PING_INTERVAL_ERR:
     return (-1);
 }

@@ -41,8 +41,8 @@ nrf_worker_t		NRF_WORKER;
 extern lb_ctx_t LB_CTX;
 extern lb_global_t LB_CONF;
 
-static http2_session_data_t *
-create_http2_session_data() {
+static http2_session_data_t * create_http2_session_data() 
+{
 	http2_session_data_t *session_data = NULL;
 	int index, i, found = 0, sess_idx = 0;
 
@@ -91,7 +91,12 @@ static void delete_http2_session_data(http2_session_data_t *session_data)
 	session_data->bev = NULL;
 
 	if (CONN_LIST[session_data->conn_index].reconn_candidate) {
+#if 0
 		nghttp2_session_terminate_session(session_data->session, NGHTTP2_NO_ERROR);
+#else
+		// we immediately free session data, so can't do gracefully shutdown
+		nghttp2_session_del(session_data->session);
+#endif
 	} else {
 		nghttp2_session_del(session_data->session);
 	}
@@ -197,6 +202,44 @@ static int on_begin_headers_callback(nghttp2_session *session,
 	return 0;
 }
 
+void ping_latency_alarm(http2_session_data_t *session_data, struct timeval *send_tm, struct timeval *recv_tm)
+{
+	char alarm_info[1024] = {0,};
+	char alarm_desc[1024] = {0,};
+
+	// don't make alarm event
+	if (CLIENT_CONF.ping_event_ms <= 0)
+		return;
+
+	long long tv_send = send_tm->tv_sec * 1000LL + (send_tm->tv_usec / 1000LL);
+	long long tv_recv = recv_tm->tv_sec * 1000LL + (recv_tm->tv_usec / 1000LL);
+	long long ping_latency = tv_recv - tv_send;
+
+	if (ping_latency >= CLIENT_CONF.ping_event_ms && session_data->event_occured == 0) {
+		if (CLIENT_CONF.ping_event_code > 0) {
+			sprintf(alarm_info, "HTTPC-%s",  session_data->authority);
+			sprintf(alarm_desc, "%lld-ms", ping_latency);
+			reportAlarm("HTTPC", CLIENT_CONF.ping_event_code, SFM_ALM_MAJOR, alarm_info, alarm_desc);
+		}
+		session_data->event_occured = 1;
+		APPLOG(APPLOG_DEBUG, "%s() session (id:%d) alarm status (%s) [%s:%s]",
+				__func__, session_data->session_id,
+				CLIENT_CONF.ping_event_code > 0 ? "sended" : "silence discarded",
+				alarm_info, alarm_desc);
+	} else if (ping_latency < CLIENT_CONF.ping_event_ms && session_data->event_occured == 1) {
+		if (CLIENT_CONF.ping_event_code > 0) {
+			sprintf(alarm_info, "HTTPC-%s",  session_data->authority);
+			sprintf(alarm_desc, "%lld-ms", ping_latency);
+			reportAlarm("HTTPC", CLIENT_CONF.ping_event_code, SFM_ALM_NORMAL, alarm_info, alarm_desc);
+		}
+		session_data->event_occured = 0;
+		APPLOG(APPLOG_DEBUG, "%s() session (id:%d) alarm status (%s) [%s:%s]",
+				__func__, session_data->session_id,
+				CLIENT_CONF.ping_event_code > 0 ? "cleared" : "silence discarded",
+				alarm_info, alarm_desc);
+	}
+}
+
 /* nghttp2_on_frame_recv_callback: Called when nghttp2 library
    received a complete frame from the remote peer. */
 static int on_frame_recv_callback(nghttp2_session *session,
@@ -209,7 +252,10 @@ static int on_frame_recv_callback(nghttp2_session *session,
 			http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_RX_RST);
 			break;
 		case NGHTTP2_PING:
-			clock_gettime(CLOCK_REALTIME, &session_data->ping_rcv_time);
+			if (frame->hd.flags & NGHTTP2_FLAG_ACK) {
+				gettimeofday(&session_data->ping_rcv_time, NULL);
+				ping_latency_alarm(session_data, &session_data->ping_snd_time, &session_data->ping_rcv_time);
+			}
 			break;
 		case NGHTTP2_HEADERS:
 			if (frame->headers.cat == NGHTTP2_HCAT_RESPONSE) {
@@ -538,7 +584,12 @@ static void initialize_nghttp2_session(http2_session_data_t *session_data) {
 	nghttp2_session_callbacks_set_on_begin_headers_callback(
 			callbacks, on_begin_headers_callback);
 
+#if 0
 	nghttp2_session_client_new(&session_data->session, callbacks, session_data);
+#else
+	// U+ requirement, dynamic table size 0
+	nghttp2_session_client_new2(&session_data->session, callbacks, session_data, CLIENT_CONF.nghttp2_option);
+#endif
 
 	// schlee test code, set session buff 10MB
 	nghttp2_session_set_local_window_size(session_data->session, NGHTTP2_FLAG_NONE, 0, 1 << 30);
@@ -656,7 +707,7 @@ static void eventcb(struct bufferevent *bev, short events, void *ptr) {
 		pthread_mutex_lock(&ONLY_CRT_SESS_LOCK);
 		CONN_LIST[session_data->conn_index].conn = CN_CONNECTED;
 		session_data->connected = 1;
-		clock_gettime(CLOCK_REALTIME, &session_data->ping_rcv_time);
+		gettimeofday(&session_data->ping_rcv_time, NULL);
 		APPLOG(APPLOG_DETAIL, "%s() Connected conn_index %5d thrd_index %2d session_index %5d ip %s port %d",
 				__func__,
 				session_data->conn_index, 
@@ -858,8 +909,32 @@ void send_status_to_omp(evutil_socket_t fd, short what, void *arg)
 	http_report_status(&conn_list, MSGID_HTTP_SERVER_STATUS_REPORT);
 }
 
+conn_list_t *check_sess_group_prepair_reconn(conn_list_t *conn_list)
+{
+	for (int i = 0; i < MAX_SVR_NUM; i++) {
+		conn_list_t *compare_list =  &CONN_LIST[i];
+
+		if (i == conn_list->index) continue; // it's me
+		if (compare_list->used == 0) continue;
+		if (compare_list->act == 0) continue;
+		if (compare_list->conn != CN_CONNECTED) continue;
+
+		if ((compare_list->reconn_candidate > 0) &&
+				(compare_list->port == conn_list->port) &&
+				!strcmp(compare_list->scheme, conn_list->scheme) &&
+				!strcmp(compare_list->type, conn_list->type) &&
+				!strcmp(compare_list->host, conn_list->host) &&
+				!strcmp(compare_list->ip, conn_list->ip)) {
+			return compare_list;
+		}
+	}
+
+	return NULL;
+}
+
 void inspect_stream_id(int stream_id, http2_session_data_t *session_data)
 {
+#if 0
 	if (stream_id >= HTTP_PREPARE_STREAM_LIMIT &&
 			CONN_LIST[session_data->conn_index].reconn_candidate == 0) {
 		conn_list_t *conn_list = &CONN_LIST[session_data->conn_index];
@@ -867,6 +942,18 @@ void inspect_stream_id(int stream_id, http2_session_data_t *session_data)
 				__func__, session_data->session_id, 
 				conn_list->type, conn_list->host, conn_list->ip, conn_list->port, HTTP_PREPARE_STREAM_LIMIT);
 		conn_list->reconn_candidate = 1;
+#else
+	if (stream_id >= CLIENT_CONF.prepare_close_stream_limit &&
+			CONN_LIST[session_data->conn_index].reconn_candidate == 0) {
+		conn_list_t *conn_list = &CONN_LIST[session_data->conn_index];
+		conn_list_t *prepare_disconn_list = check_sess_group_prepair_reconn(conn_list);
+		if (prepare_disconn_list == NULL) {
+			APPLOG(APPLOG_ERR, "%s() SESSION[%d] (%s:%s:%s:%d) REACH TO STREAM_ID LIMIT[%d], PREPARE RECONNECT!!!",
+					__func__, session_data->session_id, 
+					conn_list->type, conn_list->host, conn_list->ip, conn_list->port, CLIENT_CONF.prepare_close_stream_limit);
+			conn_list->reconn_candidate = 1;
+		}
+#endif
 	}
 }
 
@@ -908,7 +995,7 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 			case HTTP_INTL_SND_REQ:
 				if (session_data  == NULL) {
 					/* legacy session expired and new one already created case */
-					APPLOG(APPLOG_DEBUG, "%s():%d get_session fail", __func__, __LINE__);
+					APPLOG(APPLOG_DEBUG, "%s():%d send req case) get_session(id:%d) fail", __func__, __LINE__, session_id);
 					continue;
 				}
 				int stream_id = send_request(session_data, thrd_index, ctx_id);
@@ -934,9 +1021,9 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 					APPLOG(APPLOG_DEBUG, "%s():%d get_context fail", __func__, __LINE__);
 					continue;
 				}
-				if (session_data  == NULL) {
+				if (session_data == NULL) {
 					/* legacy session expired and new one already created case */
-					APPLOG(APPLOG_DEBUG, "%s():%d get_session fail", __func__, __LINE__);
+					APPLOG(APPLOG_DEBUG, "%s():%d timeout case) get_session(id:%d) fail", __func__, __LINE__, session_id);
 				} else {
 					/* it's same session and alive, send reset */
 					nghttp2_submit_rst_stream(session_data->session, NGHTTP2_FLAG_NONE,
@@ -968,6 +1055,7 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
                     continue;
                 }
 				/* don't use FLAG_ACK (FLAG_NONE : request, FLAG_ACK : response) */
+				gettimeofday(&session_data->ping_snd_time, NULL);
                 if (nghttp2_submit_ping(session_data->session, NGHTTP2_FLAG_NONE, NULL) != 0) {
                     /* legacy session expired and new one already created case */
 					APPLOG(APPLOG_DEBUG, "%s():%d h2 submit_ping fail", __func__, __LINE__);
@@ -1087,11 +1175,18 @@ void candidate_session_del(evutil_socket_t fd, short what, void *arg)
 			continue;
 
 		/* del only 1 session by time (2sec) */
+#if 0
 		if (CONN_LIST[i].reconn_candidate) {
+#else
+		// wait 5 sec for outbound request response
+		if ((CONN_LIST[i].reconn_candidate > 0) && (CONN_LIST[i].reconn_candidate++ >= 5)) {
+#endif
 			intl_req_t intl_req;
 			int thrd_index = CONN_LIST[i].thrd_index;
 			set_intl_req_msg(&intl_req, thrd_index, 0, CONN_LIST[i].session_index,
 					CONN_LIST[i].session_id, 0, HTTP_INTL_SESSION_DEL);
+			APPLOG(APPLOG_ERR, "%s() SESSION[%d] enough wait, now disconnect!",
+					__func__, CONN_LIST[i].session_id);
 			if (-1 == msgsnd(THRD_WORKER[thrd_index].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0)) {
 				APPLOG(APPLOG_DEBUG, "%s() msgsnd fail!!!", __func__);
 			}
@@ -1189,13 +1284,17 @@ void main_loop()
 	event_add(ev, &one_sec);
 
 	/* check candidate reconnect (stream_id full) */
+#if 0
 	struct timeval tm_stream_id_inspect = {2, 0};
+#else
+	struct timeval tm_stream_id_inspect = {1, 0}; // check every 1sec, if 5 count (outbound no remain), delete session
+#endif
 	struct event *ev_candidate_session_del;
 	ev_candidate_session_del = event_new(evbase, -1, EV_PERSIST, candidate_session_del, NULL);
 	event_add(ev_candidate_session_del, &tm_stream_id_inspect);
 
 	/* check context timeout */
-	struct timeval tm_interval = {0, TM_INTERVAL};
+	struct timeval tm_interval = {0, TM_INTERVAL * 5}; // every 100 ms
 	struct event *ev_timeout;
 	ev_timeout = event_new(evbase, -1, EV_PERSIST, chk_tmout_callback, NULL);
 	event_add(ev_timeout, &tm_interval);
@@ -1238,6 +1337,21 @@ void main_loop()
 	/* never reach here */
 	event_base_free(evbase);
 	SSL_CTX_free(ssl_ctx);
+}
+
+int set_http2_option(client_conf_t *CLIENT_CONF)
+{
+	/* create nghttp2 option */
+	if (nghttp2_option_new(&CLIENT_CONF->nghttp2_option) < 0) {
+		APPLOG(APPLOG_ERR, "{{{INIT}}} %s fail to create nghttp2 option!", __func__);
+		return -1;
+	}
+
+	/* set setting_header_table_size */
+	nghttp2_option_set_max_deflate_dynamic_table_size(CLIENT_CONF->nghttp2_option, CLIENT_CONF->http_opt_header_table_size);
+	APPLOG(APPLOG_ERR, "{{{INIT}}} %s set setting_header_table_size to [%d]", __func__, CLIENT_CONF->http_opt_header_table_size);
+
+	return 0;
 }
 
 int initialize()
@@ -1338,12 +1452,14 @@ int initialize()
 		APPLOG(APPLOG_ERR,"{{{INIT}}} [%s] msgget fail; key=0x%x,err=%d(%s)!", __func__, key, errno, strerror(errno));
 		return -1;
 	}
+#if 0
 	/* flushing & remake */
 	msgctl(httpcQid, IPC_RMID, NULL);
 	if ((httpcQid = msgget(key,IPC_CREAT|0666)) < 0) {
 		APPLOG(APPLOG_ERR, "{{{INIT}}} [%s] msgget fail; key=0x%x,err=%d(%s)!", __func__, key, errno, strerror(errno));
 		return -1;
 	}
+#endif
 
 	/* create send-(ixpc) mq */
 	if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", "IXPC", 3, tmp) < 0)
@@ -1382,6 +1498,13 @@ int initialize()
 	} else {
 		print_relay_vhdr(VHDR_INDEX[1], VH_END);
 	}
+
+	/* http/2 option load */
+	if (set_http2_option(&CLIENT_CONF) < 0) {
+		APPLOG(APPLOG_ERR, "{{{INIT}}} set http/2 option fail!");
+		return -1;
+	}
+
 
 	/* process start run */
 #ifndef TEST

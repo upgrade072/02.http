@@ -224,7 +224,7 @@ conn_list_t *search_conn_list(GNode *curr_node, compare_input_t *comm_input, sel
 		else if (leaf_conn_list->act == 1 && leaf_conn_list->conn == CN_CONNECTED)
 #else
 		else if (leaf_conn_list->act == 1 && 
-				(leaf_conn_list->conn == CN_CONNECTED && leaf_conn_list->reconn_candidate != 1))
+				(leaf_conn_list->conn == CN_CONNECTED && leaf_conn_list->reconn_candidate == 0))
 #endif
             return leaf_conn_list;
         else

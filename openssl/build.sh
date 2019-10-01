@@ -18,6 +18,7 @@ cd openssl-${VERSION}
 
 ./config \
 	--prefix=${ROOTDIR}/../build \
+	--libdir=lib \
 	no-shared
 
 make

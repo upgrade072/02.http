@@ -71,7 +71,14 @@ typedef struct server_conf {
 	int timeout_sec;
 	int ping_interval;
 	int ping_timeout;
+	int ping_event_ms;
+	int ping_event_code;
+	int cert_event_code;
 	int pkt_log;
+    config_setting_t *lb_config;
+
+	int http_opt_header_table_size;
+	nghttp2_option *nghttp2_option;
 
 	/* for OAUTH 2.0 */
 	char cert_file[128];
@@ -85,7 +92,6 @@ typedef struct server_conf {
 	int callback_port_tls[MAX_PORT_NUM];	// for callback uri port
 	int callback_port_tcp[MAX_PORT_NUM];	// for callback uri port
 
-    config_setting_t *lb_config;
 } server_conf;
 
 typedef struct conn_client {
@@ -167,7 +173,9 @@ typedef struct http2_session_data {
 
 	int connected;
 	int ping_cnt;
-	struct timespec ping_rcv_time;
+	struct timeval ping_snd_time;
+	struct timeval ping_rcv_time;
+	int event_occured;
 
 #ifdef OAUTH
 	int auth_act;
@@ -236,9 +244,9 @@ typedef struct lb_global {
     config_setting_t *cf_fep_tx_listen_port;
 } lb_global_t;
 
+
 /* ------------------------- config.c --------------------------- */
 int     init_cfg();
-int     destroy_cfg();
 int     config_load_just_log();
 int     config_load();
 int     addcfg_client_hostname(char *hostname, char *type);
@@ -247,6 +255,7 @@ int     actcfg_http_client(int id, int ip_exist, char *ipaddr, int change_to_act
 int     chgcfg_client_max_cnt_with_auth_act(int id, char *ipaddr, int max, int auth_act);
 int     delcfg_client_ipaddr(int id, char *ipaddr);
 int     delcfg_client_hostname(int id);
+int     chgcfg_client_ping(int interval, int timeout, int ms);
 
 /* ------------------------- list.c --------------------------- */
 https_ctx_t     *get_context(int thrd_idx, int ctx_idx, int used);
@@ -296,6 +305,8 @@ int     func_chg_http_client_act(IxpcQMsgType *rxIxpcMsg, int change_to_act);
 int     func_chg_http_client(IxpcQMsgType *rxIxpcMsg);
 int     func_del_http_cli_ip(IxpcQMsgType *rxIxpcMsg);
 int     func_del_http_client(IxpcQMsgType *rxIxpcMsg);
+int     func_dis_http_cli_ping(IxpcQMsgType *rxIxpcMsg);
+int     func_chg_http_cli_ping(IxpcQMsgType *rxIxpcMsg);
 
 /* ------------------------- lb.c --------------------------- */
 https_ctx_t     *get_null_recv_ctx(tcp_ctx_t *tcp_ctx);
@@ -319,3 +330,7 @@ void    *fep_stat_thread(void *arg);
 void    load_lb_config(server_conf *svr_conf, lb_global_t *lb_conf);
 void    attach_lb_thread(lb_global_t *lb_conf, lb_ctx_t *lb_ctx);
 int     create_lb_thread();
+
+/* ------------------------- cert.c --------------------------- */
+X509    *load_cert(const char *file);
+void    check_cert(const char *cert_file);

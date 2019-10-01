@@ -17,6 +17,8 @@ typedef enum client_cmd {
 	chg_http_server,
 	del_http_svr_ip,
 	del_http_server,
+	dis_http_svr_ping,
+	chg_http_svr_ping,
 	MAX_CMD_NUM
 } client_cmd_t;
 
@@ -29,7 +31,9 @@ MmcHdlrVector   mmcHdlrVecTbl[MAX_CMD_NUM] =
 	{ "DACT-NF-SERVER",    func_dact_http_server},
 	{ "CHG-NF-SERVER",     func_chg_http_server},
 	{ "DEL-NF-SVR-IP",     func_del_http_svr_ip},
-	{ "DEL-NF-SERVER",     func_del_http_server}
+	{ "DEL-NF-SERVER",     func_del_http_server},
+	{ "DIS-NF-SVR-PING",   func_dis_http_svr_ping},
+	{ "CHG-NF-SVR-PING",   func_chg_http_svr_ping}
 };
 
 void message_handle(evutil_socket_t fd, short what, void *arg)
@@ -417,6 +421,51 @@ int func_del_http_server(IxpcQMsgType *rxIxpcMsg)
 	gather_list(CONN_STATUS);
 
 	write_list(CONN_STATUS, resBuf);
+
+	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
+	return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
+}
+
+int func_dis_http_svr_ping(IxpcQMsgType *rxIxpcMsg)
+{
+	APPLOG(APPLOG_DEBUG, "%s() called", __func__);
+
+	char *resBuf=respMsg;
+
+	sprintf(resBuf, "  PING INTERVAL (%d) sec\n", CLIENT_CONF.ping_interval);
+	sprintf(resBuf + strlen(resBuf), "  PING TIMEOUT (%d) sec\n", CLIENT_CONF.ping_timeout);
+	sprintf(resBuf + strlen(resBuf), "  PING ALARM LATENCY (%d) ms", CLIENT_CONF.ping_event_ms);
+
+	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
+	return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
+}
+
+int func_chg_http_svr_ping(IxpcQMsgType *rxIxpcMsg)
+{
+	APPLOG(APPLOG_DEBUG, "%s() called", __func__);
+
+	MMLReqMsgType   *mmlReq=(MMLReqMsgType*)rxIxpcMsg->body;
+
+	char *resBuf=respMsg;
+
+	int INTERVAL = get_mml_para_int(mmlReq, "INTERVAL");
+	int TIMEOUT = get_mml_para_int(mmlReq, "TIMEOUT");
+	int MS = get_mml_para_int(mmlReq, "MS");
+
+	int OLD_INTERVAL = CLIENT_CONF.ping_interval;
+	int OLD_TIMEOUT = CLIENT_CONF.ping_timeout;
+	int OLD_MS = CLIENT_CONF.ping_event_ms;
+
+	if (chgcfg_server_ping(INTERVAL, TIMEOUT, MS) < 0)
+		return send_mml_res_failMsg(rxIxpcMsg, "PING MS CHANGE FAIL");
+
+	if (INTERVAL >= 0) CLIENT_CONF.ping_interval = INTERVAL;
+	if (TIMEOUT >= 0) CLIENT_CONF.ping_timeout = TIMEOUT;
+	if (MS >= 0) CLIENT_CONF.ping_event_ms = MS;
+
+	sprintf(resBuf, "  PING INTERVAL (%d) --> (%d) sec\n", OLD_INTERVAL, CLIENT_CONF.ping_interval);
+	sprintf(resBuf + strlen(resBuf), "  PING TIMEOUT (%d) --> (%d) sec\n", OLD_TIMEOUT, CLIENT_CONF.ping_timeout);
+	sprintf(resBuf + strlen(resBuf), "  PING ALARM LATENCY (%d) --> (%d) ms\n", OLD_MS, CLIENT_CONF.ping_event_ms);
 
 	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
 	return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);

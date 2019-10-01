@@ -15,6 +15,7 @@
 #include <appLog.h>
 #endif
 
+#include <ctype.h>
 #include <event2/thread.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -61,9 +62,14 @@ typedef struct client_conf {
     int timeout_sec;
 	int ping_interval;
 	int ping_timeout;
+	int ping_event_ms;
+	int ping_event_code;
 	int pkt_log;
-
 	config_setting_t *lb_config;
+
+	int http_opt_header_table_size;
+	int prepare_close_stream_limit;
+	nghttp2_option *nghttp2_option;
 } client_conf_t;
 
 typedef struct thrd_context {
@@ -157,7 +163,6 @@ typedef struct access_token_res {
 } access_token_res_t;
 #endif		/* OAuth define to here */
 
-#define MAX_COUNT_NUM	1024
 typedef struct conn_list {
 	int index;	// 0, 1, 2, 3, ....
 	int used;	// if 1 : conn retry, 0 : don't do anything
@@ -257,7 +262,9 @@ typedef struct http2_session_data {
 	int connected;
 
 	int ping_cnt;
-	struct timespec ping_rcv_time;
+	struct timeval ping_snd_time;
+	struct timeval ping_rcv_time;
+	int event_occured;
 } http2_session_data_t;
 
 typedef struct lb_global {
@@ -312,7 +319,6 @@ typedef enum select_node_depth {
 
 /* ------------------------- config.c --------------------------- */
 int     init_cfg();
-int     destroy_cfg();
 int     config_load_just_log();
 int     config_load();
 int     addcfg_server_hostname(char *hostname, char *type);
@@ -321,6 +327,7 @@ int     actcfg_http_server(int id, int ip_exist, char *ipaddr, int port, int cha
 int     chgcfg_server_conn_cnt(int id, char *scheme, char *ipaddr, int port, int conn_cnt, int token_id);
 int     delcfg_server_ipaddr(int id, char *ipaddr, int port);
 int     delcfg_server_hostname(int id);
+int     chgcfg_server_ping(int interval, int timeout, int ms);
 
 /* ------------------------- list.c --------------------------- */
 httpc_ctx_t     *get_context(int thrd_idx, int ctx_idx, int used);
@@ -376,6 +383,8 @@ int     func_chg_http_server_act(IxpcQMsgType *rxIxpcMsg, int change_to_act);
 int     func_chg_http_server(IxpcQMsgType *rxIxpcMsg);
 int     func_del_http_svr_ip(IxpcQMsgType *rxIxpcMsg);
 int     func_del_http_server(IxpcQMsgType *rxIxpcMsg);
+int		func_dis_http_svr_ping(IxpcQMsgType *rxIxpcMsg);
+int		func_chg_http_svr_ping(IxpcQMsgType *rxIxpcMsg);
 
 /* ------------------------- nrf.c --------------------------- */
 #ifdef OAUTH

@@ -227,3 +227,37 @@ void print_stat(STM_CommonStatMsgType *commStatMsg, STM_CommonStatMsg *commStatI
 	}
 	APPLOG(APPLOG_ERR, "\n");
 }
+
+void reportAlarm(char *ProcName, int code, int level, char *info, char *desc)
+{
+    GeneralQMsgType     sndMsg;
+    IxpcQMsgType        *txIxpcMsg;
+    AlmMsgInfo          *almMsg;
+    int                 txLen;
+
+    txIxpcMsg = (IxpcQMsgType*)sndMsg.body;
+    almMsg = (AlmMsgInfo*)txIxpcMsg->body;
+
+    memset((void*)&txIxpcMsg->head, 0, sizeof(txIxpcMsg->head));
+    memset(almMsg, 0x00, sizeof(AlmMsgInfo));
+
+    sndMsg.mtype = MTYPE_ALARM_REPORT;
+
+    strcpy (txIxpcMsg->head.srcSysName, mySysName);
+    strcpy (txIxpcMsg->head.srcAppName, ProcName);
+    strcpy (txIxpcMsg->head.dstSysName, "OMP");
+    strcpy (txIxpcMsg->head.dstAppName, "FIMD");
+    txIxpcMsg->head.msgId   = code;
+    txIxpcMsg->head.bodyLen = sizeof(AlmMsgInfo);
+
+    txLen = sizeof(txIxpcMsg->head) + txIxpcMsg->head.bodyLen;
+
+    almMsg->almCode = code;
+    almMsg->almLevel = level;
+    sprintf(almMsg->almInfo, info);
+    sprintf(almMsg->almDesc, desc);
+
+    if (msgsnd(ixpcQid, (void*)&sndMsg, txLen, IPC_NOWAIT) < 0) {
+        logPrint(ELI, FL, "Send alarm message fail. errno=%d(%s)\n", errno, strerror(errno));
+    }
+}

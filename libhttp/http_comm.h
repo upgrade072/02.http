@@ -13,7 +13,9 @@
 
 // if stream id reach to 1073741823, no more assign ascend stream id
 // so prepare reconnect when stream id reach HTTP_PREPARE_STREAM_LIMIT
+#if 0
 #define HTTP_PREPARE_STREAM_LIMIT 1000000000
+#endif
 
 #ifdef LOG_LIB
 int *lOG_FLAG;
@@ -78,14 +80,18 @@ typedef struct HttpCSAhifTagType {
         NGHTTP2_NV_FLAG_NONE                                                   \
   }
 
+#if 0
 #define HTTP_MAX_HOST		128
+#else
+#define HTTP_MAX_HOST		1024 // U+ & KT requirement
+#endif
 #define HTTP_MAX_ADDR		4
 #define HTTP_MAX_CONN		4
 
-#define MAX_SVR_NUM		HTTP_MAX_HOST * HTTP_MAX_ADDR * HTTP_MAX_CONN
-#define MAX_CON_NUM		HTTP_MAX_HOST * HTTP_MAX_ADDR
+#define MAX_SVR_NUM		(HTTP_MAX_HOST * HTTP_MAX_ADDR * HTTP_MAX_CONN)
+#define MAX_CON_NUM		(HTTP_MAX_HOST * HTTP_MAX_ADDR)
 #define MAX_LIST_NUM	HTTP_MAX_HOST
-#define MAX_ITEM_NUM	HTTP_MAX_ADDR + 1
+#define MAX_ITEM_NUM	(HTTP_MAX_ADDR + 1)
 
 typedef struct item_index {
 	int occupied;

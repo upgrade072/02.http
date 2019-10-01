@@ -30,6 +30,7 @@ void    http_report_status(SFM_HttpConnStatusList *http_status, int msgId);
 void    http_stat_inc(int thrd_idx, int host_idx, int stat_idx);
 void 	stat_function(IxpcQMsgType *rxIxpcMsg, int running_thrd_num, int httpc, int https, int msgId);
 void    print_stat(STM_CommonStatMsgType *commStatMsg, STM_CommonStatMsg *commStatItem, char (*str)[128], int size);
+void	reportAlarm(char *ProcName, int code, int level, char *info, char *desc);
 
 /* ------------------------- liblist.c --------------------------- */
 int     new_list(const char *name);

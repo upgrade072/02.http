@@ -355,6 +355,9 @@ void log_pkt_end_stream(int stream_id, httpc_ctx_t *httpc_ctx)
 
 void log_pkt_httpc_error_reply(httpc_ctx_t *httpc_ctx, int resp_code)
 {
+	if (CLIENT_CONF.pkt_log != 1)
+		return;
+
 	APPLOG(APPLOG_ERR, "{{{PKT}}} HTTPC INTERNAL ERROR http sess/stream(N/A:N/A) ahifCid(%d)]\n\
 --------------------------------------------------------------------------------------------------\n\
 :status:%d\n\
