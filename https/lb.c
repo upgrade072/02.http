@@ -241,9 +241,13 @@ int send_request_to_fep(https_ctx_t *https_ctx)
 {
 	tcp_ctx_t *fep_tcp_ctx = NULL;
 
+	// case 0. if direct relay ctx find direct sock
 	if (https_ctx->is_direct_ctx) {
 		fep_tcp_ctx = get_direct_dest(https_ctx);
-	} else {
+	}
+	// case 0-1. if case 0 fail or ...
+	// case 1. if loadshare ctx find any of sock
+	if (fep_tcp_ctx == NULL) {
 		fep_tcp_ctx = get_loadshare_turn(https_ctx);
 	}
 

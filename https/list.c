@@ -40,6 +40,9 @@ void assign_new_ctx_info(https_ctx_t *https_ctx, http2_session_data *session_dat
 	if (session_data->is_direct_session) {
 		https_ctx->is_direct_ctx = 1;
 		https_ctx->relay_fep_tag = session_data->relay_fep_tag;
+	} else {
+		https_ctx->is_direct_ctx = 0;
+		https_ctx->relay_fep_tag = 0;
 	}
 }
 
