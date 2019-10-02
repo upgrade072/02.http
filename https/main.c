@@ -505,7 +505,8 @@ static int error_reply(http2_session_data *session_data, nghttp2_session *sessio
 
 #ifdef OVLD_API
 	/* for nssf overload control */
-	api_ovld_add_fail(session_data->thrd_index, API_PROTO_HTTPS, 0, error_code);
+	// api_ovld_add_fail(session_data->thrd_index, API_PROTO_HTTPS, 0, error_code);
+	api_ovld_add_fail(session_data->thrd_index, API_PROTO_HTTPS, 0);
 #endif
 
 	char log_pfx[1024] = {0,};
@@ -728,8 +729,15 @@ static int on_request_recv(nghttp2_session *session,
 
 #ifdef OVLD_API
 	char *error_str = NULL;
-	int ovld_reason_code = lb_api_ovld_is_ctrl(session_data->thrd_index, API_PROTO_HTTPS, 
-			session_data->hostname, error_str); 
+	//int ovld_reason_code = lb_api_ovld_is_ctrl(session_data->thrd_index, API_PROTO_HTTPS, 
+	//		session_data->hostname, error_str); 
+	int ovld_reason_code = api_ovld_is_ctrl_by_uri(session_data->thrd_index, 
+			API_PROTO_HTTPS, 
+			session_data->hostname, 
+			https_ctx->user_ctx.head.httpMethod,
+			https_ctx->user_ctx.head.rsrcUri,
+			https_ctx->user_ctx.data,
+			error_str); 
 	if (ovld_reason_code == API_ACTION_DROP) {
 		/* silence discard stream */
 		nghttp2_session_close_stream(session_data->session, stream_data->stream_id, NGHTTP2_INTERNAL_ERROR);
@@ -1263,7 +1271,8 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 #ifdef OVLD_API
 				/* for nssf overload control */
 				if (https_ctx->user_ctx.head.respCode > 299) {
-					api_ovld_add_fail(thrd_index, API_PROTO_HTTPS, 0, https_ctx->user_ctx.head.respCode);
+					// api_ovld_add_fail(thrd_index, API_PROTO_HTTPS, 0, https_ctx->user_ctx.head.respCode);
+					api_ovld_add_fail(thrd_index, API_PROTO_HTTPS, 0);
 				}
 #endif
 				nghttp2_nv hdrs[MAX_HDR_RELAY_CNT + 2] = { MAKE_NV(":status", result_code, strlen(result_code))};
@@ -1698,7 +1707,8 @@ int initialize()
 
 #ifdef OVLD_API
 	/* for nssf overload control */
-	if (api_ovld_init(myProcName, API_PROTO_HTTPS, SERVER_CONF.worker_num) < 0) {
+	// if (api_ovld_init(myProcName, API_PROTO_HTTPS, SERVER_CONF.worker_num) < 0) {
+	if (api_ovld_init(myProcName) < 0) {
 		APPLOG(APPLOG_ERR, "{{{INIT}}} ovldctrl init fail!");
 	} else {
 		APPLOG(APPLOG_ERR, "{{{INIT}}} ovldctrl init success!");
@@ -1790,9 +1800,9 @@ static void main_loop(const char *key_file, const char *cert_file) {
 #ifndef TEST
 	/* system message handle */
     struct timeval tm_milisec = {0, 100000}; // 100 ms
-    struct event *ev_main;
-    ev_main = event_new(evbase, -1, EV_PERSIST, message_handle, NULL);
-    event_add(ev_main, &tm_milisec);
+    struct event *ev_msg_handle;
+    ev_msg_handle = event_new(evbase, -1, EV_PERSIST, message_handle, NULL);
+    event_add(ev_msg_handle, &tm_milisec);
 #endif
 
     /* LB stat print */
@@ -1805,7 +1815,7 @@ static void main_loop(const char *key_file, const char *cert_file) {
 	struct timeval check_cert_interval = { 60 * 60 * 12, 0}; // every 12 hour
 	struct event *ev_cert_check;
 	ev_cert_check = event_new(evbase, -1, EV_PERSIST, check_cert_cb, NULL); 
-	event_add(ev_main, &check_cert_interval);
+	event_add(ev_cert_check, &check_cert_interval);
 
 	/* start loop */
 	event_base_loop(evbase, EVLOOP_NO_EXIT_ON_EMPTY);

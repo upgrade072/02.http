@@ -171,7 +171,8 @@ static int on_header_callback(nghttp2_session *session,
 #ifdef OVLD_API
 				/* for nssf overload control */
 				if (httpc_ctx->user_ctx.head.respCode > 299) {
-					api_ovld_add_fail(thrd_idx, API_PROTO_HTTPC, 0, httpc_ctx->user_ctx.head.respCode);
+					//api_ovld_add_fail(thrd_idx, API_PROTO_HTTPC, 0, httpc_ctx->user_ctx.head.respCode);
+					api_ovld_add_fail(thrd_idx, API_PROTO_HTTPC, 0);
 				}
 #endif
 			} else {
@@ -1013,7 +1014,7 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 				http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_TX_REQ);
 #ifdef OVLD_API
 				/* for nssf overload control */
-				api_ovld_is_ctrl(thrd_index,  API_PROTO_HTTPC, 0);
+				api_ovld_is_ctrl(thrd_index,  API_PROTO_HTTPC, 0, NULL, NULL);
 #endif
 				break;
 			case HTTP_INTL_TIME_OUT:
@@ -1320,9 +1321,9 @@ void main_loop()
 #ifndef TEST
 	/* system message handle */
 	struct timeval tm_milisec = {0, 100000}; // 100 ms
-	struct event *ev_main;
-	ev_main = event_new(evbase, -1, EV_PERSIST, message_handle, NULL);
-	event_add(ev_main, &tm_milisec);
+	struct event *ev_msg_handle;
+	ev_msg_handle = event_new(evbase, -1, EV_PERSIST, message_handle, NULL);
+	event_add(ev_msg_handle, &tm_milisec);
 #endif
 
 	/* LB stat print */
@@ -1516,7 +1517,7 @@ int initialize()
 
 #ifdef OVLD_API
 	/* for nssf overload control */
-	if (api_ovld_init(myProcName, API_PROTO_HTTPC, CLIENT_CONF.worker_num) < 0) {
+	if (api_ovld_init(myProcName) < 0) {
 		APPLOG(APPLOG_ERR, "{{{INIT}}} ovldctrl init fail!");
 	} else {
 		APPLOG(APPLOG_ERR, "{{{INIT}}} ovldctrl init success!");

@@ -126,6 +126,8 @@ void stat_function(IxpcQMsgType *rxIxpcMsg, int running_thrd_num, int httpc, int
 	int pos = 0;
 	int len = sizeof(int), txLen = 0;
 
+	APPLOG(APPLOG_ERR, "%s() recv MTYPE_STATISTICS_REQUEST from OMP", __func__);
+
     GeneralQMsgType sxGenQMsg;
     memset(&sxGenQMsg, 0x00, sizeof(GeneralQMsgType));
 

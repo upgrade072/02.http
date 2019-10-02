@@ -83,7 +83,7 @@ void check_expire_send_alarm(struct tm *validate_time)
 
 	int remain_time = tm_expire - tm_curr;
 
-	if (remain_time <= (10 * 24 * 60 * 60)) {
+	if (remain_time <= (31 * 24 * 60 * 60)) { // before 31 days, event occur
 		sprintf(alarm_info, "EXPIRE-AT-%s", time_str);
 		sprintf(alarm_desc, "HTTPS-CERT-EXPIRE-NOTICE");
 		reportAlarm("HTTPS", SERVER_CONF.cert_event_code, SFM_ALM_CRITICAL, alarm_info, alarm_desc);

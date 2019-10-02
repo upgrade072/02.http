@@ -44,7 +44,7 @@
 #include <lbengine.h>
 
 #ifdef OVLD_API /* nssf ovld ctrl */
-#include <api_overload.h>
+#include <api_noverload.h>
 #endif
 
 #define TM_INTERVAL		20000   // every 20 ms check, 

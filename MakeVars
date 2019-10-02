@@ -20,7 +20,7 @@ CFLAGS		+= -pg -DTEST -DLOG_PRINT
 endif
 
 ifeq ($(TARGET),nssf)
-LIBS        = -lcomm -lm -lpthread -ldl -lrt -l_overload
+LIBS        = -lcomm -lm -lpthread -ldl -lrt -l_noverload
 else ifeq ($(TARGET),epcf)
 LIBS        = -lcomm -lm -lpthread -ldl -lrt
 else
