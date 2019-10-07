@@ -1,3 +1,6 @@
+#ifndef __HTTPS_H__
+#define __HTTPS_H__
+
 #include <libs.h>
 #include <libconfig.h>
 
@@ -215,6 +218,9 @@ typedef struct https_ctx {
 	FILE *recv_log_file;
 	size_t file_size;
 	char *log_ptr;
+
+	/* for NRFM CTX (notify from NRF) */
+	char for_nrfm_ctx;
 } https_ctx_t;
 
 typedef enum intl_req_mtype {
@@ -334,3 +340,5 @@ int     create_lb_thread();
 /* ------------------------- cert.c --------------------------- */
 X509    *load_cert(const char *file);
 void    check_cert(const char *cert_file);
+
+#endif /* __HTTPS_H__ */

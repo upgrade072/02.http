@@ -524,6 +524,10 @@ void *fep_conn_thread(void *arg)
         return (void *)NULL;
     }
 
+	/* for relay FEP conn status to ~ HTTPS ~ NRFM */
+	if (tcp_ctx->svc_type == TT_RX_ONLY)
+		nrfm_send_conn_status_callback(tcp_ctx);
+
     /* loop */
     event_base_loop(evbase, EVLOOP_NO_EXIT_ON_EMPTY);
 

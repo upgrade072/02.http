@@ -190,6 +190,7 @@ typedef struct lb_ctx {
 /* ------------------------- from another.c ------------------ */
 void    lb_buff_readcb(struct bufferevent *bev, void *arg);
 void    iovec_push_req(tcp_ctx_t *dest_tcp_ctx, iovec_item_t *push_req);
+void	nrfm_send_conn_status_callback(tcp_ctx_t *tcp_ctx);
 /***************************************************************/
 
 

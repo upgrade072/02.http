@@ -10,7 +10,7 @@ int logLevel = APPLOG_DEBUG;
 int *lOG_FLAG = &logLevel;
 //#endif
 
-int httpsQid, ixpcQid;
+int httpsQid, ixpcQid, nrfmQid;
 
 int THREAD_NO[MAX_THRD_NUM] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
 int SESSION_ID;
@@ -19,7 +19,6 @@ server_conf SERVER_CONF;
 
 thrd_context THRD_WORKER[MAX_THRD_NUM];
 http2_session_data SESS[MAX_THRD_NUM][MAX_SVR_NUM];
-pthread_mutex_t PUTQUE_WRITE_LOCK = PTHREAD_MUTEX_INITIALIZER;
 https_ctx_t *HttpsCtx[MAX_THRD_NUM];
 allow_list_t ALLOW_LIST[MAX_LIST_NUM];
 http_stat_t HTTP_STAT;
@@ -710,6 +709,33 @@ int check_access_token(char *token)
 }
 #endif
 
+/* HTTPS --> NRFM direct channel */
+int send_request_to_nrfm(https_ctx_t *https_ctx, int ahif_mtype)
+{
+	https_ctx->for_nrfm_ctx = 1; // this ctx relayed to NRFM
+
+	char msgBuff[sizeof(GeneralQMsgType)] = {0,};
+
+	GeneralQMsgType *msg = (GeneralQMsgType *)msgBuff;
+	msg->mtype = (long)MSGID_HTTPS_NRFM_REQUEST;
+
+	AhifHttpCSMsgType *ahifPkt_recv = &https_ctx->user_ctx;
+	AhifHttpCSMsgType *ahifPkt_send = (AhifHttpCSMsgType *)msg->body;
+
+	size_t shmqlen = AHIF_APP_MSG_HEAD_LEN + AHIF_VHDR_LEN + ahifPkt_recv->head.queryLen + ahifPkt_recv->head.bodyLen;
+	memcpy(ahifPkt_send, ahifPkt_recv, shmqlen);
+
+	ahifPkt_send->head.mtype = ahif_mtype;
+
+	int res = msgsnd(nrfmQid, msg, shmqlen, 0);
+
+	if (res < 0) {
+		APPLOG(APPLOG_ERR, "%s(), fail to send resp to NRFM! (res:%d)", __func__, res);
+	}
+
+	return res;
+}
+
 static int on_request_recv(nghttp2_session *session,
 		http2_session_data *session_data,
 		http2_stream_data *stream_data) {
@@ -791,8 +817,16 @@ static int on_request_recv(nghttp2_session *session,
 	for (rel_path = https_ctx->user_ctx.head.rsrcUri; *rel_path == '/'; ++rel_path)
 		;
 
-	if (send_request_to_fep(https_ctx) < 0) {
-		// all context will release in stream close state
+	int relay_result = 0;
+
+	if (!strcmp(https_ctx->user_ctx.head.rsrcUri, "/notifyForLb")) {
+		relay_result = send_request_to_nrfm(https_ctx, MTYPE_NRFM_NOTIFY_REQUEST);
+	} else {
+		relay_result = send_request_to_fep(https_ctx);
+	}
+
+	if (relay_result < 0) {
+		/* all context will release in stream close state */
 		if (error_reply(session_data, session, stream_data, 500, 
 					ERROR_HTTP_S_SYSTEM_FAILURE, HTTP_S_SYSTEM_FAILURE) != 0) {
 			APPLOG(APPLOG_ERR, "%s() send error_reply fail!", __func__);
@@ -1658,6 +1692,15 @@ int initialize()
         return -1;
     key = strtol(tmp,0,0);
     if ((ixpcQid = msgget(key,IPC_CREAT|0666)) < 0) {
+        APPLOG(APPLOG_ERR, "{{{INIT}}} [%s] msgget fail; key=0x%x,err=%d(%s)!", __func__, key, errno, strerror(errno));
+        return -1;
+    }
+
+    /* create send-(nrfm) mq */
+    if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", "NRFM", 3, tmp) < 0)
+        return -1;
+    key = strtol(tmp,0,0);
+    if ((nrfmQid = msgget(key,IPC_CREAT|0666)) < 0) {
         APPLOG(APPLOG_ERR, "{{{INIT}}} [%s] msgget fail; key=0x%x,err=%d(%s)!", __func__, key, errno, strerror(errno));
         return -1;
     }

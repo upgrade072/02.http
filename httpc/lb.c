@@ -4,6 +4,7 @@ extern client_conf_t CLIENT_CONF;	/* sysconfig from config.c */
 extern thrd_context_t THRD_WORKER[MAX_THRD_NUM];
 extern int THREAD_NO[MAX_THRD_NUM];
 extern conn_list_t CONN_LIST[MAX_SVR_NUM];
+extern pthread_mutex_t GET_INIT_CTX_LOCK;
 
 lb_global_t LB_CONF;	/* lb config */
 lb_ctx_t LB_CTX;	/* lb connection context */
@@ -65,7 +66,10 @@ void send_to_worker(tcp_ctx_t *tcp_ctx, conn_list_t *httpc_conn, httpc_ctx_t *re
 	int thrd_idx = httpc_conn->thrd_index;
 	int sess_idx = httpc_conn->session_index;
 	int session_id = httpc_conn->session_id;
+
+	pthread_mutex_lock(&GET_INIT_CTX_LOCK);
 	int ctx_idx = Get_CtxId(thrd_idx);
+	pthread_mutex_unlock(&GET_INIT_CTX_LOCK);
 
 	if (ctx_idx < 0) {
 		tcp_ctx->tcp_stat.ctx_assign_fail++;
@@ -680,6 +684,12 @@ void attach_lb_thread(lb_global_t *lb_conf, lb_ctx_t *lb_ctx)
 		}
 	}
 #endif
+}
+
+void nrfm_send_conn_status_callback(tcp_ctx_t *tcp_ctx)
+{
+	// only for HTTPS
+	return;
 }
 
 int create_lb_thread()

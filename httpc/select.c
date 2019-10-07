@@ -1,6 +1,33 @@
 #include <client.h>
 
 extern conn_list_t CONN_LIST[MAX_SVR_NUM];
+int LAST_INDEX_FOR_NRFM;
+
+conn_list_t *find_nrfm_inf_dest(AhifHttpCSMsgType *ahifPkt)
+{
+	APPLOG(APPLOG_ERR, "{{{DBG}}} %s called for (%d)[%s:%s] cid(%d)", __func__, 
+			ahifPkt->head.mtype, ahifPkt->head.destType, ahifPkt->head.scheme, ahifPkt->head.ahifCid);
+	int loop_bound = LAST_INDEX_FOR_NRFM + MAX_SVR_NUM;
+
+	for (int i = LAST_INDEX_FOR_NRFM; i < loop_bound; i++) {
+		int index = (i % MAX_SVR_NUM);
+		conn_list_t *conn_list = &CONN_LIST[index];
+
+		if (conn_list->used == 0)
+			continue;
+		if (conn_list->act != 1)
+			continue;
+		if (conn_list->conn != CN_CONNECTED)
+			continue;
+
+		if (!strcmp(conn_list->type, ahifPkt->head.destType) &&
+				!strcmp(conn_list->scheme, ahifPkt->head.scheme)) {
+			LAST_INDEX_FOR_NRFM = (index + 1); //move forward
+			return conn_list;
+		}
+    }
+	return NULL;
+}
 
 int sn_cmp_type(void *input, void *compare)
 {

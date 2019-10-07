@@ -227,6 +227,9 @@ typedef struct httpc_ctx {
 	FILE *recv_log_file;
 	size_t file_size;
 	char *log_ptr;
+
+	/* for NRFM CTX */
+	char for_nrfm_ctx;
 } httpc_ctx_t;
 
 typedef enum intl_req_mtype {
@@ -371,7 +374,10 @@ void    main_loop();
 int     initialize();
 int     main(int argc, char **argv);
 
+
 /* ------------------------- command.c --------------------------- */
+void    handle_nrfm_request(GeneralQMsgType *msg);
+int     set_nrfm_response_msg(int ahif_msg_type) ;
 void    message_handle(evutil_socket_t fd, short what, void *arg);
 void    mml_function(IxpcQMsgType *rxIxpcMsg);
 int     func_dis_http_server(IxpcQMsgType *rxIxpcMsg);
@@ -385,6 +391,7 @@ int     func_del_http_svr_ip(IxpcQMsgType *rxIxpcMsg);
 int     func_del_http_server(IxpcQMsgType *rxIxpcMsg);
 int		func_dis_http_svr_ping(IxpcQMsgType *rxIxpcMsg);
 int		func_chg_http_svr_ping(IxpcQMsgType *rxIxpcMsg);
+
 
 /* ------------------------- nrf.c --------------------------- */
 #ifdef OAUTH
@@ -423,6 +430,7 @@ void    attach_lb_thread(lb_global_t *lb_conf, lb_ctx_t *lb_ctx);
 int     create_lb_thread();
 
 /* ------------------------- select.c --------------------------- */
+conn_list_t     *find_nrfm_inf_dest(AhifHttpCSMsgType *ahifPkt);
 int     sn_cmp_type(void *input, void *compare);
 int     sn_cmp_host(void *input, void *compare);
 int     sn_cmp_ip(void *input, void *compare);

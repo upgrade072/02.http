@@ -4,7 +4,8 @@ SUBDIRS := openssl libevent nghttp2 \
 		   libjansson libjwt libffi glib2 \
 		   libhttp libs lbengine \
 		   httpreq httpc https authsvr \
-		   perfsim
+		   perfsim restsvr restcli \
+		   libnrf nrfm nrfc 
 
 subdirs: $(SUBDIRS)
 

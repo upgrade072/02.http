@@ -2,8 +2,9 @@
 
 extern server_conf SERVER_CONF;   /* sysconfig from config.c */
 extern thrd_context THRD_WORKER[MAX_THRD_NUM];
+extern int nrfmQid;
 
-lb_global_t LB_CONF;                /* lb config */
+lb_global_t LB_CONF;            /* lb config */
 lb_ctx_t LB_CTX;                /* lb connection context */
 
 https_ctx_t *get_null_recv_ctx(tcp_ctx_t *tcp_ctx)
@@ -606,6 +607,39 @@ void attach_lb_thread(lb_global_t *lb_conf, lb_ctx_t *lb_ctx)
 		}
 	}
 #endif
+}
+
+void send_fep_conn_status(evutil_socket_t fd, short what, void *arg)
+{
+	// caution, it trigger in every tcp rx thread, use mutex_lock
+	  
+	tcp_ctx_t *tcp_ctx = (tcp_ctx_t *)arg;
+
+	if (tcp_ctx->received_fep_status != HTTP_STA_CAUSE_SYS_ACTIVE) 
+		return;
+
+	if (g_node_n_children(tcp_ctx->root_conn) == 0)
+		return;
+
+	GeneralQMsgType msg = {0,};
+	msg.mtype = (long)MSGID_HTTPS_NRFM_FEP_ALIVE_NOTI;
+
+	int res = msgsnd(nrfmQid, &msg, 0, 0);
+
+	if (res < 0) {
+		APPLOG(APPLOG_DEBUG, "%s() fail to send status noti to NRFM", __func__);
+	}
+	return;
+}
+
+void nrfm_send_conn_status_callback(tcp_ctx_t *tcp_ctx)
+{
+	// every 300 ms, if fep connected send to NRFM
+
+    struct timeval tm_300ms = {0, 300000}; // 300 ms
+	struct event *ev_fep_conn_status;
+	ev_fep_conn_status = event_new(tcp_ctx->evbase, -1, EV_PERSIST, send_fep_conn_status, tcp_ctx);
+	event_add(ev_fep_conn_status, &tm_300ms);
 }
 
 int create_lb_thread()

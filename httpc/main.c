@@ -11,7 +11,7 @@ int logLevel = APPLOG_DEBUG;
 int *lOG_FLAG = &logLevel;
 //#endif
 
-int httpcQid, ixpcQid;
+int httpcQid, ixpcQid, nrfmQid;
 
 int THREAD_NO[MAX_THRD_NUM] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
 int SESSION_ID;
@@ -22,6 +22,7 @@ client_conf_t CLIENT_CONF;
 thrd_context_t THRD_WORKER[MAX_THRD_NUM];
 http2_session_data_t SESS[MAX_THRD_NUM][MAX_SVR_NUM];
 pthread_mutex_t ONLY_CRT_SESS_LOCK = PTHREAD_MUTEX_INITIALIZER; // TODO!!! we want remove this 
+pthread_mutex_t GET_INIT_CTX_LOCK = PTHREAD_MUTEX_INITIALIZER;	// schlee, LB thread VS MAIN(command)
 
 httpc_ctx_t *HttpcCtx[MAX_THRD_NUM];
 
@@ -422,6 +423,31 @@ static int on_data_chunk_recv_callback(nghttp2_session *session, uint8_t flags,
 	return 0;
 }
 
+void send_response_to_nrfm(httpc_ctx_t *httpc_ctx)
+{
+	int thrd_idx = httpc_ctx->thrd_idx;
+	int ctx_idx = httpc_ctx->ctx_idx;
+
+	char msgBuff[sizeof(GeneralQMsgType)] = {0,};
+
+	GeneralQMsgType *msg = (GeneralQMsgType *)msgBuff;
+	msg->mtype = (long)MSGID_HTTPC_NRFM_RESPONSE;
+
+	AhifHttpCSMsgType *ahifPkt_recv = &httpc_ctx->user_ctx;
+	AhifHttpCSMsgType *ahifPkt_send = (AhifHttpCSMsgType *)msg->body;
+
+	size_t shmqlen = AHIF_APP_MSG_HEAD_LEN + AHIF_VHDR_LEN + ahifPkt_recv->head.queryLen + ahifPkt_recv->head.bodyLen;
+	memcpy(ahifPkt_send, ahifPkt_recv, shmqlen);
+
+	int res = msgsnd(nrfmQid, msg, shmqlen, 0);
+	if (res < 0) {
+		APPLOG(APPLOG_ERR, "%s(), fail to send resp to NRFM! (res:%d)", __func__, res);
+	}
+
+	clear_and_free_ctx(httpc_ctx);
+	Free_CtxId(thrd_idx, ctx_idx);
+}
+
 /* nghttp2_on_stream_close_callback: Called when a stream is about to
    closed. This example program only deals with 1 HTTP request (1
    stream), if it is closed, we send GOAWAY and tear down the
@@ -455,6 +481,9 @@ static int on_stream_close_callback(nghttp2_session *session, int32_t stream_id,
 		/* timeout case */
 		clear_and_free_ctx(httpc_ctx);
 		Free_CtxId(thrd_idx, idx);
+	} else if (httpc_ctx->for_nrfm_ctx) {
+		/* response to NRFM */
+		send_response_to_nrfm(httpc_ctx);
 	} else {
 		send_response_to_fep(httpc_ctx);
 	}
@@ -1467,6 +1496,15 @@ int initialize()
 		return -1;
 	key = strtol(tmp,0,0);
 	if ((ixpcQid = msgget(key,IPC_CREAT|0666)) < 0) {
+		APPLOG(APPLOG_ERR, "{{{INIT}}} [%s] msgget fail; key=0x%x,err=%d(%s)!", __func__, key, errno, strerror(errno));
+		return -1;
+	}
+
+	/* create send-(nrfm) mq */
+	if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", "NRFM", 3, tmp) < 0)
+		return -1;
+	key = strtol(tmp,0,0);
+	if ((nrfmQid = msgget(key,IPC_CREAT|0666)) < 0) {
 		APPLOG(APPLOG_ERR, "{{{INIT}}} [%s] msgget fail; key=0x%x,err=%d(%s)!", __func__, key, errno, strerror(errno));
 		return -1;
 	}
