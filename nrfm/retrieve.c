@@ -103,7 +103,7 @@ void nf_retrieve_instance_handle_resp_proc(AhifHttpCSMsgType *ahifPkt)
 
 	APPLOG(APPLOG_ERR, "%s() receive NRF Retrieve (instance) Response (http resp:%d)", __func__, head->respCode);
 
-	nf_retrieve_item_t *nf_item = nf_retrieve_search_item_via_seqNo(&MAIN_CTX, head->ahifCid);
+	nf_retrieve_item_t *nf_item = nf_retrieve_search_item_via_seqNo(&MAIN_CTX, NF_ITEM_CTX_TYPE_PROFILE, head->ahifCid);
 
 	if (nf_item == NULL) {
 		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s() something wrong, can't find ctx (seqNo:%s)",
@@ -160,7 +160,7 @@ void nf_retrieve_instances_list(nf_retrieve_info_t *nf_retr_info, main_ctx_t *MA
 
 void nf_retrieve_item_handle_timeout(nrf_ctx_t *nf_ctx)
 {
-	nf_retrieve_item_t *nf_item = nf_retrieve_search_item_via_seqNo(&MAIN_CTX, nf_ctx->seqNo);
+	nf_retrieve_item_t *nf_item = nf_retrieve_search_item_via_seqNo(&MAIN_CTX, NF_ITEM_CTX_TYPE_PROFILE, nf_ctx->seqNo);
 
 	if (nf_item == NULL) {
 		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s() something wrong, can't find ctx (seqNo:%s)",
@@ -189,6 +189,38 @@ void nf_retrieve_item_retry_while_after(nf_retrieve_item_t *nf_item)
 	timer_sec.tv_sec = config_setting_get_int(setting);
 	event_base_once(MAIN_CTX.EVBASE, -1, EV_TIMEOUT, nf_retrieve_item_recall_cb, nf_item, &timer_sec);
 }
+
+void nf_retrieve_item_token_add(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item)
+{
+	/* insert to access token table */
+	acc_token_info_t *token_info = new_acc_token_info(MAIN_CTX->nrf_access_token.ACC_TOKEN_LIST);
+	if (token_info == NULL) {
+		APPLOG(APPLOG_ERR, "{{{CAUTION!!!}}} %s cant assign access_token_info(shm)!", __func__);
+	} else {
+		nf_item->token_id = token_info->token_id;
+		nf_token_add_shm_by_nf(token_info, nf_item);
+
+		char respBuff[MAX_MML_RESULT_LEN] = {0,};
+		print_token_info_raw(MAIN_CTX->nrf_access_token.ACC_TOKEN_LIST, respBuff);
+		APPLOG(APPLOG_ERR, "NOW TOKEN SHM IS >>>\n%s", respBuff);
+	}
+}
+
+void nf_retrieve_item_token_del(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item)
+{
+	/* remove from access token table */
+	acc_token_info_t *token_info = get_acc_token_info(MAIN_CTX->nrf_access_token.ACC_TOKEN_LIST, nf_item->token_id, 1);
+	if (token_info == NULL) {
+		APPLOG(APPLOG_ERR, "{{{CAUTION!!!}}} %s cant get access_token_info(shm)!", __func__);
+	} else {
+		nf_token_del_shm_by_nf(token_info);
+
+		char respBuff[MAX_MML_RESULT_LEN] = {0,};
+		print_token_info_raw(MAIN_CTX->nrf_access_token.ACC_TOKEN_LIST, respBuff);
+		APPLOG(APPLOG_ERR, "NOW TOKEN SHM IS >>>\n%s", respBuff);
+	}
+}
+
 
 void nf_retrieve_list_create_pkt(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ahifPkt, nf_retrieve_info_t *nf_retr_info)
 {
@@ -317,8 +349,11 @@ void nf_retrieve_remove_nth_item(nf_retrieve_info_t *nf_retr_info, nf_retrieve_i
 		event_del(nf_item->retrieve_item_ctx.ev_action);
 	}
 
+	NF_MANAGE_NF_DEL(&MAIN_CTX, nf_item);
+
 	APPLOG(APPLOG_ERR, "{{{TODO|check memleak}}} %s remove nf_type(%s) nf_item (uuid:%s)!!!", __func__, nf_retr_info->nf_type, nf_item->nf_uuid);
 	nf_retr_info->nf_retrieve_items = g_slist_remove(nf_retr_info->nf_retrieve_items, nf_item);
+	free(nf_item);
 }
 
 void nf_retrieve_save_recv_nf_profile(nf_retrieve_item_t *nf_item, AhifHttpCSMsgType *ahifPkt)
@@ -328,6 +363,8 @@ void nf_retrieve_save_recv_nf_profile(nf_retrieve_item_t *nf_item, AhifHttpCSMsg
 		json_object_put(nf_item->item_nf_profile);
 	}       
 	nf_item->item_nf_profile = json_tokener_parse(ahifPkt->data);
+
+	NF_MANAGE_NF_ADD(&MAIN_CTX, nf_item);
 
 	LOG_JSON_OBJECT("NRF RECEIVED NF INSTANCE PROFILE IS", nf_item->item_nf_profile);
 }
@@ -393,7 +430,7 @@ nf_retrieve_item_t *nf_retrieve_search_item_by_uuid(GSList *nf_retrieve_items, c
 	}
 	return NULL;
 }
-nf_retrieve_item_t *nf_retrieve_search_item_via_seqNo(main_ctx_t *MAIN_CTX, int seqNo)
+nf_retrieve_item_t *nf_retrieve_search_item_via_seqNo(main_ctx_t *MAIN_CTX, int type, int seqNo)
 {
 	int nf_type_num = g_slist_length(MAIN_CTX->nf_retrieve_list);
 	for (int ii = 0; ii < nf_type_num; ii++) {
@@ -403,8 +440,13 @@ nf_retrieve_item_t *nf_retrieve_search_item_via_seqNo(main_ctx_t *MAIN_CTX, int 
 		for (int jj = 0; jj < nf_item_num; jj++) {
 			nf_retrieve_item_t *nf_item = g_slist_nth_data(nf_retr_info->nf_retrieve_items, jj);
 
-			if (seqNo == nf_item->retrieve_item_ctx.seqNo) 
-				return nf_item;
+			if (type == NF_ITEM_CTX_TYPE_PROFILE) {
+				if (seqNo == nf_item->retrieve_item_ctx.seqNo) 
+					return nf_item;
+			} else if (type == NF_ITEM_CTX_TYPE_CMD) {
+				if (seqNo == nf_item->httpc_cmd_ctx.seqNo) 
+					return nf_item;
+			}
 		}
 	}
 

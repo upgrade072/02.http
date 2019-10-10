@@ -63,6 +63,103 @@ typedef struct service_info {
     int bep_conn;
 } service_info_t;
 
+// httpc/s to NRFM, i'm alive 
+typedef struct nrfm_noti {
+	pid_t	my_pid;
+} nrfm_noti_t;
+
+// for NRFM MML to HTTPC
+typedef struct nf_conn_info {
+	int occupied;
+	char scheme[12];
+	char ip[64];
+	int port;
+	int cnt;
+} nf_conn_info_t;
+
+typedef enum nrfm_mml_cmd {
+	NRFM_MML_HTTPC_CLEAR = 0, /* NRFM restart clear all */
+	NRFM_MML_HTTPC_ADD,		/* add & act */
+	NRFM_MML_HTTPC_ACT,
+	NRFM_MML_HTTPC_DACT,
+	NRFM_MML_HTTPC_DEL		/* dact & del */
+} nrfm_mml_cmd_t;
+
+typedef struct nrfm_mml {
+	/* key */
+	int seqNo;
+
+	/* request */
+	nrfm_mml_cmd_t command;
+	char host[64];
+	char type[16];
+	int info_cnt;
+	nf_conn_info_t nf_conns[4];
+	int token_id;
+
+	/* response */
+	int id;
+} nrfm_mml_t;
+
+// for Access Token
+
+#define CONTENT_TYPE_OAUTH_REQ "application/x-www-form-urlencoded"
+
+#define HBODY_ACCESS_TOKEN_REQ_FOR_TYPE "\
+grant_type=client_credentials&\
+nfInstanceId=%s&\
+nfType=%s&\
+targetNfType=%s&\
+scope=%s"
+
+#define HBODY_ACCESS_TOKEN_REQ_FOR_INSTANCE "\
+grant_type=client_credentials&\
+nfInstanceId=%s&\
+scope=%s&\
+targetNfInstanceId=%s"
+
+typedef enum nrf_acc_type {
+    AT_SVC = 0,         // token for SVC
+    AT_INST             // token for specific {Instance}
+} nrf_acc_type_t;
+
+typedef enum token_acuire_status {
+    TA_INIT = 0,        // not any action
+    TA_FAILED,          // requested but failed
+    TA_TRYING,          // trying to get token
+    TA_ACQUIRED         // token accuired
+} token_acuire_status_t;
+
+#define MAX_NRF_TYPE_LEN    24
+#define MAX_NRF_INST_LEN    128
+#define MAX_NRF_SCOPE_LEN   256
+#define MAX_ACC_TOKEN_LEN	512
+typedef struct acc_token_info {
+    /* used */
+    int occupied;
+
+    /* table view */
+    int token_id;
+    // don't use : char nrf_addr[INET6_ADDRSTRLEN + 12];
+    int acc_type;
+    char nf_type[MAX_NRF_TYPE_LEN];
+    char nf_instance_id[MAX_NRF_INST_LEN];
+    char scope[MAX_NRF_SCOPE_LEN];
+    int status;
+	char operator_added;
+    time_t due_date;
+    time_t last_request_time;
+
+    int token_pos; // 0, 1
+    char access_token[2][MAX_ACC_TOKEN_LEN];
+} acc_token_info_t;
+
+#define MAX_ACC_TOKEN_NUM	(1024 + 1) // id start from 1, 1~1024
+typedef struct acc_token_shm_t {
+	acc_token_info_t acc_token[MAX_ACC_TOKEN_NUM];
+} acc_token_shm_t;
+#define SHM_ACC_TOKEN_TABLE_SIZE (sizeof(acc_token_shm_t))
+
 /* ------------------------- libnrf.c --------------------------- */
 void    def_sigaction();
 GSList  *get_associate_node(GSList *node_assoc_list, const char *type_str);
@@ -73,5 +170,13 @@ GSList  *node_list_add_elem(GSList *node_assoc_list, assoc_t *node_elem);
 void    node_assoc_log(assoc_t *node_elem);
 void    node_list_print_log(GSList *node_assoc_list);
 int     watch_directory_init(struct event_base *evbase, const char *path_name);
+acc_token_info_t        *get_acc_token_info(acc_token_shm_t *ACC_TOKEN_LIST, int id, int used);
+acc_token_info_t        *new_acc_token_info(acc_token_shm_t *ACC_TOKEN_LIST);
+char    *get_access_token(acc_token_shm_t *ACC_TOKEN_LIST, int token_id);
+void    print_token_info_raw(acc_token_shm_t *ACC_TOKEN_LIST, char *resBuf);
+void    print_nrfm_mml_raw(nrfm_mml_t *httpc_cmd);
+char    *get_nrfm_cmd_str(int cmd);
 
 #endif /* __NRF_COMMON_H__ */
+
+

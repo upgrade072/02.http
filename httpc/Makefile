@@ -4,7 +4,7 @@ CFLAG		= $(CFLAGS)
 
 BUILD_INC_PATH	= -I../build/include -I../build/include/glib-2.0 -I../build/lib/glib-2.0/include
 BUILD_LIBS_PATH	= ../build/lib
-BUILD_LIBS = $(BUILD_LIBS_PATH)/libreq.a \
+BUILD_LIBS = $(BUILD_LIBS_PATH)/libnrf.a \
 			 $(BUILD_LIBS_PATH)/lbengine.a \
 			 $(BUILD_LIBS_PATH)/libssl.a \
 			 $(BUILD_LIBS_PATH)/libcrypto.a \
@@ -18,7 +18,7 @@ BUILD_LIBS = $(BUILD_LIBS_PATH)/libreq.a \
 			 $(BUILD_LIBS_PATH)/libs.a \
 			 $(BUILD_LIBS_PATH)/http_parser.a
 
-SRCS		= main.c list.c config.c command.c nrf.c lb.c select.c
+SRCS		= main.c list.c config.c command.c lb.c select.c
 
 OBJS		= $(SRCS:.c=.o)
 

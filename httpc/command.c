@@ -10,6 +10,8 @@ extern pthread_mutex_t GET_INIT_CTX_LOCK;
 extern int nrfmQid;
 extern thrd_context_t THRD_WORKER[MAX_THRD_NUM];
 extern int THREAD_NO[MAX_THRD_NUM];
+extern conn_list_t CONN_LIST[MAX_SVR_NUM];
+extern conn_list_status_t CONN_STATUS[MAX_CON_NUM];
 
 char respMsg[MAX_MML_RESULT_LEN], respBuff[MAX_MML_RESULT_LEN];
 
@@ -108,6 +110,197 @@ HNR_ERROR_REPLY:
 	}
 }
 
+void handle_nrfm_mmc(nrfm_mml_t *nrfm_cmd)
+{
+	APPLOG(APPLOG_ERR, "{{{DBG}}} %s called, cmdType(%d) [%s]",
+			__func__, nrfm_cmd->command, get_nrfm_cmd_str(nrfm_cmd->command));
+	print_nrfm_mml_raw(nrfm_cmd);
+
+	switch (nrfm_cmd->command) {
+		case NRFM_MML_HTTPC_ADD:
+			nrfm_mmc_add_proc(nrfm_cmd);
+			break;
+		case NRFM_MML_HTTPC_ACT:
+			nrfm_mmc_act_dact_proc(nrfm_cmd, 1);
+			break;
+		case NRFM_MML_HTTPC_DACT:
+			nrfm_mmc_act_dact_proc(nrfm_cmd, 0);
+			break;
+		case NRFM_MML_HTTPC_DEL:
+			nrfm_mmc_del_proc(nrfm_cmd);
+			break;
+		case NRFM_MML_HTTPC_CLEAR: /* NRFM restarted ! */
+			nrfm_mmc_clear_proc();
+			break;
+	}
+}
+
+void nrfm_mmc_res_log()
+{
+	conn_list_status_t temp_conn_status[MAX_CON_NUM] = {0,};
+	char resBuf[1024 * 12] = {0,};
+
+	gather_list(temp_conn_status);
+	write_list(temp_conn_status, resBuf);
+
+	APPLOG(APPLOG_ERR, "{{{DBG}}} RES IS \n%s", resBuf);
+}
+
+void nrfm_mmc_send_resp(nrfm_mml_t *nrfm_cmd_req)
+{
+    char msgBuff[sizeof(GeneralQMsgType)] = {0,};
+
+    GeneralQMsgType *msg = (GeneralQMsgType *)msgBuff;
+    nrfm_mml_t *httpc_cmd_res = (nrfm_mml_t *)msg->body;
+
+    msg->mtype = (long)MSGID_HTTPC_NRFM_MMC_RESPONSE;
+    memcpy(httpc_cmd_res, nrfm_cmd_req, sizeof(nrfm_mml_t));
+
+	int res = msgsnd(nrfmQid, msg, sizeof(nrfm_mml_t), 0);
+	if (res < 0) {
+		APPLOG(APPLOG_ERR, "%s(), fail to send resp to NRFM! (res:%d)", __func__, res);
+	} 
+}
+
+void nrfm_mmc_add_proc(nrfm_mml_t *nrfm_cmd)
+{
+	int list_index = new_list(nrfm_cmd->host);
+
+	for (int i = 0; i < nrfm_cmd->info_cnt; i++) {
+		nf_conn_info_t *nf_conn = &nrfm_cmd->nf_conns[i];
+		int item_index = new_item(list_index, nf_conn->ip, nf_conn->port);
+
+		int added_cnt = 0;
+		for (int k = 1; k < MAX_SVR_NUM ; k++) {
+			if (CONN_LIST[k].used == 0) {
+				CONN_LIST[k].index = k;
+				CONN_LIST[k].list_index = list_index;
+				CONN_LIST[k].item_index = item_index;
+				CONN_LIST[k].used = 1;
+				CONN_LIST[k].conn = 0;
+				sprintf(CONN_LIST[k].host, "%s", nrfm_cmd->host);
+				sprintf(CONN_LIST[k].type, "%s", nrfm_cmd->type);
+				sprintf(CONN_LIST[k].scheme, "%s", nf_conn->scheme);
+				sprintf(CONN_LIST[k].ip, "%s", nf_conn->ip);
+				CONN_LIST[k].port = nf_conn->port;
+				CONN_LIST[k].token_id = nrfm_cmd->token_id;
+				CONN_LIST[k].act = 1;
+				CONN_LIST[k].nrfm_auto_added = 1; /* this list is added by nrfm */
+				APPLOG(APPLOG_ERR, "{{{DBG}}} [%s] [%s][%d] added cnt[%d] CONN_LIST[%d] INDEX[%d:%d]", 
+						nrfm_cmd->host, nf_conn->ip, nf_conn->port, added_cnt, k, list_index, item_index);
+				if (++added_cnt == nf_conn->cnt) break;
+			}
+		}
+	}
+
+	nrfm_mmc_res_log();
+	nrfm_cmd->id = list_index; // replay added ID 
+	nrfm_mmc_send_resp(nrfm_cmd);
+
+	// node change, remake
+	trig_refresh_select_node(&LB_CTX);
+
+}
+
+void nrfm_mmc_act_dact_proc(nrfm_mml_t *nrfm_cmd, int act)
+{
+	int list_index = nrfm_cmd->id;
+
+	for (int k = 1; k < MAX_SVR_NUM; k++) {
+		if (CONN_LIST[k].used == 0)
+			continue;
+		if (CONN_LIST[k].nrfm_auto_added == 0)
+			continue;
+		if (CONN_LIST[k].list_index == list_index) {
+			if (act) {
+				CONN_LIST[k].act = 1;
+			} else {
+				/* hold connection */
+				CONN_LIST[k].act = 0;
+
+				http2_session_data_t *session_data = get_session(CONN_LIST[k].thrd_index,
+						CONN_LIST[k].session_index, CONN_LIST[k].session_id);
+				if (session_data != NULL) {
+					delete_http2_session_data(session_data);
+				}
+			}
+		}
+	}
+
+	nrfm_mmc_res_log();
+	nrfm_cmd->id = list_index; // replay added ID 
+	nrfm_mmc_send_resp(nrfm_cmd);
+
+	// node change, remake
+	trig_refresh_select_node(&LB_CTX);
+}
+
+void nrfm_mmc_del_proc(nrfm_mml_t *nrfm_cmd)
+{
+	int list_index = nrfm_cmd->id;
+
+	for (int k = 1; k < MAX_SVR_NUM; k++) {
+		if (CONN_LIST[k].used == 0)
+			continue;
+		if (CONN_LIST[k].nrfm_auto_added == 0)
+			continue;
+		if (CONN_LIST[k].list_index == list_index) {
+			http2_session_data_t *session_data = get_session(CONN_LIST[k].thrd_index,
+					CONN_LIST[k].session_index, CONN_LIST[k].session_id);
+			if (session_data != NULL) {
+				delete_http2_session_data(session_data);
+			}
+			memset(&CONN_LIST[k], 0x00, sizeof(conn_list_t));
+		}
+	}
+	/* clear list / item index */
+	for (int i = 0; i < nrfm_cmd->info_cnt; i++) {
+		nf_conn_info_t *nf_conn = &nrfm_cmd->nf_conns[i];
+		del_item(list_index, nf_conn->ip, nf_conn->port);
+	}
+	del_list(nrfm_cmd->host);
+
+	nrfm_mmc_res_log();
+	nrfm_cmd->id = -1; // replay added ID 
+	nrfm_mmc_send_resp(nrfm_cmd);
+
+	// node change, remake
+	trig_refresh_select_node(&LB_CTX);
+
+}
+
+void nrfm_mmc_clear_proc()
+{
+	APPLOG(APPLOG_ERR, "{{{DBG}}} %s check NRFM restarted! clear all auto added conn", __func__);
+
+	for (int k = 1; k < MAX_SVR_NUM; k++) {
+		if (CONN_LIST[k].used == 0)
+			continue;
+		if (CONN_LIST[k].nrfm_auto_added == 0)
+			continue;
+
+		int list_index = get_list(CONN_LIST[k].host);
+		del_item(list_index, CONN_LIST[k].ip, CONN_LIST[k].port);
+		del_list(CONN_LIST[k].host);
+
+		APPLOG(APPLOG_ERR, "{{{DBG}}} %s try to clear CONN_LIST[index:%d host:%s ip:%s port:%d]", 
+				__func__, k, CONN_LIST[k].host, CONN_LIST[k].ip, CONN_LIST[k].port);
+
+		http2_session_data_t *session_data = get_session(CONN_LIST[k].thrd_index,
+				CONN_LIST[k].session_index, CONN_LIST[k].session_id);
+		if (session_data != NULL) {
+			delete_http2_session_data(session_data);
+		}
+		memset(&CONN_LIST[k], 0x00, sizeof(conn_list_t));
+	}
+	nrfm_mmc_res_log();
+
+	/* no response */
+
+	// node change, remake
+	trig_refresh_select_node(&LB_CTX);
+}
+
 int set_nrfm_response_msg(int ahif_msg_type) 
 {
 	switch (ahif_msg_type) {
@@ -123,6 +316,8 @@ int set_nrfm_response_msg(int ahif_msg_type)
 			return MTYPE_NRFM_SUBSCRIBE_RESPONSE;
 		case MTYPE_NRFM_SUBSCR_PATCH_REQUEST:
 			return MTYPE_NRFM_SUBSCR_PATCH_RESPONSE;
+		case MTYPE_NRFM_TOKEN_REQUEST:
+			return MTYPE_NRFM_TOKEN_RESPONSE;
 		default:
 			return -1;
 	}
@@ -143,6 +338,7 @@ void adjust_loglevel(TrcLibSetPrintMsgType *trcMsg)
 		}
 	}
 }
+
 void message_handle(evutil_socket_t fd, short what, void *arg)
 {
 	char msgBuff[1024*64];
@@ -161,8 +357,12 @@ void message_handle(evutil_socket_t fd, short what, void *arg)
 				continue;
 			/* NRF request from NRFM */
 			case MSGID_NRFM_HTTPC_REQUEST:
-				APPLOG(APPLOG_ERR, "%s() receive NRFM Request (mtype:%ld)", __func__, (long)msg->mtype);
+				APPLOG(APPLOG_ERR, "%s() receive NRFM REQUEST (mtype:%ld)", __func__, (long)msg->mtype);
 				handle_nrfm_request(msg);
+				continue;
+			case MSGID_NRFM_HTTPC_MMC_REQUEST:
+				APPLOG(APPLOG_ERR, "%s() receive NRFM MMC (mtype:%ld)", __func__, (long)msg->mtype);
+				handle_nrfm_mmc((nrfm_mml_t *)msg->body);
 				continue;
 			default:
 				APPLOG(APPLOG_ERR, "%s() receive unknown msg (mtype:%ld)", __func__, (long)msg->mtype);
@@ -180,7 +380,7 @@ void mml_function(IxpcQMsgType *rxIxpcMsg)
 {
 	int i;
     MMLReqMsgType   *mmlReq=(MMLReqMsgType*)rxIxpcMsg->body;
-    MmcHdlrVector   mmcHdlr;
+    MmcHdlrVector	mmcHdlr;
 
 	APPLOG(APPLOG_DEBUG, "%s() receive cmdName(%s)", __func__, mmlReq->head.cmdName);
 
@@ -258,6 +458,7 @@ int func_add_http_server(IxpcQMsgType *rxIxpcMsg)
 	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
 	return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
 }
+
 int func_add_http_svr_ip(IxpcQMsgType *rxIxpcMsg)
 {
 	APPLOG(APPLOG_DEBUG, "%s() called", __func__);
@@ -321,10 +522,12 @@ int func_add_http_svr_ip(IxpcQMsgType *rxIxpcMsg)
 	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
 	return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
 }
+
 int func_act_http_server(IxpcQMsgType *rxIxpcMsg)
 {
 	return func_chg_http_server_act(rxIxpcMsg, 1);
 }
+
 int func_dact_http_server(IxpcQMsgType *rxIxpcMsg)
 {
 	return func_chg_http_server_act(rxIxpcMsg, 0);
@@ -380,6 +583,7 @@ int func_chg_http_server_act(IxpcQMsgType *rxIxpcMsg, int change_to_act)
 	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
 	return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
 }
+
 int func_chg_http_server(IxpcQMsgType *rxIxpcMsg)
 {
 	APPLOG(APPLOG_DEBUG, "%s() called", __func__);
@@ -443,6 +647,7 @@ int func_chg_http_server(IxpcQMsgType *rxIxpcMsg)
 	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
 	return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
 }
+
 int func_del_http_svr_ip(IxpcQMsgType *rxIxpcMsg)
 {
 	APPLOG(APPLOG_DEBUG, "%s() called", __func__);
@@ -490,6 +695,7 @@ int func_del_http_svr_ip(IxpcQMsgType *rxIxpcMsg)
 	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
 	return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
 }
+
 int func_del_http_server(IxpcQMsgType *rxIxpcMsg)
 {
 	APPLOG(APPLOG_DEBUG, "%s() called", __func__);

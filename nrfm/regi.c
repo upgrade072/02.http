@@ -93,14 +93,11 @@ void nf_regi_handle_resp_proc(AhifHttpCSMsgType *ahifPkt)
 			if (nf_regi_check_registered_status(&MAIN_CTX) < 0) 
 				return nf_regi_retry_after_while();
 
-			/* retrieve process */
-			nf_retrieve_start_process(&MAIN_CTX);
-
-			/* subscribe process */
-			nf_subscribe_start_process(&MAIN_CTX);
-
 			/* start heartbeat */
 			nf_heartbeat_start_process(&MAIN_CTX);
+
+			/* start init process */
+			INITIAL_PROCESS(&MAIN_CTX);
 
 			break;
 		default:

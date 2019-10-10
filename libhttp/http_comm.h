@@ -113,10 +113,6 @@ typedef struct index {
 /* for ping recv */
 #define MAX_PING_WAIT 5 // (sec)
 
-/* for OAuth 2.0 */
-#define MAX_ACC_TOKEN_NUM 128
-#define MAX_ACC_TOKEN_LEN 512
-
 /* connection status */
 typedef struct conn_list_status {
 	int list_index;
@@ -132,8 +128,9 @@ typedef struct conn_list_status {
 	int occupied;
 
 	/* for OAuth 2.0 */
-	char access_token[MAX_ACC_TOKEN_NUM];
+	char access_token[512];
 	int token_id;
+	int nrfm_auto_added;
 } conn_list_status_t;
 
 /* for statistics */

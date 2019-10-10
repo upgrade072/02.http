@@ -3,8 +3,6 @@
 // TODO : bundle in sys_conf. struct, someday
 char mySysName[COMM_MAX_NAME_LEN];
 char myProcName[COMM_MAX_NAME_LEN];
-char mySysType[COMM_MAX_VALUE_LEN];
-char mySvrId[COMM_MAX_VALUE_LEN];
 
 //#ifdef LOG_APP
 int logLevel = APPLOG_DEBUG;
@@ -31,12 +29,6 @@ conn_list_status_t CONN_STATUS[MAX_CON_NUM];
 http_stat_t HTTP_STAT;
 
 hdr_index_t VHDR_INDEX[2][MAX_HDR_RELAY_CNT];
-
-#ifdef OAUTH 
-/* NRF OAuth 2.0 */
-acc_token_list_t	ACC_TOKEN_LIST[MAX_ACC_TOKEN_NUM];
-nrf_worker_t		NRF_WORKER;
-#endif
 
 // for lb ctx stat print
 extern lb_ctx_t LB_CTX;
@@ -71,7 +63,7 @@ static http2_session_data_t * create_http2_session_data()
 	return session_data;
 }
 
-static void delete_http2_session_data(http2_session_data_t *session_data) 
+void delete_http2_session_data(http2_session_data_t *session_data) 
 {
 	session_data->connected = 0;
 
@@ -1137,17 +1129,6 @@ void create_httpc_worker()
 {
 	int res;
 
-#ifdef OAUTH
-	// create NRF access thread 
-	res = pthread_create(&NRF_WORKER.thrd_id, NULL, &nrf_access_thread, (void *)NULL);
-	if (res != 0) {
-		APPLOG(APPLOG_ERR, "%s() NRF Thread Create Fail!!!", __func__);
-		exit(0);
-	} else {
-		pthread_detach(NRF_WORKER.thrd_id);
-	}
-#endif
-
 	for (int i = 0; i < CLIENT_CONF.worker_num; i++) {
 		res = pthread_create(&THRD_WORKER[i].thrd_id, NULL, &workerThread, (void *)&THREAD_NO[i]);
 		if (res != 0) {
@@ -1291,6 +1272,22 @@ void main_tick_callback(evutil_socket_t fd, short what, void *arg)
 	}
 }
 
+void send_nrfm_notify(evutil_socket_t fd, short what, void *arg)
+{
+	char msgBuff[sizeof(GeneralQMsgType)] = {0,};
+
+	GeneralQMsgType *msg = (GeneralQMsgType *)msgBuff;
+	nrfm_noti_t *httpc_noti = (nrfm_noti_t *)msg->body;
+
+	msg->mtype = (long)MSGID_HTTPC_NRFM_IMALIVE_NOTI;
+	httpc_noti->my_pid = getpid();
+
+	int res = msgsnd(nrfmQid, msg, sizeof(nrfm_noti_t), 0);
+	if (res < 0) {
+		APPLOG(APPLOG_ERR, "%s(), fail to send resp to NRFM! (res:%d)", __func__, res);
+	}
+}
+
 void main_loop()
 {
 	SSL_CTX *ssl_ctx;
@@ -1361,6 +1358,12 @@ void main_loop()
 	ev_lbctx_print = event_new(evbase, -1, EV_PERSIST, fep_stat_print, NULL);
 	event_add(ev_lbctx_print, &lbctx_print_interval);
 
+	/* send to NRFM httpc still alive */
+	struct timeval nrfm_notify_sec = {1, 0};
+	struct event *ev_nrfm_notify;
+	ev_nrfm_notify = event_new(evbase, -1, EV_PERSIST, send_nrfm_notify, NULL);
+	event_add(ev_nrfm_notify, &nrfm_notify_sec);
+
 	/* start loop */
 	event_base_loop(evbase, EVLOOP_NO_EXIT_ON_EMPTY);
 
@@ -1380,6 +1383,48 @@ int set_http2_option(client_conf_t *CLIENT_CONF)
 	/* set setting_header_table_size */
 	nghttp2_option_set_max_deflate_dynamic_table_size(CLIENT_CONF->nghttp2_option, CLIENT_CONF->http_opt_header_table_size);
 	APPLOG(APPLOG_ERR, "{{{INIT}}} %s set setting_header_table_size to [%d]", __func__, CLIENT_CONF->http_opt_header_table_size);
+
+	return 0;
+}
+
+void directory_watch_action(const char *file_name) { } 
+
+#define NRFM_ACC_TOKEN_SHM_KEY "nrfm_cfg.sys_config.access_token_shm_key"
+int get_acc_token_shm(client_conf_t *CLIENT_CONF)
+{
+	config_t CFG = {0,};
+
+	// load nrfm.cfg
+	char conf_path[1024] = {0,};
+	sprintf(conf_path, "%s/data/nrfm.cfg", getenv(IV_HOME));
+
+    if (!config_read_file(&CFG, conf_path)) {
+        fprintf(stderr, "config read fail! (%s|%d - %s)\n",
+                config_error_file(&CFG),
+                config_error_line(&CFG),
+                config_error_text(&CFG));
+        return (-1);
+    } else {
+        fprintf(stderr, "TODO| config read from ./nrfm.cfg success!\n");
+    }
+
+	int nrfm_acc_token_shm_key = 0;
+	if (config_lookup_int(&CFG, NRFM_ACC_TOKEN_SHM_KEY, &nrfm_acc_token_shm_key) < 0) {
+        fprintf(stderr, "TODO| fail to get (%s) shm key fail!\n", NRFM_ACC_TOKEN_SHM_KEY);
+		return (-1);
+	}
+
+	int nrfm_acc_token_id = shmget((size_t)nrfm_acc_token_shm_key, SHM_ACC_TOKEN_TABLE_SIZE, IPC_CREAT|0666);
+	if (nrfm_acc_token_id < 0) {
+        fprintf(stderr, "TODO| fail to get (%s) shm id fail!\n", NRFM_ACC_TOKEN_SHM_KEY);
+		return (-1);
+	}
+
+	if ((CLIENT_CONF->ACC_TOKEN_LIST =
+				(acc_token_shm_t *)shmat(nrfm_acc_token_id, NULL, 0)) == (acc_token_shm_t *)-1) {
+        fprintf(stderr, "TODO| fail to attach to access token shm fail!\n");
+		return (-1);
+	}
 
 	return 0;
 }
@@ -1429,6 +1474,18 @@ int initialize()
 	*lOG_FLAG = CLIENT_CONF.log_level;
 	APPLOG(APPLOG_ERR, "\n\n[[[[[ Welcome Process Started ]]]]]");
 
+	/* get status shm */
+	if (get_http_shm(CLIENT_CONF.httpc_status_shmkey) < 0) {
+		fprintf(stderr,"{{{INIT}}} sem shm create fail!\n");
+		return (-1);
+	}
+
+	/* get access token shm */
+	if (get_acc_token_shm(&CLIENT_CONF) < 0) {
+		fprintf(stderr,"{{{INIT}}} fail to get (nrfm) acc token shm!\n");
+		return (-1);
+	}
+
     if (config_load() < 0) {
         APPLOG(APPLOG_ERR, "{{{INIT}}} fail to read config file!");
         return (-1);
@@ -1437,12 +1494,6 @@ int initialize()
 
 		gather_list(CONN_STATUS);
 		print_list(CONN_STATUS);
-	}
-
-	/* get status shm */
-	if (get_http_shm(CLIENT_CONF.httpc_status_shmkey) < 0) {
-		fprintf(stderr,"{{{INIT}}} sem shm create fail!\n");
-		return (-1);
 	}
 
 	for ( i = 0; i < CLIENT_CONF.worker_num; i++) {
@@ -1457,18 +1508,6 @@ int initialize()
 			exit( 1);
 		}
 	}
-
-#ifdef OAUTH
-	sprintf(fname,"%s/%s", env, SYSCONF_FILE);
-	if (conflib_getNthTokenInFileSection (fname, "GENERAL", "SYSTEM_TYPE", 1, mySysType) < 0) {
-		APPLOG(APPLOG_ERR, "{{{INIT}}} cant find SYSTEM_TYPE in (%s)!", fname);
-		return -1;
-	}   
-	if (conflib_getNthTokenInFileSection (fname, "GENERAL", "SERVER_ID", 1, mySvrId) < 0) {
-		APPLOG(APPLOG_ERR, "{{{INIT}}} cant find SERVER_ID in (%s)!", fname);
-		return -1;
-	}   
-#endif
 
 	/* create recv-mq */
 #ifndef TEST

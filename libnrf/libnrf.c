@@ -140,3 +140,122 @@ int watch_directory_init(struct event_base *evbase, const char *path_name)
 
 	return 0;
 }
+
+acc_token_info_t *get_acc_token_info(acc_token_shm_t *ACC_TOKEN_LIST, int id, int used)
+{
+	if (id < 1 || id > MAX_ACC_TOKEN_NUM)
+		return NULL;
+
+	if (used) {
+		// get my 
+		if (ACC_TOKEN_LIST->acc_token[id].occupied != 1)
+			return NULL;
+
+		return &ACC_TOKEN_LIST->acc_token[id];
+	} else {
+		// assign new
+		if (ACC_TOKEN_LIST->acc_token[id].occupied == 1)
+			return NULL;
+
+		ACC_TOKEN_LIST->acc_token[id].occupied = 1;
+		return &ACC_TOKEN_LIST->acc_token[id];
+	}
+
+	return NULL;
+}
+
+acc_token_info_t *new_acc_token_info(acc_token_shm_t *ACC_TOKEN_LIST)
+{
+	for (int id = MAX_ACC_TOKEN_NUM; id > 0; id--) {
+		acc_token_info_t *token_info = &ACC_TOKEN_LIST->acc_token[id];
+		if (token_info->occupied == 0) {
+			memset(token_info, 0x00, sizeof(acc_token_info_t));
+			token_info->occupied = 1;
+			token_info->token_id = id;
+			return token_info;
+		}
+	}
+
+	return NULL;
+}
+
+char *get_access_token(acc_token_shm_t *ACC_TOKEN_LIST, int token_id)
+{
+    if (token_id < 0 || token_id >= MAX_ACC_TOKEN_NUM)
+        return NULL;
+
+    acc_token_info_t *token_info = &ACC_TOKEN_LIST->acc_token[token_id];
+    if (token_info->status != TA_ACQUIRED)
+        return NULL;
+    
+    int pos = token_info->token_pos;
+    return token_info->access_token[pos];
+} 
+
+void print_token_info_raw(acc_token_shm_t *ACC_TOKEN_LIST, char *resBuf)
+{
+    sprintf(resBuf + strlen(resBuf), "INDEX   ID TYPE  NFTYPE  NF_INSTANCE_ID                             SCOPE                            TOKEN_STATUS REQUEST_TIME          VALIDATE_TIME         TOKEN_INFO ACCESS_TOKEN\n");
+    sprintf(resBuf + strlen(resBuf), "------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------\n");
+
+    for (int i = 1; i < MAX_ACC_TOKEN_NUM; i++) {
+        acc_token_info_t *token_info = get_acc_token_info(ACC_TOKEN_LIST, i, 1);
+        if (token_info == NULL) {
+            continue;
+        } else {
+            char request_time[128] = {0,};
+            char validate_time[128] = {0,};
+            sprintf(request_time, "%.19s", ctime(&token_info->last_request_time));
+            sprintf(validate_time, "%.19s", ctime(&token_info->due_date));
+            sprintf(resBuf + strlen(resBuf), "%4d] %4d %-5s   %-5s [%-40s] [%-30s] [%10s] [%.19s] [%.19s] [%8s] [%s]\n",
+            i,
+            token_info->token_id,
+            (token_info->acc_type == AT_SVC) ? "SVC" : "INST",
+            strlen(token_info->nf_type) ? token_info->nf_type : "-",
+            token_info->nf_instance_id,
+            strlen(token_info->scope) ? token_info->scope : "-",
+            (token_info->status == TA_INIT) ? "INIT" :
+            (token_info->status == TA_FAILED) ? "FAILED" :
+            (token_info->status == TA_TRYING) ? "TRYING" : "ACCUIRED",
+            request_time,
+            validate_time,
+            (token_info->operator_added) ? "OPER_ADD" : "AUTO_ADD",
+            (token_info->status == TA_ACQUIRED) ? token_info->access_token[token_info->token_pos] : "-");
+        }
+    }
+    sprintf(resBuf + strlen(resBuf), "------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------\n");
+}
+
+
+void print_nrfm_mml_raw(nrfm_mml_t *httpc_cmd)
+{
+    APPLOG(APPLOG_ERR, "nrfm_mml_t ===================================================================================");
+    APPLOG(APPLOG_ERR, "command[%d] host[%s] type[%s] info_cnt[%d]",
+            httpc_cmd->command, httpc_cmd->host, httpc_cmd->type, httpc_cmd->info_cnt);
+    for (int i = 0; i < httpc_cmd->info_cnt; i++) {
+        APPLOG(APPLOG_ERR, "occupied[%d] scheme[%s] ip[%s] port[%d] cnt[%d]",
+                httpc_cmd->nf_conns[i].occupied,
+                httpc_cmd->nf_conns[i].scheme,
+                httpc_cmd->nf_conns[i].ip,
+                httpc_cmd->nf_conns[i].port,
+                httpc_cmd->nf_conns[i].cnt);
+    }
+    APPLOG(APPLOG_ERR, "===========================================================================================end");
+}
+
+char *get_nrfm_cmd_str(int cmd)
+{
+    switch (cmd) {
+        case NRFM_MML_HTTPC_ADD:
+			return "ADD";
+		case NRFM_MML_HTTPC_ACT:
+			return "ACT";
+        case NRFM_MML_HTTPC_DACT:
+			return "DACT";
+        case NRFM_MML_HTTPC_DEL:
+			return "DEL";
+		case NRFM_MML_HTTPC_CLEAR:
+			return "<CLEAR!!!>";
+		default:
+			return "UNKNOWN";
+    }
+}

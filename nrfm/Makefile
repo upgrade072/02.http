@@ -11,7 +11,7 @@ BUILD_LIBS = $(BUILD_LIBS_PATH)/libnrf.a \
 			 $(BUILD_LIBS_PATH)/libjson-c.a \
 			 $(BUILD_LIBS_PATH)/libs.a
 
-SRCS		= main.c config.c regi.c heartbeat.c retrieve.c subscribe.c notify.c util.c
+SRCS		= main.c config.c regi.c heartbeat.c retrieve.c subscribe.c notify.c token.c manage.c command.c util.c
 
 OBJS		= $(SRCS:.c=.o)
 

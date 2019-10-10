@@ -26,11 +26,6 @@ char CONFIG_PATH[256] = {0,};
 
 index_t INDEX[MAX_LIST_NUM];
 
-#ifdef OAUTH  /* NRF OAuth 2.0 */
-#define CF_ACCTOKEN_LIST	"access_token_info.list"
-extern acc_token_list_t ACC_TOKEN_LIST[MAX_ACC_TOKEN_NUM];
-#endif
-
 int init_cfg()
 {
 	memset(INDEX, 0x00, sizeof(INDEX));
@@ -257,92 +252,6 @@ int config_load()
 		CLIENT_CONF.lb_config = setting;
 		APPLOG(APPLOG_ERR, "{{{CFG}}} lb config loading success");
 	}
-
-#ifdef OAUTH
-	/* access token list loading */
-	if ((setting = config_lookup(&CFG, CF_ACCTOKEN_LIST)) == NULL) {
-		APPLOG(APPLOG_ERR, "{{{CFG}}} access token list not exist!");
-		goto CF_LOAD_ERR;
-	} else {
-		int count = config_setting_length(setting);
-
-		APPLOG(APPLOG_ERR, "{{{CFG}}} access token lists are ... (%d)", count);
-		for (int i = 0; i < count; i++) {
-			config_setting_t *list = config_setting_get_elem(setting, i);
-
-			int id = 0;
-			const char *nrf_addr;
-			const char *acc_type;
-			const char *nf_type;
-			const char *nf_instance_id;
-			const char *scope;
-			struct sockaddr_in sa = {0,};
-			struct sockaddr_in6 sa6 = {0,};
-
-			if (config_setting_lookup_int (list, "id", &id) == CONFIG_FALSE) {
-				APPLOG(APPLOG_ERR, "{{{CFG}}} acc token list, index(%2d) id NULL!", i);
-				continue;
-			} else if (id < 1 || id >= MAX_ACC_TOKEN_NUM) {
-				APPLOG(APPLOG_ERR, "{{{CFG}}} acc token list, index(%2d) id(%d) invalid!", i, id);
-				continue;
-			}
-			if (config_setting_lookup_string (list, "nrf_addr", &nrf_addr) == CONFIG_FALSE) {
-				APPLOG(APPLOG_ERR, "{{{CFG}}} acc token list, index(%2d) nrf_addr NULL!", i);
-				continue;
-			}
-			if (config_setting_lookup_string (list, "acc_type", &acc_type) == CONFIG_FALSE) {
-				APPLOG(APPLOG_ERR, "{{{CFG}}} acc token list, index(%2d) acc_type NULL!", i);
-				continue;
-			} else if (strcmp(acc_type, "SVC") && strcmp(acc_type, "INST")) {
-				APPLOG(APPLOG_ERR, "{{{CFG}}} acc token list, index(%2d) acc_type(%s) invalid!", i, acc_type);
-				continue;
-			}
-			if (config_setting_lookup_string (list, "nf_type", &nf_type) == CONFIG_FALSE) {
-				APPLOG(APPLOG_ERR, "{{{CFG}}} acc token list, index(%2d) nf_type NULL!", i);
-				continue;
-			}
-			if (config_setting_lookup_string (list, "nf_instance_id", &nf_instance_id) == CONFIG_FALSE) {
-				APPLOG(APPLOG_ERR, "{{{CFG}}} acc token list, index(%2d) nf_instance_id NULL!", i);
-				continue;
-			}
-			if (config_setting_lookup_string (list, "scope", &scope) == CONFIG_FALSE) {
-				APPLOG(APPLOG_ERR, "{{{CFG}}} acc token list, index(%2d) scope NULL!", i);
-				continue;
-			}
-
-			char temp_str[INET6_ADDRSTRLEN + 12] = {0,};
-			int port = 0;
-			int inet_type = 0;
-			sprintf(temp_str, nrf_addr);
-
-			if((inet_type = parse_http_addr(temp_str, &sa, &sa6, &port)) < 0) {
-				APPLOG(APPLOG_ERR, "{{{CFG}}} acc token list, index(%2d) nrf_addr(%s) invalid!", i, nrf_addr);
-				continue;
-			}
-			
-			acc_token_list_t *token_list = NULL;
-			if ((token_list = get_token_list(id, 0)) == NULL) {
-				APPLOG(APPLOG_ERR, "{{{CFG}}} acc token list, fail to get empty index!");
-				continue;
-			}
-
-			token_list->token_id = id;
-			sprintf(token_list->nrf_addr, "%s", nrf_addr);
-			token_list->acc_type =!strcmp(acc_type, "SVC") ? AT_SVC : AT_INST;
-			sprintf(token_list->nf_type, "%s", nf_type);
-			sprintf(token_list->nf_instance_id, "%s", nf_instance_id);
-			sprintf(token_list->scope, "%s", scope);
-			token_list->status = TA_INIT;
-			memset(&(token_list->due_date), 0x00, sizeof(time_t));
-			token_list->inet_type = inet_type;
-			memcpy(&(token_list->sa), &sa, sizeof(struct sockaddr_in));
-			memcpy(&(token_list->sa6), &sa6, sizeof(struct sockaddr_in6));
-			token_list->port = port;
-		}
-	}
-	/* check token_list result */
-	print_token_list_raw(ACC_TOKEN_LIST);
-#endif
 
     /* connect list loading */
     if ((setting = config_lookup(&CFG, CF_CONNECT_LIST)) == NULL) {

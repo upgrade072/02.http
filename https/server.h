@@ -86,7 +86,7 @@ typedef struct server_conf {
 	/* for OAUTH 2.0 */
 	char cert_file[128];
 	char key_file[128];
-	char credential[MAX_ACC_TOKEN_LEN];
+	char credential[512];
 	char uuid_file[128];
 
 	/* for direct relay to fep */
@@ -201,7 +201,7 @@ typedef struct https_ctx {
 	int  recv_time_index;
 
 #ifdef OAUTH
-	char access_token[MAX_ACC_TOKEN_LEN];
+	char access_token[512];
 #endif
     iovec_item_t push_req;
 

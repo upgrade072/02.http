@@ -41,6 +41,8 @@
 /* for .cfg */
 #define CF_SVC_NIC			"nrfm_cfg.sys_config.svc_nic"
 #define CF_NOTIFY_PORT		"nrfm_cfg.sys_config.notify_listen_port"
+#define CF_ACC_TOKEN_SHM	"nrfm_cfg.sys_config.access_token_shm_key"
+#define CF_MP_SYS_TYPE		"nrfm_cfg.sys_config.mp_sys_type"
 #define CF_LOGLEVEL			"nrfm_cfg.sys_config.log_level"
 #define CF_UUID_FILE		"nrfm_cfg.sys_config.uuid_file"
 #define CF_RECOVERY_TIME	"nrfm_cfg.sys_info.recovery_time"
@@ -51,6 +53,7 @@
 #define CF_MY_PROFILE		"my_profile"
 #define CF_MY_INSTANCE_ID	"my_profile.nfInstanceId"
 #define CF_HEARTBEAT_TIMER	"my_profile.heartBeatTimer"
+#define CF_ACC_TOKEN_LIST	"access_token"
 
 /* for <--> NRF */
 typedef enum {
@@ -59,7 +62,9 @@ typedef enum {
 	NF_CTX_TYPE_RETRIEVE_LIST,
 	NF_CTX_TYPE_RETRIEVE_PROFILE,
 	NF_CTX_TYPE_SUBSCRIBE,
-	NF_CTX_TYPE_SUBSCR_PATCH
+	NF_CTX_TYPE_SUBSCR_PATCH,
+	NF_CTX_TYPE_ACQUIRE_TOKEN,
+	NF_CTX_TYPE_HTTPC_CMD
 } nf_ctx_type_t;
 
 typedef struct qid_ifo {
@@ -97,15 +102,21 @@ typedef struct fep_service {
 	service_info_t fep_svc_info[MAX_FEP_NUM];
 } fep_service_t;
 
+typedef enum nf_item_ctx_type {
+	NF_ITEM_CTX_TYPE_PROFILE = 0,
+	NF_ITEM_CTX_TYPE_CMD
+} nf_item_ctx_type_t;
+
 typedef struct nf_retrieve_item {
-	// TODO
-	// nfType
-	// services
-	// etc . dtc ...
+	/* item ctx type profile */
 	char nf_uuid[1024];
+	json_object *item_nf_profile;
 	nrf_ctx_t retrieve_item_ctx;
 
-	json_object *item_nf_profile;
+	/* item ctx type cmd */
+	int token_id;
+	nrfm_mml_t httpc_cmd;
+	nrf_ctx_t httpc_cmd_ctx;
 } nf_retrieve_item_t;
 
 typedef struct nf_retrieve_info {
@@ -124,9 +135,28 @@ typedef struct nf_retrieve_info {
 	nrf_ctx_t subscribe_ctx;;
 } nf_retrieve_info_t;
 
+typedef struct token_ctx_list {
+	int token_id;
+	nrf_ctx_t access_token_ctx;
+} token_ctx_list_t;
+
+typedef struct nrf_token_info {
+	struct event *ev_acquire_token;
+
+	int acc_token_shm_key;
+	int acc_token_shm_id;
+	acc_token_shm_t *ACC_TOKEN_LIST;
+
+	GSList *token_accuire_list;
+} nrf_token_info_t;
+
 typedef struct main_ctx {
+	int MAIN_SEQNO;
 	config_t CFG;
+	pid_t HTTPC_PID;
+
 	struct event_base *EVBASE;
+	int init_regi_success;
 
 	svr_info_t my_info;
 	qid_info_t my_qid;
@@ -141,16 +171,21 @@ typedef struct main_ctx {
 
 	GSList *nf_retrieve_list;	// static : nf_retrieve_list_t
 
-	int MAIN_SEQNO;
 	nrf_ctx_t regi_ctx;
 	nrf_ctx_t heartbeat_ctx;
+
+	nrf_token_info_t nrf_access_token;
 } main_ctx_t;
 
 // glib
 char *strptime(const char *s, const char *format, struct tm *tm);
 
+
+
 /* ------------------------- config.c --------------------------- */
+int     cfg_get_access_token_shm_key(main_ctx_t *MAIN_CTX);
 char    *cfg_get_my_ip(main_ctx_t *MAIN_CTX);
+char    *cfg_get_mp_nf_type(main_ctx_t *MAIN_CTX);
 char    *cfg_get_my_noti_uri(main_ctx_t *MAIN_CTX);
 char    *cfg_get_my_recovery_time(main_ctx_t *MAIN_CTX);
 char    *cfg_get_my_uuid(main_ctx_t *MAIN_CTX);
@@ -163,6 +198,7 @@ int     init_cfg(config_t *CFG);
 int     json_set_val_by_type(json_object *dst, json_object *new_value);
 void    log_all_cfg_retrieve_list(main_ctx_t *MAIN_CTX);
 void    log_all_cfg_subscribe_list(main_ctx_t *MAIN_CTX);
+int     load_access_token_cfg(main_ctx_t *MAIN_CTX);
 int     load_cfg_retrieve_list(main_ctx_t *MAIN_CTX);
 int     load_cfg_subscribe_list(main_ctx_t *MAIN_CTX);
 void    log_cfg_retrieve_list(nf_retrieve_info_t *nf_retr_info);
@@ -171,6 +207,28 @@ void    recurse_json_obj(json_object *input_obj, main_ctx_t *MAIN_CTX, nf_retrie
 char    *replace_json_val(const char *input_str, main_ctx_t *MAIN_CTX, nf_retrieve_info_t *nf_retr_info);
 json_object     *search_json_object(json_object *obj, char *key_string);
 void    set_cfg_sys_info(config_t *CFG);
+
+/* ------------------------- token.c --------------------------- */
+void    nf_token_acquire_token(main_ctx_t *MAIN_CTX, acc_token_info_t *token_info);
+void    nf_token_acquire_handlde_resp_proc(AhifHttpCSMsgType *ahifPkt);
+void    nf_token_acquire_token_handle_timeout(main_ctx_t *MAIN_CTX, nrf_ctx_t *timeout_ctx);
+int     nf_token_get_scope_by_profile(json_object *nf_profile, char *scope_buff, size_t buff_len);
+void    nf_token_add_shm_by_nf(acc_token_info_t *token_info, nf_retrieve_item_t *nf_item);
+void    nf_token_check_and_acquire_token(main_ctx_t *MAIN_CTX, acc_token_info_t *token_info);
+int     nf_token_check_expires_in(long double timeval);
+token_ctx_list_t        *nf_token_create_ctx(main_ctx_t *MAIN_CTX, acc_token_info_t *token_info);
+int     nf_token_create_body(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ahifPkt, acc_token_info_t *token_info);
+void    nf_token_create_pkt(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ahifPkt, acc_token_info_t *token_info, token_ctx_list_t *token_request);
+void    nf_token_del_shm_by_nf(acc_token_info_t *token_info);
+void    nf_token_free_ctx(main_ctx_t *MAIN_CTX, token_ctx_list_t *token_request);
+token_ctx_list_t        *nf_token_find_ctx_by_id(GSList *token_accuire_list, int token_id);
+token_ctx_list_t        *nf_token_find_ctx_by_seqNo(GSList *token_accuire_list, int seqNo);
+void    nf_token_get_token_cb(evutil_socket_t fd, short what, void *arg);
+void    nf_token_handle_resp_nok(main_ctx_t *MAIN_CTX, token_ctx_list_t *token_request);
+void    nf_token_print_log(AhifHttpCSMsgType *ahifPkt, const char *log_prefix);
+void    nf_token_start_process(main_ctx_t *MAIN_CTX);
+void    nf_token_update_shm(acc_token_info_t *token_info, const char *access_token, double due_date);
+void    nf_token_update_shm_process(main_ctx_t *MAIN_CTX, token_ctx_list_t *token_request, AhifHttpCSMsgType *ahifPkt);
 
 /* ------------------------- retrieve.c --------------------------- */
 void    nf_retrieve_addnew_and_get_profile(main_ctx_t *MAIN_CTX, nf_retrieve_info_t *nf_retr_info, nf_retrieve_item_t *nf_add_item);
@@ -183,6 +241,8 @@ void    nf_retrieve_instances_list(nf_retrieve_info_t *nf_retr_info, main_ctx_t 
 void    nf_retrieve_item_handle_timeout(nrf_ctx_t *nf_ctx);
 void    nf_retrieve_item_recall_cb(evutil_socket_t fd, short what, void *arg);
 void    nf_retrieve_item_retry_while_after(nf_retrieve_item_t *nf_item);
+void    nf_retrieve_item_token_add(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item);
+void    nf_retrieve_item_token_del(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item);
 void    nf_retrieve_list_create_pkt(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ahifPkt, nf_retrieve_info_t *nf_retr_info);
 void    nf_retrieve_list_handle_resp_proc(AhifHttpCSMsgType *ahifPkt);
 void    nf_retrieve_list_handle_timeout(nrf_ctx_t *nf_ctx);
@@ -195,7 +255,7 @@ int     nf_retrieve_save_response(nf_retrieve_info_t *nf_retr_info, AhifHttpCSMs
 nf_retrieve_info_t      *nf_retrieve_search_info_via_nfType(main_ctx_t *MAIN_CTX, const char *nfType);
 nf_retrieve_info_t      *nf_retrieve_search_info_via_seqNo(main_ctx_t *MAIN_CTX, int seqNo);
 nf_retrieve_item_t      *nf_retrieve_search_item_by_uuid(GSList *nf_retrieve_items, const char *nf_uuid);
-nf_retrieve_item_t      *nf_retrieve_search_item_via_seqNo(main_ctx_t *MAIN_CTX, int seqNo);
+nf_retrieve_item_t      *nf_retrieve_search_item_via_seqNo(main_ctx_t *MAIN_CTX, int type, int seqNo);
 void    nf_retrieve_single_instance(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item);
 void    nf_retrieve_start_process(main_ctx_t *MAIN_CTX);
 
@@ -207,6 +267,8 @@ void    httpc_response_handle(AhifHttpCSMsgType *ahifPkt);
 void    https_request_handle(AhifHttpCSMsgType *ahifPkt);
 void    init_log(main_ctx_t *MAIN_CTX);
 int     initialize(main_ctx_t *MAIN_CTX);
+void    INITIAL_PROCESS(main_ctx_t *MAIN_CTX);
+int     load_access_token_shm(main_ctx_t *MAIN_CTX);
 int     main();
 void    main_tick_callback(evutil_socket_t fd, short what, void *arg);
 void    message_handle(evutil_socket_t fd, short what, void *arg);
@@ -247,11 +309,11 @@ void    nf_subscribe_patch_wait_after(nf_retrieve_info_t *nf_retr_info);
 nf_retrieve_info_t      *nf_subscribe_search_info_via_seqNo(main_ctx_t *MAIN_CTX, int seqNo);
 void    nf_subscribe_start_process(main_ctx_t *MAIN_CTX);
 
-
 /* ------------------------- notify.c --------------------------- */
 int     nf_notify_handle_check_req(AhifHttpCSMsgType *ahifPkt, char **problemDetail);
+void    nf_notify_handle_profile_changed(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item);
 void    nf_notify_handle_request_proc(AhifHttpCSMsgType *ahifPkt);
-int     nf_notify_profile_add(nf_retrieve_item_t *nf_older_item, json_object *js_profile);
+int     nf_notify_profile_add(nf_retrieve_item_t *nf_older_item, json_object *js_nf_profile);
 int     nf_notify_profile_modify(nf_retrieve_item_t *nf_item, json_object *js_profile_changes);
 int     nf_notify_profile_remove(nf_retrieve_item_t *nf_item);
 int     nf_notify_profile_replace(nf_retrieve_item_t *nf_item, json_object *js_nf_profile);
@@ -280,3 +342,24 @@ void    LOG_JSON_OBJECT(const char *banner, json_object *js_obj);
 void    start_ctx_timer(int ctx_type, nrf_ctx_t *nf_ctx);
 void    stop_ctx_timer(int ctx_type, nrf_ctx_t *nf_ctx);
 void    util_dumphex(FILE *out, const void* data, size_t size);
+
+
+/* ------------------------- manage.c --------------------------- */
+void    NF_MANAGE_NF_ACT(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item);
+void    NF_MANAGE_NF_ADD(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item);
+void    NF_MANAGE_NF_CLEAR(main_ctx_t *MAIN_CTX);
+void    NF_MANAGE_NF_DACT(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item);
+void    NF_MANAGE_NF_DEL(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item);
+void    NF_MANAGE_RESTORE_HTTPC_CONN(main_ctx_t *MAIN_CTX);
+void    nf_manage_create_httpc_cmd_conn_act_dact(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item, int act);
+void    nf_manage_create_httpc_cmd_conn_add(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item);
+void    nf_manage_create_httpc_cmd_conn_del(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item);
+int     nf_manage_fill_nrfm_mml(nrfm_mml_t *nrfm_cmd, const char *scheme, const char *ip, int port);
+void    nf_manage_handle_cmd_res(nrfm_mml_t *httpc_cmd_res);
+void    nf_manage_handle_httpc_alive(nrfm_noti_t *httpc_noti);
+void    nf_manage_send_httpc_cmd(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item);
+
+
+/* ------------------------- command.c --------------------------- */
+void    mml_function(IxpcQMsgType *rxIxpcMsg);
+int     func_dis_acc_token(IxpcQMsgType *rxIxpcMsg);

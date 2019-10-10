@@ -123,6 +123,7 @@ int nf_notify_handle_check_req(AhifHttpCSMsgType *ahifPkt, char **problemDetail)
 			// update nf profile
 			action_res = nf_notify_profile_modify(nf_item, js_profile_changes);
 		}
+		nf_notify_handle_profile_changed(&MAIN_CTX, nf_item); /* httpc conn act|dact */
 	}
 
 	if (action_res < 0) {
@@ -138,6 +139,27 @@ NNHCR_RET:
 		json_object_put(js_recv_noti_req);
 
 	return respCode;
+}
+
+void nf_notify_handle_profile_changed(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item)
+{
+	char key_nfStatus[128] = "nfStatus";
+	json_object *js_nf_status = search_json_object(nf_item->item_nf_profile, key_nfStatus);
+	if (js_nf_status == NULL) {
+		APPLOG(APPLOG_ERR, "{{{DBG}}} %s can't find nfStatus in nf_profile", __func__);
+		return;
+	}
+	char nfStatus[128] = {0,};
+	sprintf(nfStatus, "%s", json_object_get_string(js_nf_status));
+	if (!strcmp(nfStatus, "REGISTERED")) {
+		APPLOG(APPLOG_ERR, "{{{DBG}}} %s nf (uuid:%s) status [%s], it trigger ACT", 
+				__func__, nfStatus, nf_item->nf_uuid);
+		NF_MANAGE_NF_ACT(MAIN_CTX, nf_item);
+	} else {
+		APPLOG(APPLOG_ERR, "{{{DBG}}} %s nf (uuid:%s) status [%s], it trigger ACT", 
+				__func__, nfStatus, nf_item->nf_uuid);
+		NF_MANAGE_NF_DACT(MAIN_CTX, nf_item);
+	}
 }
 
 void nf_notify_handle_request_proc(AhifHttpCSMsgType *ahifPkt)
@@ -180,6 +202,7 @@ int nf_notify_profile_add(nf_retrieve_item_t *nf_older_item, json_object *js_nf_
 			json_object_put(nf_older_item->item_nf_profile);
 		}
 		if (nf_older_item) {
+			NF_MANAGE_NF_DEL(&MAIN_CTX, nf_older_item);
 			APPLOG(APPLOG_ERR, "{{{DBG}}} %s free nf_item addr(%x)", __func__, nf_older_item);
 			free(nf_older_item);
 		}
@@ -190,25 +213,13 @@ int nf_notify_profile_add(nf_retrieve_item_t *nf_older_item, json_object *js_nf_
 
 	sprintf(nf_item->nf_uuid, "%s", json_object_get_string(js_uuid));
 
-#if 0
-	json_object_deep_copy(js_nf_profile, &nf_item->item_nf_profile, NULL);
-
-	if (nf_item->item_nf_profile == NULL) {
-		APPLOG(APPLOG_ERR, "{{{DBG}}} %s fail to create json_nf_profile!", __func__);
-		return -1;
-	}
-#else
 	if ((nf_item->item_nf_profile = json_tokener_parse(json_object_get_string(js_nf_profile))) == NULL) {
 		APPLOG(APPLOG_ERR, "{{{DBG}}} %s fail to create json_nf_profile!", __func__);
 		return -1;
 	}
-#endif
-
-	APPLOG(APPLOG_ERR, "{{{DBG}}} %s success to create json_nf_profile! (ptr %x)", __func__, nf_item->item_nf_profile);
 
 	nf_retr_info->nf_retrieve_items = g_slist_append(nf_retr_info->nf_retrieve_items, nf_item);
-
-	APPLOG(APPLOG_ERR, "{{{DBG}}} %s now nf_item addr is (ptr %x)", __func__, nf_retr_info->nf_retrieve_items);
+	NF_MANAGE_NF_ADD(&MAIN_CTX, nf_item);
 
 	return 0;
 }
@@ -294,6 +305,7 @@ int nf_notify_profile_remove(nf_retrieve_item_t *nf_item)
 		json_object_put(nf_item->item_nf_profile);
 	}
 	if (nf_item) {
+		NF_MANAGE_NF_DEL(&MAIN_CTX, nf_item);
 		APPLOG(APPLOG_ERR, "{{{DBG}}} %s free nf_item addr(%x)", __func__, nf_item);
 		free(nf_item);
 	}

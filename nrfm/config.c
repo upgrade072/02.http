@@ -1,6 +1,19 @@
 #include "nrfm.h"
 // TODO multi thread issue
 
+int cfg_get_access_token_shm_key(main_ctx_t *MAIN_CTX)
+{
+	config_setting_t *setting_acc_token_shm_key = NULL;
+	if ((setting_acc_token_shm_key = config_lookup(&MAIN_CTX->CFG, CF_ACC_TOKEN_SHM)) == NULL) {
+		fprintf(stderr, "TODO| cant find .cfg(%s)\n", CF_ACC_TOKEN_SHM);
+		return (-1);
+	}
+
+	int access_token_shm_key = config_setting_get_int(setting_acc_token_shm_key);
+
+	return access_token_shm_key;
+}
+
 char *cfg_get_my_ip(main_ctx_t *MAIN_CTX)
 {
 	config_setting_t *setting_svc_nic = NULL;
@@ -13,6 +26,23 @@ char *cfg_get_my_ip(main_ctx_t *MAIN_CTX)
 
 	char temp[1024] = {0,};
 	get_svc_ipv4_addr(nic_name, temp);
+	char *res = strdup(temp);
+
+	return res;
+}
+
+char *cfg_get_mp_nf_type(main_ctx_t *MAIN_CTX)
+{
+	config_setting_t *setting_mp_sys_type = NULL;
+	if ((setting_mp_sys_type = config_lookup(&MAIN_CTX->CFG, CF_MP_SYS_TYPE)) == NULL) {
+		APPLOG(APPLOG_ERR, "TODO| cant find .cfg (%s)", CF_MP_SYS_TYPE);
+		return strdup("unknown");
+	}
+
+	const char *mp_nf_type = config_setting_get_string(setting_mp_sys_type);
+
+	char temp[1024] = {0,};
+	sprintf(temp, "%s", mp_nf_type);
 	char *res = strdup(temp);
 
 	return res;
@@ -260,6 +290,76 @@ void log_all_cfg_retrieve_list(main_ctx_t *MAIN_CTX)
 void log_all_cfg_subscribe_list(main_ctx_t *MAIN_CTX)
 {
 	g_slist_foreach(MAIN_CTX->nf_retrieve_list, (GFunc)log_cfg_subscribe_list, NULL);
+}
+
+int load_access_token_cfg(main_ctx_t *MAIN_CTX)
+{
+	config_setting_t *setting = config_lookup(&MAIN_CTX->CFG, CF_ACC_TOKEN_LIST);
+
+	if (setting == NULL) {
+		APPLOG(APPLOG_ERR, "{{{DBG}}} %s fail to find [%s] in .cfg", __func__, CF_ACC_TOKEN_LIST);
+		return -1;
+	}
+
+	int count = config_setting_length(setting);
+
+	for (int i = 0; i < count; i++) {
+		config_setting_t *list = config_setting_get_elem(setting, i);
+
+		int id = 0;
+		const char *acc_type = NULL;
+		const char *nf_type = NULL;
+		const char *nf_instance_id = NULL;
+		const char *scope = NULL;
+
+		if (config_setting_lookup_int (list, "id", &id) == CONFIG_FALSE) {
+			APPLOG(APPLOG_ERR, "{{{CFG}}} acc token list, index(%2d) id NULL!", i);
+			continue;
+		} else if (id < 1 || id >= MAX_ACC_TOKEN_NUM) {
+			APPLOG(APPLOG_ERR, "{{{CFG}}} acc token list, index(%2d) id(%d) invalid!", i, id);
+			continue;
+		}
+		if (config_setting_lookup_string (list, "acc_type", &acc_type) == CONFIG_FALSE) {
+			APPLOG(APPLOG_ERR, "{{{CFG}}} acc token list, index(%2d) acc_type NULL!", i);
+			continue;
+		} else if (strcmp(acc_type, "SVC") && strcmp(acc_type, "INST")) {
+			APPLOG(APPLOG_ERR, "{{{CFG}}} acc token list, index(%2d) acc_type(%s) invalid!", i, acc_type);
+			continue;
+		}
+		if (config_setting_lookup_string (list, "nf_type", &nf_type) == CONFIG_FALSE) {
+			APPLOG(APPLOG_ERR, "{{{CFG}}} acc token list, index(%2d) nf_type NULL!", i);
+			continue;
+		}
+		if (config_setting_lookup_string (list, "nf_instance_id", &nf_instance_id) == CONFIG_FALSE) {
+			APPLOG(APPLOG_ERR, "{{{CFG}}} acc token list, index(%2d) nf_instance_id NULL!", i);
+			continue;
+		}
+		if (config_setting_lookup_string (list, "scope", &scope) == CONFIG_FALSE) {
+			APPLOG(APPLOG_ERR, "{{{CFG}}} acc token list, index(%2d) scope NULL!", i);
+			continue;
+		}
+
+		acc_token_info_t *token_info = get_acc_token_info(MAIN_CTX->nrf_access_token.ACC_TOKEN_LIST, id, 0);
+		if (token_info == NULL) {
+			APPLOG(APPLOG_ERR, "{{{CFG}}} acc token list, fail to get empty index!");
+			continue;
+		}
+
+		token_info->token_id = id;
+		token_info->acc_type =!strcmp(acc_type, "SVC") ? AT_SVC : AT_INST;
+		sprintf(token_info->nf_type, "%s", nf_type);
+		sprintf(token_info->nf_instance_id, "%s", nf_instance_id);
+		sprintf(token_info->scope, "%s", scope);
+		token_info->status = TA_INIT;
+		token_info->operator_added = 1;
+		memset(&(token_info->due_date), 0x00, sizeof(time_t));
+	}
+
+	char respBuff[MAX_MML_RESULT_LEN] = {0,};
+	print_token_info_raw(MAIN_CTX->nrf_access_token.ACC_TOKEN_LIST, respBuff);
+	APPLOG(APPLOG_ERR, "NOW TOKEN SHM IS >>>\n%s", respBuff);
+
+	return count;
 }
 
 int load_cfg_retrieve_list(main_ctx_t *MAIN_CTX)

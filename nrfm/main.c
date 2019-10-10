@@ -1,8 +1,11 @@
 #include <nrfm.h>
 
 main_ctx_t MAIN_CTX;
+
 int logLevel = APPLOG_DEBUG;
 int *lOG_FLAG = &logLevel;
+
+int ixpcQid; // for MML CMD
 
 int get_my_profile(main_ctx_t *MAIN_CTX)
 {
@@ -76,6 +79,17 @@ int get_my_qid(main_ctx_t *MAIN_CTX)
         return -1;
     }
     
+	/* create ixpc qid for mml */
+	sprintf(fname,"%s/%s", getenv(IV_HOME), SYSCONF_FILE);
+	if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", "IXPC", 3, tmp) < 0) {
+		APPLOG(APPLOG_ERR, "{{{INIT}}} configlib get token APPLICATIONS [IXPC] fail!");
+		return -1;
+	}
+	key = strtol(tmp,0,0);
+	if ((ixpcQid = msgget(key,IPC_CREAT|0666)) < 0) {
+		APPLOG(APPLOG_ERR, "{{{INIT}}} [%s] msgget fail; key=0x%x,err=%d(%s)!", __func__, key, errno, strerror(errno));
+		return -1;
+	}
 
 	return 0;
 }
@@ -134,6 +148,8 @@ void httpc_response_handle(AhifHttpCSMsgType *ahifPkt)
 			return;
 		case MTYPE_NRFM_SUBSCR_PATCH_RESPONSE:
 			nf_subscribe_patch_handle_resp_proc(ahifPkt);
+		case MTYPE_NRFM_TOKEN_RESPONSE:
+			nf_token_acquire_handlde_resp_proc(ahifPkt);
 			return;
 		default:
 			return;
@@ -198,6 +214,12 @@ int initialize(main_ctx_t *MAIN_CTX)
 		return -1;
 	}
 
+	/* create access token shm & load operator added config / remove auto added config */
+	if (load_access_token_shm(MAIN_CTX) < 0) {
+		APPLOG(APPLOG_ERR, "{{{INIT}}} fail to load access token shm, proc down");
+		return -1;
+	}
+
 	/* load fep assoc list */
     if ((MAIN_CTX->fep_assoc_list = get_associate_node(MAIN_CTX->fep_assoc_list, "FEP")) == NULL) {
         APPLOG(APPLOG_ERR, "{{{INIT}}} fail to get associate_fep, proc down");
@@ -227,15 +249,66 @@ int initialize(main_ctx_t *MAIN_CTX)
 	return 0;
 }
 
+void INITIAL_PROCESS(main_ctx_t *MAIN_CTX)
+{
+	if (MAIN_CTX->init_regi_success != 0) {
+		return;
+	} else {
+		/* only once */
+		MAIN_CTX->init_regi_success = 1;
+
+		/* retrieve process */
+		nf_retrieve_start_process(MAIN_CTX);
+
+		/* subscribe process */
+		nf_subscribe_start_process(MAIN_CTX);
+
+		/* start token acquire */
+		nf_token_start_process(MAIN_CTX);
+	}
+}
+
+int load_access_token_shm(main_ctx_t *MAIN_CTX)
+{
+	if ((MAIN_CTX->nrf_access_token.acc_token_shm_key = cfg_get_access_token_shm_key(MAIN_CTX)) < 0) {
+		APPLOG(APPLOG_ERR, "{{{INIT}}} fail to get access token shm key, proc down");
+		return -1;
+	}
+
+	if ((MAIN_CTX->nrf_access_token.acc_token_shm_id = 
+				shmget((size_t)MAIN_CTX->nrf_access_token.acc_token_shm_key, SHM_ACC_TOKEN_TABLE_SIZE, IPC_CREAT|0666)) < 0) {
+		APPLOG(APPLOG_ERR, "{{{INIT}}} fail to create access token shm id, proc down");
+		return -1;
+	}
+	
+	if ((MAIN_CTX->nrf_access_token.ACC_TOKEN_LIST = 
+				(acc_token_shm_t *)shmat(MAIN_CTX->nrf_access_token.acc_token_shm_id, NULL, 0)) == (acc_token_shm_t *)-1) {
+		APPLOG(APPLOG_ERR, "{{{INIT}}} fail to attach access token shared memory, proc down");
+		return -1;
+	}
+
+	/* initialize to 0x00 */
+	memset(MAIN_CTX->nrf_access_token.ACC_TOKEN_LIST, 0x00, sizeof(acc_token_shm_t));
+	
+	if (load_access_token_cfg(MAIN_CTX) < 0) {
+		APPLOG(APPLOG_ERR, "{{{INIT}}} fail to load access token (operator added) .cfg, proc down");
+		return -1;
+	}
+
+	return 0;
+}
+
 int main()
 {
 	if (initialize(&MAIN_CTX) < 0) {
 		APPLOG(APPLOG_ERR, "{{{INIT}}} fail to initialize, proc down");
 		return -1;
 	} else {
-		APPLOG(APPLOG_ERR, "{{{INIT}}} succ to initialize, proc up");
+		APPLOG(APPLOG_ERR, "Welcome ===============================================================================");
+		NF_MANAGE_NF_CLEAR(&MAIN_CTX); // httpc restoration
 		sleep(1);
 	}
+
 
 	start_loop(&MAIN_CTX);
 }
@@ -256,19 +329,29 @@ void message_handle(evutil_socket_t fd, short what, void *arg)
 	/* handle all pending msgs */
 	while (msgrcv(MAIN_CTX.my_qid.nrfm_qid, msg, sizeof(GeneralQMsgType), 0, IPC_NOWAIT) >= 0) {
 		switch (msg->mtype) {
+			/* OMP MML */
+			case MTYPE_MMC_REQUEST:
+				mml_function((IxpcQMsgType *)msg->body);
+				continue;
 			/* FEP conn status from https */
 			case MSGID_HTTPS_NRFM_FEP_ALIVE_NOTI:
 				https_save_recv_fep_status(&MAIN_CTX);
 				continue;
 			/* NRFM request result from httpc */
 			case MSGID_HTTPC_NRFM_RESPONSE:
-				APPLOG(APPLOG_ERR, "%s() receive HTTPC Response", __func__);
 				httpc_response_handle(ahifPkt);
 				continue;
-			/* HTTPS requst to NRFM (notify) */
+			/* HTTPS notify to NRFM */
 			case MSGID_HTTPS_NRFM_REQUEST:
-				APPLOG(APPLOG_ERR, "%s() receive HTTPS Request", __func__);
 				https_request_handle(ahifPkt);
+				continue;
+			/* NRFM cmd res from httpc */
+			case MSGID_HTTPC_NRFM_MMC_RESPONSE:
+				nf_manage_handle_cmd_res((nrfm_mml_t *)msg->body);
+				continue;
+			/* check HTTPC restart */
+			case MSGID_HTTPC_NRFM_IMALIVE_NOTI:
+				nf_manage_handle_httpc_alive((nrfm_noti_t *)msg->body);
 				continue;
 			default:
 				APPLOG(APPLOG_ERR, "%s() receive unknown msg (mtype:%ld)", __func__, (long)msg->mtype);

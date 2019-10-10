@@ -42,6 +42,8 @@
 #include <libreq.h>
 /* for lb */
 #include <lbengine.h>
+/* for nrfm shm (access token) */
+#include <nrf_comm.h>
 
 #ifdef OVLD_API /* nssf ovld ctrl */
 #include <api_noverload.h>
@@ -70,6 +72,8 @@ typedef struct client_conf {
 	int http_opt_header_table_size;
 	int prepare_close_stream_limit;
 	nghttp2_option *nghttp2_option;
+
+	acc_token_shm_t *ACC_TOKEN_LIST; // access token shared memory (from NRFM)
 } client_conf_t;
 
 typedef struct thrd_context {
@@ -89,79 +93,6 @@ typedef enum loadshare_mode {
 	LSMODE_RR = 0,		// round robin
 	LSMODE_LS			// least send
 } loadshare_mode_t;
-
-#ifdef OAUTH		/* OAuth define from here */
-typedef struct nrf_worker {
-	pthread_t thrd_id;
-	struct event_base *evbase;
-} nrf_worker_t;
-
-#define CONTENT_TYPE_OAUTH_REQ "application/x-www-form-urlencoded"
-
-#define HBODY_ACCESS_TOKEN_REQ_FOR_TYPE "\
-grant_type=client_credentials&\
-nfInstanceId=%s&\
-nfType=%s&\
-targetNfType=%s&\
-scope=%s"
-
-#define HBODY_ACCESS_TOKEN_REQ_FOR_INSTANCE "\
-grant_type=client_credentials&\
-nfInstanceId=%s&\
-nfType=%s&\
-targetNfType=%s&\
-scope=%s&\
-targetNfInstanceId=%s"
-
-typedef enum nrf_acc_type {
-	AT_SVC = 0,			// token for SVC
-	AT_INST				// token for specific {Instance}
-} nrf_acc_type_t;
-
-typedef enum token_acuire_status {
-	TA_INIT = 0,		// not any action
-	TA_FAILED,			// requested but failed
-	TA_TRYING,			// trying to get token
-	TA_ACCUIRED			// token accuired
-} token_acuire_status_t;
-
-#define MAX_NRF_TYPE_LEN	24
-#define MAX_NRF_INST_LEN	24
-#define MAX_NRF_SCOPE_LEN	256
-//#define MAX_ACC_TOKEN_NUM	128
-//#define MAX_ACC_TOKEN_LEN	1024
-typedef struct acc_token_list {
-	/* used */
-	int occupied;
-
-	/* table view */
-	int token_id;
-	char nrf_addr[INET6_ADDRSTRLEN + 12];
-	int acc_type;
-	char nf_type[MAX_NRF_TYPE_LEN];
-	char nf_instance_id[MAX_NRF_INST_LEN];
-	char scope[MAX_NRF_SCOPE_LEN];
-	int status;
-	time_t due_date;
-
-	/* internal use */
-	int inet_type;
-	struct sockaddr_in sa;
-	struct sockaddr_in6 sa6;
-	int port;
-
-	int token_pos;
-	char access_token[2][MAX_ACC_TOKEN_LEN];
-	time_t last_request_time;
-} acc_token_list_t;
-
-
-typedef struct access_token_res {
-	char *access_token;
-	char *token_type;
-	int expire_in;
-} access_token_res_t;
-#endif		/* OAuth define to here */
 
 typedef struct conn_list {
 	int index;	// 0, 1, 2, 3, ....
@@ -183,8 +114,9 @@ typedef struct conn_list {
 	int session_id;
 
 	int token_id;
-
 	int reconn_candidate;				// stream_id is full, trigger reconnect
+
+	int nrfm_auto_added;				// this conn list added by nrfm 
 } conn_list_t;
 
 typedef enum conn_status {
@@ -346,10 +278,6 @@ void    write_list(conn_list_status_t CONN_STATUS[], char *buff);
 void    gather_list(conn_list_status_t CONN_STATUS[]);
 void    prepare_order(int list_index);
 void    order_list();
-#ifdef OAUTH
-acc_token_list_t *get_token_list(int id, int used);
-void print_token_list_raw(acc_token_list_t input_token_list[]);
-#endif
 void    log_pkt_send(char *prefix, nghttp2_nv *hdrs, int hdrs_len, char *body, int body_len);
 void    log_pkt_head_recv(httpc_ctx_t *httpc_ctx, const uint8_t *name, size_t namelen, const uint8_t *value, size_t valuelen);
 void    log_pkt_end_stream(int stream_id, httpc_ctx_t *httpc_ctx);
@@ -377,7 +305,15 @@ int     main(int argc, char **argv);
 
 /* ------------------------- command.c --------------------------- */
 void    handle_nrfm_request(GeneralQMsgType *msg);
+void    handle_nrfm_mmc(nrfm_mml_t *nrfm_cmd);
+void    nrfm_mmc_res_log();
+void    nrfm_mmc_send_resp(nrfm_mml_t *nrfm_cmd_req);
+void    nrfm_mmc_add_proc(nrfm_mml_t *nrfm_cmd);
+void    nrfm_mmc_act_dact_proc(nrfm_mml_t *nrfm_cmd, int act);
+void    nrfm_mmc_del_proc(nrfm_mml_t *nrfm_cmd);
+void    nrfm_mmc_clear_proc();
 int     set_nrfm_response_msg(int ahif_msg_type) ;
+void    adjust_loglevel(TrcLibSetPrintMsgType *trcMsg);
 void    message_handle(evutil_socket_t fd, short what, void *arg);
 void    mml_function(IxpcQMsgType *rxIxpcMsg);
 int     func_dis_http_server(IxpcQMsgType *rxIxpcMsg);
@@ -389,20 +325,10 @@ int     func_chg_http_server_act(IxpcQMsgType *rxIxpcMsg, int change_to_act);
 int     func_chg_http_server(IxpcQMsgType *rxIxpcMsg);
 int     func_del_http_svr_ip(IxpcQMsgType *rxIxpcMsg);
 int     func_del_http_server(IxpcQMsgType *rxIxpcMsg);
-int		func_dis_http_svr_ping(IxpcQMsgType *rxIxpcMsg);
-int		func_chg_http_svr_ping(IxpcQMsgType *rxIxpcMsg);
+int     func_dis_http_svr_ping(IxpcQMsgType *rxIxpcMsg);
+int     func_chg_http_svr_ping(IxpcQMsgType *rxIxpcMsg);
 
 
-/* ------------------------- nrf.c --------------------------- */
-#ifdef OAUTH
-void    print_oauth_response(access_token_res_t *response);
-void    parse_oauth_response(char *body, access_token_res_t *response);
-void    accuire_token(acc_token_list_t *token_list);
-void    chk_and_accuire_token(acc_token_list_t *token_list);
-void    nrf_get_token_cb(evutil_socket_t fd, short what, void *arg);
-void    *nrf_access_thread(void *arg);
-char    *get_access_token(int token_id);
-#endif
 
 /* ------------------------- lb.c --------------------------- */
 httpc_ctx_t     *get_null_recv_ctx(tcp_ctx_t *tcp_ctx);
@@ -455,3 +381,32 @@ void    set_refresh_select_node(GNode *root_node);
 void    init_refresh_select_node(lb_ctx_t *lb_ctx);
 void    once_refresh_select_node(GNode *root_node);
 void    trig_refresh_select_node(lb_ctx_t *lb_ctx);
+
+
+/* ------------------------- main.c --------------------------- */
+void    delete_http2_session_data(http2_session_data_t *session_data) ;
+void    ping_latency_alarm(http2_session_data_t *session_data, struct timeval *send_tm, struct timeval *recv_tm);
+void    send_response_to_nrfm(httpc_ctx_t *httpc_ctx);
+int     set_keylog_file(SSL_CTX *ctx, const char *keylog_file);
+int     send_request(http2_session_data_t *session_data, int thrd_index, int ctx_id);
+void    thrd_tick_callback(evutil_socket_t fd, short what, void *arg);
+void    chk_tmout_callback(evutil_socket_t fd, short what, void *arg);
+void    send_ping_callback(evutil_socket_t fd, short what, void *arg);
+void    pub_conn_callback(evutil_socket_t fd, short what, void *arg);
+void    send_status_to_omp(evutil_socket_t fd, short what, void *arg);
+conn_list_t     *check_sess_group_prepair_reconn(conn_list_t *conn_list);
+void    inspect_stream_id(int stream_id, http2_session_data_t *session_data);
+void    recv_msgq_callback(evutil_socket_t fd, short what, void *arg);
+void    *workerThread(void *arg);
+void    create_httpc_worker();
+void    conn_func(evutil_socket_t fd, short what, void *arg);
+void    candidate_session_del(evutil_socket_t fd, short what, void *arg);
+void    check_thread();
+void    monitor_worker();
+void    main_tick_callback(evutil_socket_t fd, short what, void *arg);
+void    send_nrfm_notify(evutil_socket_t fd, short what, void *arg);
+void    main_loop();
+int     set_http2_option(client_conf_t *CLIENT_CONF);
+int     get_acc_token_shm(client_conf_t *CLIENT_CONF);
+int     initialize();
+int     main(int argc, char **argv);

@@ -89,8 +89,6 @@ void get_svc_ipv4_addr(const char *nic_name, char *nic_addr)
 
 void handle_ctx_timeout(evutil_socket_t fd, short what, void *arg)
 {
-	APPLOG(APPLOG_ERR, "{{{DBG}}} %s called\n", __func__);
-
 	timeout_arg_t *timer = arg;
 
 	if (timer->ev_timeout != NULL) {
@@ -101,29 +99,36 @@ void handle_ctx_timeout(evutil_socket_t fd, short what, void *arg)
 	switch (timer->type) {
 		// re try to another NRF
 		case NF_CTX_TYPE_REGI:
-			APPLOG(APPLOG_ERR, "{{{TODO!!!}}} nf register ctx timed out!\n");
+			APPLOG(APPLOG_ERR, "{{{DBG}}} %s nf register ctx timed out!", __func__);
 			nf_regi_init_proc(&MAIN_CTX);
 			break;
 		case NF_CTX_TYPE_HEARTBEAT:
-			APPLOG(APPLOG_ERR, "{{{TODO!!!}}} nf heartbeat ctx timed out!\n");
+			APPLOG(APPLOG_ERR, "{{{DBG}}} %s nf heartbeat ctx timed out!", __func__);
 			break;
 		case NF_CTX_TYPE_RETRIEVE_LIST:
-			APPLOG(APPLOG_ERR, "{{{TODO!!!}}} nf retrieve(list) ctx timed out!\n");
+			APPLOG(APPLOG_ERR, "{{{DBG}}} %s nf retrieve(list) ctx timed out!", __func__);
 			nf_retrieve_list_handle_timeout(timer->my_ctx);
 			break;
 		case NF_CTX_TYPE_RETRIEVE_PROFILE:
-			APPLOG(APPLOG_ERR, "{{{TODO!!!}}} nf retrieve(profile) ctx timed out!\n");
+			APPLOG(APPLOG_ERR, "{{{DBG}}} %s nf retrieve(profile) ctx timed out!", __func__);
 			nf_retrieve_item_handle_timeout(timer->my_ctx);
 			break;
 		case NF_CTX_TYPE_SUBSCRIBE:
-			APPLOG(APPLOG_ERR, "{{{TODO!!!}}} nf subscribe ctx timed out!\n");
+			APPLOG(APPLOG_ERR, "{{{DBG}}} %s nf subscribe ctx timed out!", __func__);
 			nf_subscribe_nf_type_handle_timeout(timer->my_ctx);
 			break;
 		case NF_CTX_TYPE_SUBSCR_PATCH:
-			APPLOG(APPLOG_ERR, "{{{TODO!!!}}} nf subscribe ctx timed out!\n");
+			APPLOG(APPLOG_ERR, "{{{DBG}}} %s nf subscribe ctx timed out!", __func__);
+			break;
+		case NF_CTX_TYPE_ACQUIRE_TOKEN:
+			APPLOG(APPLOG_ERR, "{{{DBG}}} %s nf acuire token ctx timed out!", __func__);
+			nf_token_acquire_token_handle_timeout(&MAIN_CTX, timer->my_ctx);
+			break;
+		case NF_CTX_TYPE_HTTPC_CMD:
+			APPLOG(APPLOG_ERR, "{{{DBG}}} %s nf management ctx timed out!", __func__);
 			break;
 		default:
-			APPLOG(APPLOG_ERR, "{{{TODO!!!}}} %s recv unknown type(%d)", __func__, timer->type);
+			APPLOG(APPLOG_ERR, "{{{DBG}}} %s recv unknown type(%d)", __func__, timer->type);
 			break;
 	}
 }
