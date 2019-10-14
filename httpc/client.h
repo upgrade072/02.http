@@ -43,7 +43,7 @@
 /* for lb */
 #include <lbengine.h>
 /* for nrfm shm (access token) */
-#include <nrf_comm.h>
+#include <libnrf.h>
 
 #ifdef OVLD_API /* nssf ovld ctrl */
 #include <api_noverload.h>

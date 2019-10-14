@@ -237,7 +237,36 @@ int initialize(main_ctx_t *MAIN_CTX)
         return -1;
 	}
 
+	/* create nfs avail shared memory */
+	if (create_nfs_avail_shm(MAIN_CTX) < 0) {
+        APPLOG(APPLOG_ERR, "{{{INIT}}} fail to create nfs avail shared mem, proc down");
+        return -1;
+	}
+
     return 0;
+}
+
+int create_nfs_avail_shm(main_ctx_t *MAIN_CTX)
+{
+	char fname[1024] = {0,};
+    sprintf(fname,"%s/%s", getenv(IV_HOME), SYSCONF_FILE);
+
+	char tmp[1024] = {0,};
+    if (conflib_getNthTokenInFileSection (fname, "SHARED_MEMORY_KEY", "SHM_NFS_CONN", 1, tmp) < 0 )
+        return -1;
+    int nfs_shm_key = strtol(tmp,(char**)0,0);
+
+	int nfs_shm_id = 0;
+    if ((nfs_shm_id = (int)shmget (nfs_shm_key, sizeof(nfs_avail_shm_t), 0644|IPC_CREAT)) < 0) {
+        APPLOG(APPLOG_ERR,"[%s] SHM_NFS_CONN shmget fail; err=%d(%s)", __func__, errno, strerror(errno));
+        return -1;
+    }
+    if ((void*)(MAIN_CTX->SHM_NFS_AVAIL = (nfs_avail_shm_t *)shmat(nfs_shm_id,0,0)) == (void*)-1) {
+        APPLOG(APPLOG_ERR,"[%s] SHM_NFS_CONN shmat fail; err=%d(%s)", __func__, errno, strerror(errno));
+        return -1;
+    }
+
+	return 0;
 }
 
 int main()
@@ -334,11 +363,17 @@ void start_loop(main_ctx_t *MAIN_CTX)
 	struct event *ev_send_status = event_new(MAIN_CTX->EVBASE, -1, EV_PERSIST, service_status_broadcast, NULL);
     event_add(ev_send_status, &tic_sec);
 
+    struct event *ev_clear_status = event_new(MAIN_CTX->EVBASE, -1, EV_PERSIST, clear_fep_nfs, NULL);
+    event_add(ev_clear_status, &tic_sec);
+
     /* every 100 ms */
     struct timeval tm_milisec = {0, 100000}; // 100ms
 
     struct event *ev_msgq = event_new(MAIN_CTX->EVBASE, -1, EV_PERSIST, message_handle, NULL);
     event_add(ev_msgq, &tm_milisec);
+
+	struct event *ev_shmq = event_new(MAIN_CTX->EVBASE, -1, EV_PERSIST, shmq_recv_handle, NULL);
+	event_add(ev_shmq, &tm_milisec);
 
 	/* start watching ~/data directory */
 	start_watching_dir(MAIN_CTX->EVBASE);
@@ -348,7 +383,6 @@ void start_loop(main_ctx_t *MAIN_CTX)
 
     event_base_free(MAIN_CTX->EVBASE);
 }
-
 
 void message_handle(evutil_socket_t fd, short what, void *arg)
 {
@@ -368,6 +402,32 @@ void message_handle(evutil_socket_t fd, short what, void *arg)
         APPLOG(APPLOG_ERR,"%s() msgrcv fail; err=%d(%s)", __func__, errno, strerror(errno));
     }
 
+    return;
+}
+
+void shmq_recv_handle(evutil_socket_t fd, short what, void *arg)
+{
+    char msgBuff[1024*64];
+    IsifMsgType *rxIsifMsg = (IsifMsgType *)msgBuff;
+
+    int ret = 0;
+    
+    while ((ret = shmqlib_getMsg(MAIN_CTX.my_qid.isifs_rx_qid, (char *)rxIsifMsg)) > 0) {
+    
+        if (ret > sizeof(IsifMsgType)) {
+            APPLOG(APPLOG_ERR, "%s() receive unknown size(%d) msg!", __func__, ret);
+            continue;
+        }
+
+        switch (rxIsifMsg->head.mtype) {
+            case MTYPE_NRFM_BROAD_STATUS_TO_FEP:
+                isif_save_recv_lb_status(&MAIN_CTX, (nf_service_info *)rxIsifMsg->body);
+                continue;
+            default:
+                APPLOG(APPLOG_ERR, "%s() receive unknown type(%d) msg!", __func__, rxIsifMsg->head.mtype);
+                continue;
+        }
+    }
     return;
 }
 

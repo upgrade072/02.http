@@ -13,7 +13,8 @@ BUILD_LIBS = $(BUILD_LIBS_PATH)/libevent.a \
 			 $(BUILD_LIBS_PATH)/libevent_openssl.a \
 			 $(BUILD_LIBS_PATH)/libevent_pthreads.a \
 			 $(BUILD_LIBS_PATH)/libnghttp2.a \
-			 $(BUILD_LIBS_PATH)/libnrf.a
+			 $(BUILD_LIBS_PATH)/libnrf.a \
+			 $(BUILD_LIBS_PATH)/libs.a 
 
 SRCS		= main.c
 

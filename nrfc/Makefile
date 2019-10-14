@@ -12,7 +12,7 @@ BUILD_LIBS = $(BUILD_LIBS_PATH)/libnrf.a \
 			 $(BUILD_LIBS_PATH)/libjson-c.a \
 			 $(BUILD_LIBS_PATH)/libs.a
 
-SRCS		= main.c config.c isif.c
+SRCS		= main.c config.c isif.c status.c
 
 OBJS		= $(SRCS:.c=.o)
 

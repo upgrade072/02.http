@@ -250,7 +250,7 @@ void shmq_recv_handle(evutil_socket_t fd, short what, void *arg)
 	while ((ret = shmqlib_getMsg(MAIN_CTX.my_qid.isifs_rx_qid, (char *)rxIsifMsg)) > 0) {
 
 		if (ret > sizeof(IsifMsgType)) {
-			APPLOG(APPLOG_ERR, "%s() receive unknown size(%s) msg!", __func__, ret);
+			APPLOG(APPLOG_ERR, "%s() receive unknown size(%d) msg!", __func__, ret);
 			continue;
 		}
 

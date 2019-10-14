@@ -1359,7 +1359,7 @@ void main_loop()
 	event_add(ev_lbctx_print, &lbctx_print_interval);
 
 	/* send to NRFM httpc still alive */
-	struct timeval nrfm_notify_sec = {1, 0};
+	struct timeval nrfm_notify_sec = {0, 300000}; // 300 ms
 	struct event *ev_nrfm_notify;
 	ev_nrfm_notify = event_new(evbase, -1, EV_PERSIST, send_nrfm_notify, NULL);
 	event_add(ev_nrfm_notify, &nrfm_notify_sec);
@@ -1474,6 +1474,16 @@ int initialize()
 	*lOG_FLAG = CLIENT_CONF.log_level;
 	APPLOG(APPLOG_ERR, "\n\n[[[[[ Welcome Process Started ]]]]]");
 
+    if (config_load() < 0) {
+        APPLOG(APPLOG_ERR, "{{{INIT}}} fail to read config file!");
+        return (-1);
+	} else {
+		memset(CONN_STATUS, 0x00, sizeof(CONN_STATUS));
+
+		gather_list(CONN_STATUS);
+		print_list(CONN_STATUS);
+	}
+
 	/* get status shm */
 	if (get_http_shm(CLIENT_CONF.httpc_status_shmkey) < 0) {
 		fprintf(stderr,"{{{INIT}}} sem shm create fail!\n");
@@ -1486,15 +1496,6 @@ int initialize()
 		return (-1);
 	}
 
-    if (config_load() < 0) {
-        APPLOG(APPLOG_ERR, "{{{INIT}}} fail to read config file!");
-        return (-1);
-	} else {
-		memset(CONN_STATUS, 0x00, sizeof(CONN_STATUS));
-
-		gather_list(CONN_STATUS);
-		print_list(CONN_STATUS);
-	}
 
 	for ( i = 0; i < CLIENT_CONF.worker_num; i++) {
 		if ( -1 == (THRD_WORKER[i].msg_id = msgget((key_t)(CLIENT_CONF.worker_shmkey + i), IPC_CREAT | 0666))) {

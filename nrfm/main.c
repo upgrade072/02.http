@@ -6,6 +6,37 @@ int logLevel = APPLOG_DEBUG;
 int *lOG_FLAG = &logLevel;
 
 int ixpcQid; // for MML CMD
+shm_http_t *SHM_HTTP_PTR; // httpc conn status shm
+
+#define HTTPC_CONN_STATUS_KEY "client_cfg.sys_config.httpc_status_shmkey"
+int get_httpc_shm()
+{
+    config_t CFG = {0,};
+
+    // load nrfm.cfg
+    char conf_path[1024] = {0,};
+    sprintf(conf_path, "%s/data/client.cfg", getenv(IV_HOME));
+
+    if (!config_read_file(&CFG, conf_path)) {
+        APPLOG(APPLOG_ERR, "config read fail! (%s|%d - %s)",
+                config_error_file(&CFG),
+                config_error_line(&CFG),
+                config_error_text(&CFG));
+        return (-1);
+    } else {
+        APPLOG(APPLOG_ERR, "TODO| config read from ./client.cfg success!\n");
+    }
+
+    int httpc_shm_key = 0;
+    if (config_lookup_int(&CFG, HTTPC_CONN_STATUS_KEY, &httpc_shm_key) < 0) {
+        fprintf(stderr, "TODO| fail to get (%s) shm key fail!\n", HTTPC_CONN_STATUS_KEY);
+        return (-1);
+    } else {
+		APPLOG(APPLOG_ERR, "{{{FUCK}}} SHM KEY IS [%x]", httpc_shm_key);
+	}
+
+	return get_http_shm(httpc_shm_key);
+}
 
 int get_my_profile(main_ctx_t *MAIN_CTX)
 {
@@ -196,6 +227,12 @@ int initialize(main_ctx_t *MAIN_CTX)
 
 	init_log(MAIN_CTX);
 
+	/* httpc conn status (shm) */
+	if (get_httpc_shm() < 0) {
+		APPLOG(APPLOG_ERR, "{{{INIT}}} fail to get httpc conn shm, proc down");
+		return -1;
+	}
+
 	/* create msgq id(s) */
 	if (get_my_qid(MAIN_CTX) < 0) {
 		APPLOG(APPLOG_ERR, "{{{INIT}}} fail to get qid, proc down");
@@ -309,14 +346,19 @@ int main()
 		sleep(1);
 	}
 
-
 	start_loop(&MAIN_CTX);
 }
 
 void main_tick_callback(evutil_socket_t fd, short what, void *arg)
 {
 	keepalivelib_increase();
-	//APPLOG(APPLOG_ERR, "{{{DBG}}} %s called!", __func__);
+
+	/* for debug */
+#if 0
+	char respBuff[MAX_MML_RESULT_LEN] = {0,};
+	print_token_info_raw(MAIN_CTX.nrf_access_token.ACC_TOKEN_LIST, respBuff);
+	APPLOG(APPLOG_ERR, "NOW TOKEN SHM IS >>>\n%s", respBuff);
+#endif
 }
 
 void message_handle(evutil_socket_t fd, short what, void *arg)
@@ -374,6 +416,8 @@ void start_loop(main_ctx_t *MAIN_CTX)
 	struct timeval tic_sec = {1,0};
 	struct event *ev_tick = event_new(MAIN_CTX->EVBASE, -1, EV_PERSIST, main_tick_callback, NULL);
 	event_add(ev_tick, &tic_sec);
+	struct event *ev_collect_hc_status = event_new(MAIN_CTX->EVBASE, -1, EV_PERSIST, nf_manage_collect_httpc_conn_status_cb, NULL);
+	event_add(ev_collect_hc_status, &tic_sec);
 
 	/* message handle */
 	struct timeval tm_milisec = {0, 100000}; // 100ms

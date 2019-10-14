@@ -128,8 +128,8 @@ typedef struct conn_list_status {
 	int occupied;
 
 	/* for OAuth 2.0 */
-	char access_token[512];
 	int token_id;
+	int token_acquired;
 	int nrfm_auto_added;
 } conn_list_status_t;
 
@@ -179,6 +179,7 @@ typedef struct shm_http {
 /* ------------------------- libshm.c --------------------------- */
 int     get_http_shm(int httpc_status_shmkey);
 void    set_httpc_status(conn_list_status_t conn_status[]);
+void    print_httpc_status();
 
 /* ------------------------- libvhdr.c --------------------------- */
 int     set_relay_vhdr(hdr_index_t hdr_index[], int array_size);

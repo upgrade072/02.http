@@ -1,4 +1,4 @@
-#include "nrf_comm.h"
+#include "libnrf.h"
 
 void def_sigaction()
 {
@@ -49,6 +49,25 @@ GSList *get_associate_node(GSList *node_assoc_list, const char *type_str)
 	return new_assoc;
 }
 
+int get_sys_label_num()
+{
+    char fname[1024] = {0,};
+	char label[1024] = {0,};
+
+    sprintf(fname, "%s/%s", getenv(IV_HOME), SYSCONF_FILE);
+    conflib_getNthTokenInFileSection (fname, "GENERAL", "SYSTEM_LABEL", 1, label);
+
+	char buff[1024] = {0,};
+	int pos = 0;
+	for (int i = 0; i < strlen(label); i++) {
+		if (isdigit(label[i])) 
+			buff[pos++] = label[i];
+	}
+	buff[pos] = '\0';
+
+	return atoi(buff);
+}
+
 void get_my_info(svr_info_t *my_info, const char *my_proc_name)
 {
     char fname[1024] = {0,};
@@ -65,6 +84,8 @@ void get_my_info(svr_info_t *my_info, const char *my_proc_name)
             my_info->myProcName,
             my_info->mySysType,
             my_info->mySvrId);
+
+	my_info->myLabelNum = get_sys_label_num();
 }
 
 void node_assoc_release(assoc_t *node_elem)
@@ -192,12 +213,16 @@ char *get_access_token(acc_token_shm_t *ACC_TOKEN_LIST, int token_id)
     return token_info->access_token[pos];
 } 
 
-void print_token_info_raw(acc_token_shm_t *ACC_TOKEN_LIST, char *resBuf)
+void print_token_info_raw(acc_token_shm_t *ACC_TOKEN_LIST, char *respBuff)
 {
-    sprintf(resBuf + strlen(resBuf), "INDEX   ID TYPE  NFTYPE  NF_INSTANCE_ID                             SCOPE                            TOKEN_STATUS REQUEST_TIME          VALIDATE_TIME         TOKEN_INFO ACCESS_TOKEN\n");
-    sprintf(resBuf + strlen(resBuf), "------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------\n");
+	ft_table_t *table = ft_create_table();
 
-    for (int i = 1; i < MAX_ACC_TOKEN_NUM; i++) {
+	ft_set_cell_prop(table, 0, FT_ANY_COLUMN, FT_CPROP_ROW_TYPE, FT_ROW_HEADER);
+	ft_set_border_style(table, FT_BASIC2_STYLE);
+	ft_write_ln(table, "index", "id", "nfInstanceId\nnfType\ntokenType",
+			"scope", "add_type\ntoken_status\nrequest_time\nresonse_time", "access_token");
+
+	for (int i = 1; i < MAX_ACC_TOKEN_NUM; i++) {
         acc_token_info_t *token_info = get_acc_token_info(ACC_TOKEN_LIST, i, 1);
         if (token_info == NULL) {
             continue;
@@ -206,40 +231,134 @@ void print_token_info_raw(acc_token_shm_t *ACC_TOKEN_LIST, char *resBuf)
             char validate_time[128] = {0,};
             sprintf(request_time, "%.19s", ctime(&token_info->last_request_time));
             sprintf(validate_time, "%.19s", ctime(&token_info->due_date));
-            sprintf(resBuf + strlen(resBuf), "%4d] %4d %-5s   %-5s [%-40s] [%-30s] [%10s] [%.19s] [%.19s] [%8s] [%s]\n",
-            i,
-            token_info->token_id,
-            (token_info->acc_type == AT_SVC) ? "SVC" : "INST",
-            strlen(token_info->nf_type) ? token_info->nf_type : "-",
-            token_info->nf_instance_id,
-            strlen(token_info->scope) ? token_info->scope : "-",
-            (token_info->status == TA_INIT) ? "INIT" :
-            (token_info->status == TA_FAILED) ? "FAILED" :
-            (token_info->status == TA_TRYING) ? "TRYING" : "ACCUIRED",
-            request_time,
-            validate_time,
-            (token_info->operator_added) ? "OPER_ADD" : "AUTO_ADD",
-            (token_info->status == TA_ACQUIRED) ? token_info->access_token[token_info->token_pos] : "-");
-        }
-    }
-    sprintf(resBuf + strlen(resBuf), "------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------\n");
+
+			char *token_str = token_info->access_token[token_info->token_pos];
+			char token_data[1024] = {0,};
+
+			for (int k = 0, pos = 0; k < strlen(token_str); k++) {
+				token_data[pos++] = token_str[k];
+				if (pos % 42 == 0)
+					token_data[pos++] = '\n';
+			}
+
+			ft_printf_ln(table, "%d|%d|%s\n%s\n%s|%s|%s\n%s\n%s\n%s|%s",
+					i,
+					token_info->token_id,
+					token_info->nf_instance_id,
+					strlen(token_info->nf_type) ? token_info->nf_type : "-",
+					(token_info->acc_type == AT_SVC) ? "for Service" : "for Instance",
+					strlen(token_info->scope) ? token_info->scope : "-",
+					(token_info->operator_added) ? "OPER ADD" : "AUTO ADD",
+					(token_info->status == TA_INIT) ? "INIT" :
+					(token_info->status == TA_FAILED) ? "FAILED" :
+					(token_info->status == TA_TRYING) ? "TRYING" : "ACQUIRED",
+					request_time,
+					validate_time,
+					(token_info->status == TA_ACQUIRED) ? token_data: "-");
+		}
+	}
+
+	sprintf(respBuff, "%s", ft_to_string(table));
+	ft_destroy_table(table);
 }
 
 
 void print_nrfm_mml_raw(nrfm_mml_t *httpc_cmd)
 {
-    APPLOG(APPLOG_ERR, "nrfm_mml_t ===================================================================================");
-    APPLOG(APPLOG_ERR, "command[%d] host[%s] type[%s] info_cnt[%d]",
-            httpc_cmd->command, httpc_cmd->host, httpc_cmd->type, httpc_cmd->info_cnt);
+	ft_table_t *table_c = ft_create_table();
+	ft_set_border_style(table_c, FT_EMPTY_STYLE);
+	ft_set_cell_prop(table_c, 0, FT_ANY_COLUMN, FT_CPROP_ROW_TYPE, FT_ROW_HEADER);
+	ft_write_ln(table_c, "occupied", "scheme", "ip", "port", "cnt");
     for (int i = 0; i < httpc_cmd->info_cnt; i++) {
-        APPLOG(APPLOG_ERR, "occupied[%d] scheme[%s] ip[%s] port[%d] cnt[%d]",
+		if (!httpc_cmd->nf_conns[i].occupied)
+			continue;
+		ft_printf_ln(table_c, "%d|%s|%s|%d|%d",
                 httpc_cmd->nf_conns[i].occupied,
                 httpc_cmd->nf_conns[i].scheme,
                 httpc_cmd->nf_conns[i].ip,
                 httpc_cmd->nf_conns[i].port,
                 httpc_cmd->nf_conns[i].cnt);
     }
-    APPLOG(APPLOG_ERR, "===========================================================================================end");
+
+	ft_table_t *table_m = ft_create_table();
+	ft_set_border_style(table_m, FT_PLAIN_STYLE);
+	ft_set_cell_prop(table_m, 0, FT_ANY_COLUMN, FT_CPROP_ROW_TYPE, FT_ROW_HEADER);
+	ft_write_ln(table_m, "command", "host", "type", "info_cnt", "items");
+	ft_printf_ln(table_m, "%s|%s|%s|%d|%s", 
+			get_nrfm_cmd_str(httpc_cmd->command),
+			httpc_cmd->host,
+			httpc_cmd->type,
+			httpc_cmd->info_cnt,
+			ft_to_string(table_c));
+	APPLOG(APPLOG_ERR, "\n%s", ft_to_string(table_m));
+	ft_destroy_table(table_c);
+	ft_destroy_table(table_m);
+}
+
+void getTypeSpecStr(nf_service_info *nf_info, char *resBuf)
+{
+	if (nf_info->nfType == NF_TYPE_UDM) {
+		nf_udm_info *udmInfo = &nf_info->nfTypeInfo.udmInfo;
+		sprintf(resBuf + strlen(resBuf), "%s\n", udmInfo->groupId);
+		for (int i = 0; i < udmInfo->supiRangesNum; i++) {
+			sprintf(resBuf + strlen(resBuf), "%s ~ %s\n", 
+					udmInfo->supiRanges[i].start,
+					udmInfo->supiRanges[i].end);
+		}
+		for (int i = 0; i < udmInfo->routingIndicatorsNum; i++) {
+			sprintf(resBuf + strlen(resBuf), "%s ",
+				   udmInfo->routingIndicators[i]);
+		}
+	}
+}
+
+void getAllowdPlmns(nf_service_info *nf_info, char *resBuf)
+{
+	for (int k = 0; k < nf_info->allowdPlmnsNum; k++) {
+		nf_comm_plmn *plmns = &nf_info->allowdPlmns[k];
+		sprintf(resBuf + strlen(resBuf),
+				"%s%s%s", 
+				plmns->mcc, plmns->mnc, k == (nf_info->allowdPlmnsNum - 1) ? "" : "\n");
+	}
+}
+
+void printf_avail_nfs(nf_list_pkt_t *avail_nfs)
+{
+	ft_table_t *table = ft_create_table();
+
+	ft_set_cell_prop(table, 0, FT_ANY_COLUMN, FT_CPROP_ROW_TYPE, FT_ROW_HEADER);
+	ft_set_border_style(table, FT_BASIC2_STYLE);
+	ft_write_ln(table, "index", "type", "service", "allowedPlmns\n(mcc+mnc)", "typeInfo", "hostname", "scheme", "ipv4", "port", "priority", "auto", "lb_id");
+
+    for (int i = 0, index = 1; i < avail_nfs->nf_avail_num; i++) {
+        nf_service_info *nf_info = &avail_nfs->nf_avail[i];
+        if (nf_info->occupied <= 0)
+            continue;
+
+		/* allowd plmns */
+		char allowdPlmnsStr[1024] = {0,};
+		getAllowdPlmns(nf_info, allowdPlmnsStr);
+
+		/* nf-type specific info */
+		char typeSpecStr[1024 * 12] = {0,};
+		getTypeSpecStr(nf_info, typeSpecStr);
+
+        ft_printf_ln(table, "%d|%s|%s|%s|%s|%s|%s|%s|%d|%d|%s|%d",
+				index++,
+                nf_info->type,
+                strlen(nf_info->serviceName) ? nf_info->serviceName : "ANY", 
+				strlen(allowdPlmnsStr) ? allowdPlmnsStr : "ANY",
+				strlen(typeSpecStr) ? typeSpecStr : "ANY",
+                nf_info->hostname,
+                nf_info->scheme,
+                nf_info->ipv4Address,
+                nf_info->port,
+                nf_info->priority,
+				nf_info->auto_add ? "O" : "X",
+				nf_info->lbId);
+    }
+	APPLOG(APPLOG_ERR, "\n%s", ft_to_string(table));
+	ft_destroy_table(table);
 }
 
 char *get_nrfm_cmd_str(int cmd)

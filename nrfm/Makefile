@@ -9,9 +9,10 @@ BUILD_LIBS = $(BUILD_LIBS_PATH)/libnrf.a \
 			 $(BUILD_LIBS_PATH)/libglib-2.0.a \
 			 $(BUILD_LIBS_PATH)/libconfig.a \
 			 $(BUILD_LIBS_PATH)/libjson-c.a \
-			 $(BUILD_LIBS_PATH)/libs.a
+			 $(BUILD_LIBS_PATH)/libs.a \
+			 $(BUILD_LIBS_PATH)/libhttp.a
 
-SRCS		= main.c config.c regi.c heartbeat.c retrieve.c subscribe.c notify.c token.c manage.c command.c util.c
+SRCS		= main.c config.c regi.c heartbeat.c retrieve.c subscribe.c notify.c token.c manage.c isif.c command.c util.c
 
 OBJS		= $(SRCS:.c=.o)
 

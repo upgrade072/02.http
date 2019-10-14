@@ -174,10 +174,14 @@ void gather_list(conn_list_status_t CONN_STATUS[]) {
 			CONN_STATUS[index].occupied = 1;
 #ifdef OAUTH
 			int token_id = CONN_LIST[i].token_id;
-			char *access_token = get_access_token(CLIENT_CONF.ACC_TOKEN_LIST, CONN_LIST[i].token_id);
-			//CONN_STATUS[index].token_exist = (access_token == NULL ? 1 : 0);
 			CONN_STATUS[index].token_id = token_id;
-			sprintf(CONN_STATUS[index].access_token, "%s", access_token == NULL ? "" : access_token);
+
+			if (token_id > 0) {
+				char *access_token = get_access_token(CLIENT_CONF.ACC_TOKEN_LIST, CONN_LIST[i].token_id);
+				CONN_STATUS[index].token_acquired = (access_token == NULL) ? 0 : 1;
+			} else {
+				CONN_STATUS[index].token_acquired = 1;
+			}
 #endif
 			CONN_STATUS[index].nrfm_auto_added = CONN_LIST[i].nrfm_auto_added;
 			index++;
@@ -206,10 +210,14 @@ void gather_list(conn_list_status_t CONN_STATUS[]) {
 							CONN_STATUS[index].conn_cnt ++;
 #ifdef OAUTH
 						int token_id = CONN_LIST[k].token_id;
-						char *access_token = get_access_token(CLIENT_CONF.ACC_TOKEN_LIST, CONN_LIST[k].token_id);
-						//CONN_STATUS[index].token_exist = (access_token == NULL ? 1 : 0);
 						CONN_STATUS[index].token_id = token_id;
-						sprintf(CONN_STATUS[index].access_token, "%s", access_token == NULL ? "" : access_token);
+
+						if (token_id > 0) {
+							char *access_token = get_access_token(CLIENT_CONF.ACC_TOKEN_LIST, CONN_LIST[k].token_id);
+							CONN_STATUS[index].token_acquired = (access_token == NULL) ? 0 : 1;
+						} else {
+							CONN_STATUS[index].token_acquired = 1;
+						}
 #endif
 						CONN_STATUS[index].nrfm_auto_added = CONN_LIST[k].nrfm_auto_added;
 					}
