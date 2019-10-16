@@ -727,10 +727,12 @@ int send_request_to_nrfm(https_ctx_t *https_ctx, int ahif_mtype)
 
 	ahifPkt_send->head.mtype = ahif_mtype;
 
-	int res = msgsnd(nrfmQid, msg, shmqlen, 0);
-
-	if (res < 0) {
-		APPLOG(APPLOG_ERR, "%s(), fail to send resp to NRFM! (res:%d)", __func__, res);
+	int res = -1;
+	if (nrfmQid > 0) {
+		res = msgsnd(nrfmQid, msg, shmqlen, 0);
+		if (res < 0) {
+			APPLOG(APPLOG_ERR, "%s(), fail to send resp to NRFM! (res:%d)", __func__, res);
+		}
 	}
 
 	return res;
@@ -1697,13 +1699,14 @@ int initialize()
     }
 
     /* create send-(nrfm) mq */
-    if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", "NRFM", 3, tmp) < 0)
-        return -1;
-    key = strtol(tmp,0,0);
-    if ((nrfmQid = msgget(key,IPC_CREAT|0666)) < 0) {
-        APPLOG(APPLOG_ERR, "{{{INIT}}} [%s] msgget fail; key=0x%x,err=%d(%s)!", __func__, key, errno, strerror(errno));
-        return -1;
-    }
+    if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", "NRFM", 3, tmp) >= 0) {
+		key = strtol(tmp,0,0);
+		if ((nrfmQid = msgget(key,IPC_CREAT|0666)) < 0) {
+			APPLOG(APPLOG_ERR, "{{{INIT}}} [%s] msgget fail; key=0x%x,err=%d(%s)! NRFM QID will 0", __func__, key, errno, strerror(errno));
+		}
+	} else {
+		APPLOG(APPLOG_ERR, "{{{INIT}}} can't find NRFM info in sysconfig APPLITION!, NRFM QID will 0");
+	}
 #endif
 
 	/* alloc context memory */

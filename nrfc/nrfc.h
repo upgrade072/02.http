@@ -60,7 +60,7 @@ typedef struct main_ctx {
 	GSList *my_service_list;	// static
 
 	nfs_avail_shm_t *SHM_NFS_AVAIL;
-	time_t last_pub_time;
+	struct timeval last_pub_time;
 	fep_nfs_info_t fep_nfs_info[NF_MAX_LB_NUM];
 } main_ctx_t;
 /* ------------------------- config.c --------------------------- */

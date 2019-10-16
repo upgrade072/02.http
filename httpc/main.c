@@ -747,21 +747,24 @@ static void eventcb(struct bufferevent *bev, short events, void *ptr) {
 	}
 
 	if (events & BEV_EVENT_EOF) {
-		APPLOG(APPLOG_DETAIL, "%s() Disconnect from remote ip index %5d ip %s port %d",
+		APPLOG(APPLOG_DETAIL, "%s() Disconnect from remote ip index %d [%s:%s:%d]",
 				__func__,
 				session_data->conn_index, 
+				CONN_LIST[session_data->conn_index].host,
 				CONN_LIST[session_data->conn_index].ip,
 				CONN_LIST[session_data->conn_index].port);
 	} else if (events & BEV_EVENT_ERROR) {
-		APPLOG(APPLOG_DETAIL, "%s() Network error index %5d ip %s port %d",
+		APPLOG(APPLOG_DETAIL, "%s() Network error index %d [%s:%s:%d]",
 				__func__,
 				session_data->conn_index, 
+				CONN_LIST[session_data->conn_index].host,
 				CONN_LIST[session_data->conn_index].ip,
 				CONN_LIST[session_data->conn_index].port);
 	} else if (events & BEV_EVENT_TIMEOUT) {
-		APPLOG(APPLOG_DETAIL, "%s() Event Timeout index %5d ip %s port %d",
+		APPLOG(APPLOG_DETAIL, "%s() Event Timeout index %d [%s:%s:%d]",
 				__func__,
 				session_data->conn_index, 
+				CONN_LIST[session_data->conn_index].host,
 				CONN_LIST[session_data->conn_index].ip,
 				CONN_LIST[session_data->conn_index].port);
 	}
@@ -1282,9 +1285,12 @@ void send_nrfm_notify(evutil_socket_t fd, short what, void *arg)
 	msg->mtype = (long)MSGID_HTTPC_NRFM_IMALIVE_NOTI;
 	httpc_noti->my_pid = getpid();
 
-	int res = msgsnd(nrfmQid, msg, sizeof(nrfm_noti_t), 0);
-	if (res < 0) {
-		APPLOG(APPLOG_ERR, "%s(), fail to send resp to NRFM! (res:%d)", __func__, res);
+	/* if NRFM not exist, discard */
+	if (nrfmQid > 0) {
+		int res = msgsnd(nrfmQid, msg, sizeof(nrfm_noti_t), 0);
+		if (res < 0) {
+			APPLOG(APPLOG_ERR, "%s(), fail to send resp to NRFM! (res:%d)", __func__, res);
+		}
 	}
 }
 
@@ -1541,12 +1547,13 @@ int initialize()
 	}
 
 	/* create send-(nrfm) mq */
-	if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", "NRFM", 3, tmp) < 0)
-		return -1;
-	key = strtol(tmp,0,0);
-	if ((nrfmQid = msgget(key,IPC_CREAT|0666)) < 0) {
-		APPLOG(APPLOG_ERR, "{{{INIT}}} [%s] msgget fail; key=0x%x,err=%d(%s)!", __func__, key, errno, strerror(errno));
-		return -1;
+	if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", "NRFM", 3, tmp) >= 0) {
+		key = strtol(tmp,0,0);
+		if ((nrfmQid = msgget(key,IPC_CREAT|0666)) < 0) {
+			APPLOG(APPLOG_ERR, "{{{INIT}}} [%s] msgget fail; key=0x%x,err=%d(%s)! NRFM QID will 0", __func__, key, errno, strerror(errno));
+		}
+	} else {
+		APPLOG(APPLOG_ERR, "{{{INIT}}} can't find NRFM info in sysconfig APPLICATION!, NRFM QID will 0");
 	}
 #endif
 

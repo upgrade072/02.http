@@ -624,10 +624,11 @@ void send_fep_conn_status(evutil_socket_t fd, short what, void *arg)
 	GeneralQMsgType msg = {0,};
 	msg.mtype = (long)MSGID_HTTPS_NRFM_FEP_ALIVE_NOTI;
 
-	int res = msgsnd(nrfmQid, &msg, 0, 0);
-
-	if (res < 0) {
-		APPLOG(APPLOG_DEBUG, "%s() fail to send status noti to NRFM", __func__);
+	if (nrfmQid > 0 ) {
+		int res = msgsnd(nrfmQid, &msg, 0, 0);
+		if (res < 0) {
+			APPLOG(APPLOG_DEBUG, "%s() fail to send status noti to NRFM", __func__);
+		}
 	}
 	return;
 }

@@ -57,20 +57,21 @@ typedef union {
 
 #define NF_MAX_ALLOWD_PLMNS			3
 typedef struct {
-	int occupied;
+	int occupied;		
 	int lbId;
 
+	/* nrfc */
 	int seqNo;
 	int index;
 	int lastIndex;
 
-	nf_comm_type nfType;
+	nf_comm_type nfType;	// NF_TYPE_UDM
 	nf_type_info nfTypeInfo;
 
 	int allowdPlmnsNum;	/* if 0, can handle any plmn */
 	nf_comm_plmn allowdPlmns[NF_MAX_ALLOWD_PLMNS];
 
-	char serviceName[32];
+	char serviceName[32];   // "nudm-ueauth"
 
 	char hostname[52];
 	char type[12];

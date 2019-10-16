@@ -43,7 +43,5 @@ void isifc_send_pkt_for_status(int isifc_qid, IsifMsgType *txIsifMsg)
 	if (shmqlib_putMsg (isifc_qid, (char*)txIsifMsg, tx_len) < 0 ) {
 		APPLOG(APPLOG_ERR, "%s() send shmq fail (isifc:%x)!!!", __func__, isifc_qid);
 		return;
-	} else {
-		APPLOG(APPLOG_ERR, "{{{DBG}}} %s send success! (tx_len:%d)", __func__, tx_len);;
 	}
 }

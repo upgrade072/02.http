@@ -233,6 +233,25 @@ gboolean traverse_memset(GNode *node, gpointer data)
     return 0; // continue traverse
 }
 
+void traverse_parent_move_index(GNode *start_node)
+{
+	GNode *curr_node = start_node;
+
+	while(curr_node != NULL) {
+		select_node_t *node_data = (select_node_t *)curr_node->data;
+		unsigned int child_num = g_node_n_children(curr_node);
+
+		if (node_data && child_num) {
+			node_data->select_vector++;
+			if (node_data->select_vector >= g_node_n_nodes(curr_node, G_TRAVERSE_LEAVES)) {
+				node_data->select_vector = 0;
+				node_data->last_selected = (node_data->last_selected + 1) % child_num;
+			}
+		}
+		curr_node = curr_node->parent;
+	}
+}
+
 conn_list_t *search_conn_list(GNode *curr_node, compare_input_t *comm_input, select_node_t *root_node)
 {
     select_node_t *node_data = (select_node_t *)curr_node->data;
@@ -245,17 +264,15 @@ conn_list_t *search_conn_list(GNode *curr_node, compare_input_t *comm_input, sel
 
     if (G_NODE_IS_LEAF(curr_node)) {
         conn_list_t *leaf_conn_list = (conn_list_t *)node_data->leaf_ptr;
-		if (leaf_conn_list == NULL) // root has none case
+		if (leaf_conn_list == NULL) {// root has none case
 			return NULL;
-#if 0
-		else if (leaf_conn_list->act == 1 && leaf_conn_list->conn == CN_CONNECTED)
-#else
-		else if (leaf_conn_list->act == 1 && 
-				(leaf_conn_list->conn == CN_CONNECTED && leaf_conn_list->reconn_candidate == 0))
-#endif
+		} else if (leaf_conn_list->act == 1 && 
+				(leaf_conn_list->conn == CN_CONNECTED && leaf_conn_list->reconn_candidate == 0)) {
+			traverse_parent_move_index(curr_node);
             return leaf_conn_list;
-        else
+		} else {
             return NULL;
+		}
     }
 
     unsigned int child_num = g_node_n_children(curr_node);
@@ -272,11 +289,16 @@ conn_list_t *search_conn_list(GNode *curr_node, compare_input_t *comm_input, sel
         if (select_node->func_ptr(comm_input, select_node) == 0) {
             conn_list_t *res_conn_list = search_conn_list(nth_child, comm_input, root_node);
             if (res_conn_list != NULL) {
+#if 0
+				/* move forward for round robin */
+				--replace to--> traverse_parent_move_index()
+
                 node_data->select_vector++;
                 if (node_data->select_vector >= g_node_n_nodes(nth_child, G_TRAVERSE_LEAVES)) {
                     node_data->select_vector = 0;
                     node_data->last_selected = (node_data->last_selected + 1) % child_num;
                 }
+#endif
                 return res_conn_list;
             }
         }

@@ -16,14 +16,22 @@ void isif_save_recv_lb_status(main_ctx_t *MAIN_CTX, nf_service_info *nf_info)
 	memcpy(&nf_avail_shm_prepare->nf_avail[lbId][index], nf_info, sizeof(nf_service_info));
 	MAIN_CTX->fep_nfs_info[lbId].inProgress = (index == nf_info->lastIndex) ? 0 : 1;
 
-	time_t now = time(NULL);
+	struct timeval now = {0,};
+	gettimeofday(&now, NULL);
+
+	struct timeval elapse = {0,};
+	timersub(&now, &MAIN_CTX->last_pub_time, &elapse);
+
+	long long elapse_milisec = elapse.tv_sec * 1000LL + (elapse.tv_usec / 1000LL);
+
 	int nowProgress = 0;
 	for(int i = 0; i < NF_MAX_LB_NUM; i++) {
 		if (MAIN_CTX->fep_nfs_info[i].inProgress)
 			nowProgress++;
 	}
 
-	if (((now - MAIN_CTX->last_pub_time) >= 1) && (nowProgress == 0)) {
+	/* 1 sec diff */
+	if ((elapse_milisec >= 1000) && (nowProgress == 0)) {
 		MAIN_CTX->last_pub_time = now;
 		MAIN_CTX->SHM_NFS_AVAIL->curr_pos = (MAIN_CTX->SHM_NFS_AVAIL->curr_pos + 1) % MAX_NFS_SHM_POS;
 		int next_pos = (MAIN_CTX->SHM_NFS_AVAIL->curr_pos + 1) % MAX_NFS_SHM_POS;
@@ -85,9 +93,16 @@ void printf_fep_nfs(nfs_avail_shm_t *SHM_NFS_AVAIL)
 
 void clear_fep_nfs(evutil_socket_t fd, short what, void *arg)
 {
-	time_t now = time(NULL);
+	struct timeval now = {0,};
+	gettimeofday(&now, NULL);
 
-	if ((now - MAIN_CTX.last_pub_time) >= 2) {
+	struct timeval elapse = {0,};
+	timersub(&now, &MAIN_CTX.last_pub_time, &elapse);
+
+	long long elapse_milisec = elapse.tv_sec * 1000LL + (elapse.tv_usec / 1000LL);
+
+	/* 2 sec diff */
+	if (elapse_milisec >= 2000) {
 		MAIN_CTX.last_pub_time = now;
 		MAIN_CTX.SHM_NFS_AVAIL->curr_pos = (MAIN_CTX.SHM_NFS_AVAIL->curr_pos + 1) % MAX_NFS_SHM_POS;
 		int next_pos = (MAIN_CTX.SHM_NFS_AVAIL->curr_pos + 1) % MAX_NFS_SHM_POS;
