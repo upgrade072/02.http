@@ -13,6 +13,8 @@
 #define CF_PING_EVENT_MS    "server_cfg.http_config.ping_event_ms"
 #define CF_PING_EVENT_CODE  "server_cfg.http_config.ping_event_code"
 #define CF_CERT_EVENT_CODE  "server_cfg.http_config.cert_event_code"
+#define CF_DEF_OVLD_LIMIT   "server_cfg.http_config.def_ovld_limit"
+#define CF_OVLD_EVENT_CODE  "server_cfg.http_config.ovld_event_code"
 #define CF_HTTP_OPT_HDR_TABLE_SIZE	"server_cfg.http_option.setting_header_table_size"
 
 #define CF_PKT_LOG		    "server_cfg.http_config.pkt_log"
@@ -330,6 +332,32 @@ int config_load()
         APPLOG(APPLOG_ERR, "{{{CFG}}} cert event_code is [%d]", SERVER_CONF.cert_event_code);
     }
 
+	/* default overload limit */
+	int def_ovld_limit = 0;
+	if (config_lookup_int(&CFG, CF_DEF_OVLD_LIMIT, &def_ovld_limit) == CONFIG_FALSE) {
+		APPLOG(APPLOG_ERR, "{{{CFG}}} def_ovld_limit cfg not exist!");
+		goto CF_LOAD_ERR;
+	} else {
+        if (def_ovld_limit <= 0) {
+            APPLOG(APPLOG_ERR, "{{{CFG}}} def_ovld_limit[%d] is lower than 0 it means no ovld!", def_ovld_limit);
+        }
+        SERVER_CONF.def_ovld_limit = def_ovld_limit;
+        APPLOG(APPLOG_ERR, "{{{CFG}}} def_ovld_limit is [%d]", SERVER_CONF.def_ovld_limit);
+    }
+
+	/* overload event_code */
+	int ovld_event_code = 0;
+	if (config_lookup_int(&CFG, CF_OVLD_EVENT_CODE, &ovld_event_code) == CONFIG_FALSE) {
+		APPLOG(APPLOG_ERR, "{{{CFG}}} ovld_event_code cfg not exist!");
+		goto CF_LOAD_ERR;
+	} else {
+        if (ovld_event_code <= 0) {
+            APPLOG(APPLOG_ERR, "{{{CFG}}} ovld_event_code[%d] is lower than 0 it means no event!", ovld_event_code);
+        }
+        SERVER_CONF.ovld_event_code = ovld_event_code;
+        APPLOG(APPLOG_ERR, "{{{CFG}}} ovld_event_code is [%d]", SERVER_CONF.ovld_event_code);
+    }
+
     /* pkt_log enable */
     int pkt_log = 0;
     if (config_lookup_int(&CFG, CF_PKT_LOG, &pkt_log) == CONFIG_FALSE) {
@@ -479,6 +507,11 @@ int config_load()
 				if (config_setting_lookup_int (item, "auth_act", &auth_act) == CONFIG_FALSE)
 					continue;
 #endif
+
+				int ovld_limit = 0;
+				if (config_setting_lookup_int (item, "ovld_limit", &ovld_limit) == CONFIG_FALSE)
+					continue;
+
                 if (inet_pton(AF_INET, ip, &(sa.sin_addr)))  {
                 } else if (inet_pton(AF_INET6, ip, &(sa6.sin6_addr))) {
                 } else {
@@ -513,6 +546,7 @@ int config_load()
 #ifdef OAUTH
                 ALLOW_LIST[index].auth_act = auth_act;
 #endif
+				ALLOW_LIST[index].limit_tps = ovld_limit;
                 ALLOW_LIST[index].curr = 0;
 			}
 		}
@@ -651,6 +685,8 @@ int addcfg_client_ipaddr(int id, char *ipaddr, int max)
 		config_setting_set_string(val, "DACT");
 		val = config_setting_add(item, "auth_act", CONFIG_TYPE_INT);
 		config_setting_set_int(val, 0);
+		val = config_setting_add(item, "ovld_limit", CONFIG_TYPE_INT);
+		config_setting_set_int(val, SERVER_CONF.def_ovld_limit);
 
 		for (i = 1; i < MAX_LIST_NUM; i++) {
 			if (ALLOW_LIST[i].used == 0) {
@@ -789,7 +825,7 @@ CF_ACT_CLIENT_ERR:
     return (-1);
 }
 
-int chgcfg_client_max_cnt_with_auth_act(int id, char *ipaddr, int max, int auth_act)
+int chgcfg_client_max_cnt_with_auth_act_and_limit(int id, char *ipaddr, int max, int auth_act, int limit)
 {
     config_setting_t *setting;
 
@@ -801,11 +837,13 @@ int chgcfg_client_max_cnt_with_auth_act(int id, char *ipaddr, int max, int auth_
 		const char *type;
         config_setting_t *list;
         config_setting_t *item_max;
+        config_setting_t *item_limit;
         config_setting_t *item_auth_act;
         int list_count, i, list_index, item_index;
 		int found = 0;
 		const char *cf_ip;
 		int cf_max;
+		int cf_limit;
 		const char *cf_act;
 		int cf_auth_act;
 
@@ -835,6 +873,9 @@ int chgcfg_client_max_cnt_with_auth_act(int id, char *ipaddr, int max, int auth_
 			if (config_setting_lookup_int (item, "max", &cf_max) == CONFIG_FALSE) {
 				continue;
 			}
+			if (config_setting_lookup_int (item, "ovld_limit", &cf_limit) == CONFIG_FALSE) {
+				continue;
+			}
 			if (config_setting_lookup_int (item, "auth_act", &cf_auth_act) == CONFIG_FALSE) {
 				continue;
 			}
@@ -842,6 +883,8 @@ int chgcfg_client_max_cnt_with_auth_act(int id, char *ipaddr, int max, int auth_
 				if (!strcmp(cf_act, "ACT"))
 					goto CF_CHG_CLIENT_MAX_ERR;
 				if ((item_max = config_setting_get_member(item, "max")) == NULL)
+					goto CF_CHG_CLIENT_MAX_ERR;
+				if ((item_limit = config_setting_get_member(item, "ovld_limit")) == NULL)
 					goto CF_CHG_CLIENT_MAX_ERR;
 				if ((item_auth_act = config_setting_get_member(item, "auth_act")) == NULL)
 					goto CF_CHG_CLIENT_MAX_ERR;
@@ -856,6 +899,7 @@ int chgcfg_client_max_cnt_with_auth_act(int id, char *ipaddr, int max, int auth_
 
 		/* save setting with auth_act */
 		config_setting_set_int(item_max, max);
+		config_setting_set_int(item_limit, limit);
 		config_setting_set_int(item_auth_act, auth_act);
 
 		/* change max with auth_act */
@@ -866,6 +910,7 @@ int chgcfg_client_max_cnt_with_auth_act(int id, char *ipaddr, int max, int auth_
 					&& ALLOW_LIST[i].item_index == item_index) {
 				ALLOW_LIST[i].max = max;
 				ALLOW_LIST[i].auth_act = auth_act;
+				ALLOW_LIST[i].limit_tps = limit;
 			}
 		}
 	}

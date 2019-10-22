@@ -5,6 +5,7 @@ CFLAG		= $(CFLAGS)
 BUILD_INC_PATH	= -I../build/include -I../build/include/glib-2.0 -I../build/lib/glib-2.0/include
 BUILD_LIBS_PATH	= ../build/lib
 BUILD_LIBS = $(BUILD_LIBS_PATH)/libnrf.a \
+			 $(BUILD_LIBS_PATH)/libjson-c.a \
 			 $(BUILD_LIBS_PATH)/lbengine.a \
 			 $(BUILD_LIBS_PATH)/libssl.a \
 			 $(BUILD_LIBS_PATH)/libcrypto.a \

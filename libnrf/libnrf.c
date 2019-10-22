@@ -218,9 +218,8 @@ void print_token_info_raw(acc_token_shm_t *ACC_TOKEN_LIST, char *respBuff)
 	ft_table_t *table = ft_create_table();
 
 	ft_set_cell_prop(table, 0, FT_ANY_COLUMN, FT_CPROP_ROW_TYPE, FT_ROW_HEADER);
-	ft_set_border_style(table, FT_BASIC2_STYLE);
-	ft_write_ln(table, "index", "id", "nfInstanceId\nnfType\ntokenType",
-			"scope", "add_type\ntoken_status\nrequest_time\nresonse_time", "access_token");
+	ft_set_border_style(table, FT_PLAIN_STYLE);
+	ft_write_ln(table, "INDEX", "ID", "NF_INSTANCEID\nNF_TYPE\nTOKEN_TYPE", "SCOPE", "ADD_TYPE\nTOKEN_STATUS\nREQUEST_TIME\nRESONSE_TIME", "ACCESS_TOKEN");
 
 	for (int i = 1; i < MAX_ACC_TOKEN_NUM; i++) {
         acc_token_info_t *token_info = get_acc_token_info(ACC_TOKEN_LIST, i, 1);
@@ -248,13 +247,14 @@ void print_token_info_raw(acc_token_shm_t *ACC_TOKEN_LIST, char *respBuff)
 					strlen(token_info->nf_type) ? token_info->nf_type : "-",
 					(token_info->acc_type == AT_SVC) ? "for Service" : "for Instance",
 					strlen(token_info->scope) ? token_info->scope : "-",
-					(token_info->operator_added) ? "OPER ADD" : "AUTO ADD",
-					(token_info->status == TA_INIT) ? "INIT" :
-					(token_info->status == TA_FAILED) ? "FAILED" :
-					(token_info->status == TA_TRYING) ? "TRYING" : "ACQUIRED",
+					(token_info->operator_added) ? "oper add" : "auto add",
+					(token_info->status == TA_INIT) ? "initial" :
+					(token_info->status == TA_FAILED) ? "failed" :
+					(token_info->status == TA_TRYING) ? "trying" : "acquired",
 					request_time,
 					validate_time,
 					(token_info->status == TA_ACQUIRED) ? token_data: "-");
+			ft_add_separator(table);
 		}
 	}
 
@@ -354,7 +354,7 @@ void printf_avail_nfs(nf_list_pkt_t *avail_nfs)
                 nf_info->ipv4Address,
                 nf_info->port,
                 nf_info->priority,
-				nf_info->auto_add ? "O" : "X",
+				nf_info->auto_add == 0 ? "X" : "O",
 				nf_info->lbId);
     }
 	APPLOG(APPLOG_ERR, "\n%s", ft_to_string(table));
@@ -378,3 +378,187 @@ char *get_nrfm_cmd_str(int cmd)
 			return "UNKNOWN";
     }
 }
+
+int cnvt_cfg_to_json(json_object *obj, config_setting_t *setting, int callerType)
+{
+	json_object *obj_group = NULL;
+	json_object *obj_array = NULL;
+	int count = 0;
+
+	switch (setting->type) {
+		// SIMPLE CASE
+		case CONFIG_TYPE_INT:
+			json_object_object_add(obj, setting->name, json_object_new_int(setting->value.ival));
+			break;
+		case CONFIG_TYPE_STRING:
+			if (callerType == CONFIG_TYPE_ARRAY || callerType == CONFIG_TYPE_LIST) {
+				json_object_array_add(obj, json_object_new_string(setting->value.sval));
+			} else {
+				json_object_object_add(obj, setting->name, json_object_new_string(setting->value.sval));
+			}
+			break;
+		case CONFIG_TYPE_BOOL:
+			json_object_object_add(obj, setting->name, json_object_new_boolean(setting->value.ival));
+			break;
+		// COMPLEX CASE
+		case CONFIG_TYPE_GROUP:
+			obj_group = json_object_new_object();
+			count = config_setting_length(setting);
+			for (int i = 0; i < count; i++) {
+				config_setting_t *elem = config_setting_get_elem(setting, i);
+				cnvt_cfg_to_json(obj_group, elem, setting->type);
+			}
+			if (callerType == CONFIG_TYPE_ARRAY || callerType == CONFIG_TYPE_LIST) {
+				json_object_array_add(obj, obj_group);
+			} else {
+				json_object_object_add(obj, setting->name, obj_group);
+			}
+			break;
+		case CONFIG_TYPE_ARRAY:
+		case CONFIG_TYPE_LIST:
+			obj_array = json_object_new_array();
+			json_object_object_add(obj, setting->name, obj_array);
+
+			count = config_setting_length(setting);
+			for (int i = 0; i < count; i++) {
+				config_setting_t *elem = config_setting_get_elem(setting, i);
+				cnvt_cfg_to_json(obj_array, elem, setting->type);
+			}
+			break;
+		default:
+			fprintf(stderr, "TODO| do something!\n");
+			break;
+	}
+
+	return 0;
+}
+
+int check_number(char *ptr)
+{
+    for (int i = 0; i < strlen(ptr); i++) {
+        if (isdigit(ptr[i]) == 0)
+            return -1;
+    }
+    return atoi(ptr);
+}
+
+json_object *search_json_object(json_object *obj, char *key_string)
+{   
+    char *ptr = strtok(key_string, "/");
+    json_object *input = obj;
+    json_object *output = NULL;
+
+    while (ptr != NULL) {
+        int cnvt_num = check_number(ptr);
+    
+        if (cnvt_num >= 0) {
+            if (json_object_get_type(input) != json_type_array)
+                return NULL;
+            if ((output = json_object_array_get_idx(input, cnvt_num)) == NULL)
+                return NULL;
+        } else {
+            if (json_object_object_get_ex(input, ptr, &output) == 0)
+                return NULL;
+        }
+    
+        input = output;
+        ptr = strtok(NULL, "/");
+    }
+    return output;
+}
+
+int nf_search_specific_info(json_object *nf_profile, json_object **js_specific_info)
+{
+	if (nf_profile == NULL) {
+		APPLOG(APPLOG_ERR, "{{{DBG}}} something wrong %s nf_profile null!", __func__);
+		return -1;
+	}
+
+    char key_nfType[128] = "nfType";
+    json_object *js_nfType = search_json_object(nf_profile, key_nfType);
+    const char *nfType = json_object_get_string(js_nfType);
+
+    if(!strcmp(nfType, "UDM")) {
+        char key_specific_info[128] = "udmInfo";
+        *js_specific_info = search_json_object(nf_profile, key_specific_info);
+        return NF_TYPE_UDM;
+    } else if(!strcmp(nfType, "UDR")) {
+        char key_specific_info[128] = "udrInfo";
+        *js_specific_info = search_json_object(nf_profile, key_specific_info);
+        return NF_TYPE_UDR;
+    } else {
+        *js_specific_info = NULL;
+        return NF_TYPE_UNKNOWN;
+    }       
+}
+
+void nf_get_specific_info(int nfType, json_object *js_specific_info, nf_type_info *nf_specific_info)
+{           
+    if (nfType == NF_TYPE_UDM) {
+        nf_udm_info *udmInfo = &nf_specific_info->udmInfo;
+            
+        /* group Id */
+        char key_groupId[128] = "groupId";
+        json_object *js_group_id = search_json_object(js_specific_info, key_groupId);
+		if (js_group_id)
+			sprintf(udmInfo->groupId, "%s", json_object_get_string(js_group_id));
+
+        /* supiRanges */
+        char key_supi_ranges[128] = "supiRanges";
+        json_object *js_supi_ranges = search_json_object(js_specific_info, key_supi_ranges);
+		if (js_supi_ranges) {
+			udmInfo->supiRangesNum = (json_object_array_length(js_supi_ranges) > NF_MAX_SUPI_RANGES) ?
+				NF_MAX_SUPI_RANGES : json_object_array_length(js_supi_ranges);
+			for (int i = 0; i < udmInfo->supiRangesNum; i++) {
+				json_object *js_supi_elem = json_object_array_get_idx(js_supi_ranges, i);
+				char key_start[128] = "start";
+				char key_end[128] = "end";
+				json_object *js_start = search_json_object(js_supi_elem, key_start);
+				json_object *js_end = search_json_object(js_supi_elem, key_end);
+				if (js_start)
+					sprintf(udmInfo->supiRanges[i].start, "%s", json_object_get_string(js_start));
+				if (js_end)
+					sprintf(udmInfo->supiRanges[i].end, "%s", json_object_get_string(js_end));
+			}
+		}
+        
+        /* routingIndicators */
+        char key_routing_indicators[128] = "routingIndicators";
+		json_object *js_routing_indicators = search_json_object(js_specific_info, key_routing_indicators);
+		if (js_routing_indicators) {
+			udmInfo->routingIndicatorsNum = (json_object_array_length(js_routing_indicators) > NF_MAX_RI) ?
+				NF_MAX_RI : json_object_array_length(js_routing_indicators);
+			for (int i = 0; i < udmInfo->routingIndicatorsNum; i++) {
+				json_object *js_ri_elem = json_object_array_get_idx(js_routing_indicators, i);
+				if (js_ri_elem != NULL)
+					sprintf(udmInfo->routingIndicators[i], "%s", json_object_get_string(js_ri_elem));
+			}
+		}
+    }
+}
+
+int nf_get_allowd_plmns(json_object *nf_profile, nf_comm_plmn *allowdPlmns)
+{   
+    char key_allowd_plmns[128] = "allowedPlmns";
+	int allowdPlmnsNum = 0;
+    json_object *js_allowd_plmns = search_json_object(nf_profile, key_allowd_plmns);
+    
+	if (js_allowd_plmns) {
+		allowdPlmnsNum = (json_object_array_length(js_allowd_plmns) > NF_MAX_ALLOWD_PLMNS) ?
+			NF_MAX_ALLOWD_PLMNS : json_object_array_length(js_allowd_plmns);
+
+		for (int i = 0; i < allowdPlmnsNum; i++) {
+			json_object *js_allowd_plmn_elem = json_object_array_get_idx(js_allowd_plmns, i);
+			char key_mcc[128] = "mcc";
+			char key_mnc[128] = "mnc";
+			json_object *js_mcc = search_json_object(js_allowd_plmn_elem, key_mcc);
+			json_object *js_mnc = search_json_object(js_allowd_plmn_elem, key_mnc);
+			if (js_mcc)
+				sprintf(allowdPlmns[i].mcc, "%s", json_object_get_string(js_mcc));
+			if (js_mnc)
+			sprintf(allowdPlmns[i].mnc, "%s", json_object_get_string(js_mnc));
+		}       
+	}
+            
+    return allowdPlmnsNum;
+} 

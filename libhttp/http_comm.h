@@ -83,7 +83,8 @@ typedef struct HttpCSAhifTagType {
 #if 0
 #define HTTP_MAX_HOST		128
 #else
-#define HTTP_MAX_HOST		1024 // U+ & KT requirement
+//#define HTTP_MAX_HOST		1024 // U+ & KT requirement
+#define HTTP_MAX_HOST		512 // too many 
 #endif
 #define HTTP_MAX_ADDR		4
 #define HTTP_MAX_CONN		4

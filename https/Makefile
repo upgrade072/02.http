@@ -16,9 +16,9 @@ BUILD_LIBS = $(BUILD_LIBS_PATH)/libjwt.a \
 			 $(BUILD_LIBS_PATH)/libglib-2.0.a \
 			 $(BUILD_LIBS_PATH)/libconfig.a \
 			 $(BUILD_LIBS_PATH)/libhttp.a \
-			 $(BUILD_LIBS_PATH)/libs.a 
+			 $(BUILD_LIBS_PATH)/libs.a
 
-SRCS		= main.c list.c config.c command.c lb.c cert.c
+SRCS		= main.c list.c config.c command.c lb.c cert.c ovld.c
 
 OBJS		= $(SRCS:.c=.o)
 

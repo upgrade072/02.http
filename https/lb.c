@@ -290,6 +290,9 @@ void send_to_worker(tcp_ctx_t *tcp_ctx, https_ctx_t *recv_ctx, int intl_msg_type
 		goto STW_RET;
 	}
 
+	/* set ahifCid for trace */
+	https_ctx->user_ctx.head.ahifCid = recv_ctx->user_ctx.head.ahifCid;
+
 	// check have same fep tag
 	if (recv_ctx->fep_tag != https_ctx->fep_tag) {
 		APPLOG(APPLOG_DETAIL, "%s() fep tag mismatch (ahif recv %d, orig ctx relay:%d tcp:%d) [%s]", 

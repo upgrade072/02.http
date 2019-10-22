@@ -2,6 +2,67 @@
 
 extern main_ctx_t MAIN_CTX;
 
+void attach_mml_info(nf_service_info *svc_mml, nf_service_info *svc_info, nf_service_info *nf_avail_each_lb)
+{
+	for (int i = 0; i < NF_MAX_AVAIL_LIST; i++) {
+		nf_service_info *nf_avail = &nf_avail_each_lb[i];
+		if (nf_avail->occupied == 0) {
+			nf_avail->occupied = 1;
+			nf_avail->lbId = svc_info->lbId;
+			nf_avail->nfType = svc_mml->nfType;
+			memcpy(&nf_avail->nfTypeInfo, &svc_mml->nfTypeInfo, sizeof(nf_service_info));
+			nf_avail->allowdPlmnsNum = svc_mml->allowdPlmnsNum;
+			memcpy(nf_avail->allowdPlmns, svc_mml->allowdPlmns, sizeof(nf_comm_plmn) * NF_MAX_ALLOWD_PLMNS);
+
+			sprintf(nf_avail->hostname, "%s", svc_info->hostname);
+			sprintf(nf_avail->type, "%s", svc_info->type);
+			sprintf(nf_avail->scheme, "%s", svc_info->scheme);
+			sprintf(nf_avail->ipv4Address, "%s", svc_info->ipv4Address);
+			nf_avail->port = svc_info->port;
+			nf_avail->auto_add = NF_ADD_MML;
+
+			return;
+		}
+	}
+}
+
+void attach_mml_info_into_lb_shm(mml_conf_t *mml_conf, nf_service_info *nf_avail_each_lb)
+{
+	for (int i = 0; i < NF_MAX_AVAIL_LIST; i++) {
+		nf_service_info *nf_avail = &nf_avail_each_lb[i];
+		if (nf_avail->occupied == 0) continue;
+		if (!strcmp(mml_conf->target_hostname, nf_avail->hostname)) {
+			return attach_mml_info(&mml_conf->service_info, nf_avail, nf_avail_each_lb);
+		}
+	}
+}
+void attach_mml_info_into_shm(mml_conf_t *mml_conf, main_ctx_t *MAIN_CTX)
+{
+	int prepare_pos = (MAIN_CTX->SHM_NFS_AVAIL->curr_pos + 1) % MAX_NFS_SHM_POS;
+	nf_list_shm_t *nf_avail_shm_prepare = &MAIN_CTX->SHM_NFS_AVAIL->nfs_avail_shm[prepare_pos];
+
+	for(int i = 0; i < NF_MAX_LB_NUM; i++) {
+		attach_mml_info_into_lb_shm(mml_conf, nf_avail_shm_prepare->nf_avail[i]);
+	}
+}
+
+void add_shm_avail_count(main_ctx_t *MAIN_CTX)
+{
+	int prepare_pos = (MAIN_CTX->SHM_NFS_AVAIL->curr_pos + 1) % MAX_NFS_SHM_POS;
+	nf_list_shm_t *nf_avail_shm_prepare = &MAIN_CTX->SHM_NFS_AVAIL->nfs_avail_shm[prepare_pos];
+
+	for(int i = 0; i < NF_MAX_LB_NUM; i++) {
+		for (int k = 0; k < NF_MAX_AVAIL_LIST; k++) {
+			nf_service_info *nf_avail = &nf_avail_shm_prepare->nf_avail[i][k];
+			if (nf_avail->occupied == 0) {
+				nf_avail_shm_prepare->nf_avail_cnt[i] = k;
+				APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s set nf_avail_count lbIdx:%d cnt:%d", __func__, i, k);
+				break;
+			}
+		}
+	}
+}
+
 void isif_save_recv_lb_status(main_ctx_t *MAIN_CTX, nf_service_info *nf_info)
 {   
 	int lbId = (nf_info->lbId - 1) % NF_MAX_LB_NUM;
@@ -32,6 +93,12 @@ void isif_save_recv_lb_status(main_ctx_t *MAIN_CTX, nf_service_info *nf_info)
 
 	/* 1 sec diff */
 	if ((elapse_milisec >= 1000) && (nowProgress == 0)) {
+
+		/* attach mml */
+		g_slist_foreach(MAIN_CTX->opr_mml_list, (GFunc)attach_mml_info_into_shm, MAIN_CTX);
+		/* set max count */
+		add_shm_avail_count(MAIN_CTX);
+
 		MAIN_CTX->last_pub_time = now;
 		MAIN_CTX->SHM_NFS_AVAIL->curr_pos = (MAIN_CTX->SHM_NFS_AVAIL->curr_pos + 1) % MAX_NFS_SHM_POS;
 		int next_pos = (MAIN_CTX->SHM_NFS_AVAIL->curr_pos + 1) % MAX_NFS_SHM_POS;
@@ -39,56 +106,11 @@ void isif_save_recv_lb_status(main_ctx_t *MAIN_CTX, nf_service_info *nf_info)
 		nf_list_shm_t *nf_avail_shm_prepare = &MAIN_CTX->SHM_NFS_AVAIL->nfs_avail_shm[next_pos];
 		memset(nf_avail_shm_prepare, 0x00, sizeof(nf_list_shm_t));
 
-		printf_fep_nfs(MAIN_CTX->SHM_NFS_AVAIL);
-		APPLOG(APPLOG_ERR, "{{{DBG}}} %s curr shm pos [%d]", __func__, MAIN_CTX->SHM_NFS_AVAIL->curr_pos);
-	}
-}
- 
-void printf_fep_nfs(nfs_avail_shm_t *SHM_NFS_AVAIL)
-{
-	APPLOG(APPLOG_ERR, "{{{DBG}}} %s called!", __func__);
-
-	ft_table_t *TABLE = ft_create_table();
-
-	ft_set_cell_prop(TABLE, 0, FT_ANY_COLUMN, FT_CPROP_ROW_TYPE, FT_ROW_HEADER);
-	ft_set_border_style(TABLE, FT_BASIC2_STYLE);
-	ft_write_ln(TABLE, "index", "type", "service", "allowedPlmns\n(mcc+mnc)", "typeInfo", "hostname", "scheme", "ipv4", "port", "priority", "auto", "lb_id");
-
-	int POS = SHM_NFS_AVAIL->curr_pos;
-	nf_list_shm_t *nf_avail_shm = &SHM_NFS_AVAIL->nfs_avail_shm[POS];
-
-	for (int i = 0, index = 0; i < NF_MAX_LB_NUM; i++) {
-		for (int k = 0; k < NF_MAX_AVAIL_LIST; k++) {
-			nf_service_info *nf_info = &nf_avail_shm->nf_avail[i][k];
-
-			if (nf_info->occupied <= 0)
-				continue;
-
-			/* allowd plmns */
-			char allowdPlmnsStr[1024] = {0,};
-			getAllowdPlmns(nf_info, allowdPlmnsStr);
-
-			/* nf-type specific info */
-			char typeSpecStr[1024 * 12] = {0,};
-			getTypeSpecStr(nf_info, typeSpecStr);
-
-			ft_printf_ln(TABLE, "%d|%s|%s|%s|%s|%s|%s|%s|%d|%d|%s|%d",
-					index++,
-					nf_info->type,
-					strlen(nf_info->serviceName) ? nf_info->serviceName : "ANY",
-					strlen(allowdPlmnsStr) ? allowdPlmnsStr : "ANY",
-					strlen(typeSpecStr) ? typeSpecStr : "ANY",
-					nf_info->hostname,
-					nf_info->scheme,
-					nf_info->ipv4Address,
-					nf_info->port,
-					nf_info->priority,
-					nf_info->auto_add ? "O" : "X",
-					nf_info->lbId);
+		if (MAIN_CTX->sysconfig.debug_mode) {
+			printf_fep_nfs(MAIN_CTX->SHM_NFS_AVAIL, NULL);
+			APPLOG(APPLOG_ERR, "{{{DBG}}} %s curr shm pos [%d]", __func__, MAIN_CTX->SHM_NFS_AVAIL->curr_pos);
 		}
 	}
-	APPLOG(APPLOG_ERR, "\n%s", ft_to_string(TABLE));
-	ft_destroy_table(TABLE);
 }
 
 void clear_fep_nfs(evutil_socket_t fd, short what, void *arg)
@@ -110,7 +132,9 @@ void clear_fep_nfs(evutil_socket_t fd, short what, void *arg)
 		nf_list_shm_t *nf_avail_shm_prepare = &MAIN_CTX.SHM_NFS_AVAIL->nfs_avail_shm[next_pos];
 		memset(nf_avail_shm_prepare, 0x00, sizeof(nf_list_shm_t));
 
-		printf_fep_nfs(MAIN_CTX.SHM_NFS_AVAIL);
-		APPLOG(APPLOG_ERR, "{{{DBG}}} %s curr shm pos [%d]", __func__, MAIN_CTX.SHM_NFS_AVAIL->curr_pos);
+		if (MAIN_CTX.sysconfig.debug_mode) {
+			printf_fep_nfs(MAIN_CTX.SHM_NFS_AVAIL, NULL);
+			APPLOG(APPLOG_ERR, "{{{DBG}}} %s curr shm pos [%d]", __func__, MAIN_CTX.SHM_NFS_AVAIL->curr_pos);
+		}
 	}
 }

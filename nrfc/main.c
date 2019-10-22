@@ -27,6 +27,17 @@ int get_my_qid(main_ctx_t *MAIN_CTX)
         return -1;
 	}
 
+    /* create (cmd resp) send queue */
+    if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", "IXPC", 3, tmp) < 0) {
+        APPLOG(APPLOG_ERR, "{{{INIT}}} configlib get token APPLICATIONS [%s] fail!", "IXPC");
+        return -1;
+    }
+    key = strtol(tmp,0,0);
+    if ((MAIN_CTX->my_qid.ixpc_qid = msgget(key,IPC_CREAT|0666)) < 0) {
+        APPLOG(APPLOG_ERR,"{{{INIT}}} [%s] msgget fail; key=0x%x,err=%d(%s)!", __func__, key, errno, strerror(errno));
+        return -1;
+	}
+
 	/* ~/data/isif.conf */
     sprintf(fname,"%s/%s", getenv(IV_HOME), ISIF_CONF_FILE);
 	if ((MAIN_CTX->my_qid.isifc_tx_qid = 
@@ -207,6 +218,10 @@ int initialize(main_ctx_t *MAIN_CTX)
         return -1;
     }
 
+	init_cmd(MAIN_CTX);
+
+	init_mml(MAIN_CTX);
+
     /* load fep assoc list */
 	if ((MAIN_CTX->lb_assoc_list = get_associate_node(MAIN_CTX->lb_assoc_list, "LB")) == NULL) {
         APPLOG(APPLOG_ERR, "{{{INIT}}} fail to get associate_lb, proc down");
@@ -382,27 +397,6 @@ void start_loop(main_ctx_t *MAIN_CTX)
     event_base_loop(MAIN_CTX->EVBASE, EVLOOP_NO_EXIT_ON_EMPTY);
 
     event_base_free(MAIN_CTX->EVBASE);
-}
-
-void message_handle(evutil_socket_t fd, short what, void *arg)
-{
-    char msgBuff[1024*64];
-
-    GeneralQMsgType *msg = (GeneralQMsgType *)msgBuff;
-
-    /* handle all pending msgs */
-    while (msgrcv(MAIN_CTX.my_qid.nrfc_qid, msg, sizeof(GeneralQMsgType), 0, IPC_NOWAIT) >= 0) {
-        switch (msg->mtype) {
-            default:
-                APPLOG(APPLOG_ERR, "%s() receive unknown msg (mtype:%ld)", __func__, (long)msg->mtype);
-                continue;
-        }
-    }
-    if (errno != ENOMSG) {
-        APPLOG(APPLOG_ERR,"%s() msgrcv fail; err=%d(%s)", __func__, errno, strerror(errno));
-    }
-
-    return;
 }
 
 void shmq_recv_handle(evutil_socket_t fd, short what, void *arg)

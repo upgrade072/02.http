@@ -22,6 +22,7 @@ http2_session_data SESS[MAX_THRD_NUM][MAX_SVR_NUM];
 https_ctx_t *HttpsCtx[MAX_THRD_NUM];
 allow_list_t ALLOW_LIST[MAX_LIST_NUM];
 http_stat_t HTTP_STAT;
+ovld_state_t OVLD_STATE;
 
 hdr_index_t VHDR_INDEX[2][MAX_HDR_RELAY_CNT];
 
@@ -434,11 +435,12 @@ static int send_response_by_ctx(nghttp2_session *session, int32_t stream_id,
 	rv = nghttp2_submit_response(session, stream_id, nva, nvlen, &data_prd);
 
 	char log_pfx[1024] = {0,};
-	sprintf(log_pfx, "HTTPS ctx(%d:%d) http sess/stream(%d:%d)",
+	sprintf(log_pfx, "HTTPS ctx(%d:%d) http sess/stream(%d:%d) ahifCid(%d)",
 			https_ctx->user_ctx.head.thrd_index,
 			https_ctx->user_ctx.head.ctx_id,
 			https_ctx->session_id,
-			stream_id);
+			stream_id,
+			https_ctx->user_ctx.head.ahifCid);
 	log_pkt_send(log_pfx, nva, nvlen, 
 			https_ctx->user_ctx.data + https_ctx->user_ctx.head.queryLen, 
 			https_ctx->user_ctx.head.bodyLen);
@@ -754,6 +756,16 @@ static int on_request_recv(nghttp2_session *session,
 	// Whole http body received
 
 	log_pkt_end_stream(stream_data->stream_id, https_ctx);
+
+	/* 2019.10.16 peer ovld sts test*/
+	if (ovld_calc_check(session_data)) {
+		/* silence discard stream */
+		nghttp2_session_close_stream(session_data->session, stream_data->stream_id, NGHTTP2_INTERNAL_ERROR);
+		clear_and_free_ctx(https_ctx);
+		Free_CtxId(thrd_idx, ctx_id);
+		http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_PRE_END);
+		return 0;
+	}
 
 #ifdef OVLD_API
 	char *error_str = NULL;
@@ -1252,6 +1264,9 @@ void main_tick_callback(evutil_socket_t fd, short what, void *arg)
 		/* log https status */
 		stat_function(&Ixpc, SERVER_CONF.worker_num, 0, 1, MSGID_HTTPS_STATISTICS_REPORT);
 	}
+
+	/* https peer ovld */
+	ovld_step_forward();
 }
 
 void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)

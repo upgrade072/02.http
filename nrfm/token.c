@@ -43,7 +43,7 @@ void nf_token_acquire_handlde_resp_proc(AhifHttpCSMsgType *ahifPkt)
 	token_ctx_list_t *token_request = nf_token_find_ctx_by_seqNo(MAIN_CTX.nrf_access_token.token_accuire_list, head->ahifCid);
 
 	if (token_request == NULL) {
-		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s() something wrong, can't find ctx (seqNo:%s)",
+		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s() something wrong, can't find ctx (seqNo:%d)",
 				__func__, head->ahifCid);
 		return;
 	}

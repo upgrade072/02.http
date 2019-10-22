@@ -4,7 +4,8 @@ CFLAG		= $(CFLAGS)
 
 BUILD_INC_PATH	= -I../build/include -I../build/include/glib-2.0 -I../build/lib/glib-2.0/include
 BUILD_LIBS_PATH	= ../build/lib
-BUILD_LIBS = $(BUILD_LIBS_PATH)/libevent.a \
+BUILD_LIBS = $(BUILD_LIBS_PATH)/libnrf.a \
+			 $(BUILD_LIBS_PATH)/libevent.a \
 			 $(BUILD_LIBS_PATH)/libglib-2.0.a \
 			 $(BUILD_LIBS_PATH)/libconfig.a \
 			 $(BUILD_LIBS_PATH)/libjson-c.a \
@@ -13,7 +14,6 @@ BUILD_LIBS = $(BUILD_LIBS_PATH)/libevent.a \
 			 $(BUILD_LIBS_PATH)/libevent_openssl.a \
 			 $(BUILD_LIBS_PATH)/libevent_pthreads.a \
 			 $(BUILD_LIBS_PATH)/libnghttp2.a \
-			 $(BUILD_LIBS_PATH)/libnrf.a \
 			 $(BUILD_LIBS_PATH)/libs.a 
 
 SRCS		= main.c

@@ -1,5 +1,6 @@
 #include "nrfm.h"
-// TODO multi thread issue
+
+extern main_ctx_t MAIN_CTX;
 
 int cfg_get_access_token_shm_key(main_ctx_t *MAIN_CTX)
 {
@@ -93,33 +94,30 @@ char *cfg_get_my_recovery_time(main_ctx_t *MAIN_CTX)
 
 char *cfg_get_my_uuid(main_ctx_t *MAIN_CTX)
 {
-	config_setting_t *setting_uuid_file = NULL;
-	if ((setting_uuid_file = config_lookup(&MAIN_CTX->CFG, CF_UUID_FILE)) == NULL) {
-		APPLOG(APPLOG_ERR, "TODO| cant find .cfg (%s)", CF_UUID_FILE);
-		return strdup("unknown");
+	char fname[1024] = {0,};
+	sprintf(fname,"%s/%s", getenv(IV_HOME), ASSOCONF_FILE);
+
+	FILE *fp = fopen(fname, "r");
+	if (fp == NULL) {
+		fprintf(stderr, "'%s' not opened\n", fname);
+		return NULL;
 	}
 
-	const char *filename = config_setting_get_string(setting_uuid_file);
-	char *buffer = NULL;
+	char buffer[2048] = {0,};
+	while (fgets(buffer, 2048, fp)) {
+		char node_name[128] = {0,};
+		char uuid[128] = {0,};
 
-	get_file_contents(filename, &buffer);
-	json_object *vnf_file_obj = json_tokener_parse(buffer);
-
-	json_object *js_vnf_uuid = NULL;
-	char key[128] = "VNF_INSTANCE_ID";
-
-	if ((js_vnf_uuid = search_json_object(vnf_file_obj, key)) == NULL) {
-		APPLOG(APPLOG_ERR, "TODO| cant find in (%s) VNF_INSTANCE_ID", CF_UUID_FILE);
-		return strdup("unknown");
+		sscanf(buffer, "%s%*s%*s%*s%*s%*s%*s%*s%*s%*s%s", node_name, uuid);
+		if (!strcmp(node_name, MAIN_CTX->my_info.mySysName)) {
+			APPLOG(APPLOG_ERR, "{{{DBG}}} %s find my uuid [%s:%s]", __func__, node_name, uuid);
+			fclose(fp);
+			char *res = strdup(uuid);
+			return res;
+		}
 	}
-
-	char temp[1024] = {0,};
-	sprintf(temp, "%s", json_object_get_string(js_vnf_uuid));
-	char *res = strdup(temp);
-
-	json_object_put(vnf_file_obj); // release tok obj
-	free(buffer);
-
+	fclose(fp);
+	char *res = strdup("unknown");
 	return res;
 }
 
@@ -155,6 +153,7 @@ char *cfg_get_nf_type(nf_retrieve_info_t *nf_retr_info)
 	return res;
 }
 
+#if 0
 int cnvt_cfg_to_json(json_object *obj, config_setting_t *setting, int callerType)
 {
 	json_object *obj_group = NULL;
@@ -208,6 +207,7 @@ int cnvt_cfg_to_json(json_object *obj, config_setting_t *setting, int callerType
 
 	return 0;
 }
+#endif
 
 json_object *create_json_with_cfg(config_t *CFG)
 {
@@ -248,6 +248,9 @@ int init_cfg(config_t *CFG)
 	} else {
 		fprintf(stderr, "TODO| config read from ./nrfm.cfg success!\n");
 	}
+
+	// sysconfig
+	save_sysconfig(CFG, &MAIN_CTX);
 
 	// save with indent
 	config_set_tab_width(CFG, 4);
@@ -298,7 +301,6 @@ int load_access_token_cfg(main_ctx_t *MAIN_CTX)
 
 	if (setting == NULL) {
 		APPLOG(APPLOG_ERR, "{{{DBG}}} %s fail to find [%s] in .cfg", __func__, CF_ACC_TOKEN_LIST);
-		return -1;
 	}
 
 	int count = config_setting_length(setting);
@@ -492,6 +494,18 @@ char *replace_json_val(const char *input_str, main_ctx_t *MAIN_CTX, nf_retrieve_
 	return strdup("unknown");
 }
 
+
+#define CF_SYS_DBG_MODE     "nrfm_cfg.sys_config.debug_mode"
+int save_sysconfig(config_t *CFG, main_ctx_t *MAIN_CTX)
+{
+    if (config_lookup_int(CFG, CF_SYS_DBG_MODE, &MAIN_CTX->sysconfig.debug_mode) == CONFIG_FALSE) {
+        APPLOG(APPLOG_ERR, "DBG| (%s) .cfg [%s] not exist!", __func__, CF_SYS_DBG_MODE);
+        return -1;
+    }
+
+    return 0;
+}
+
 /*
  search_json_object(/ausfInfo/supiRanges/0/start) -->
 
@@ -509,30 +523,6 @@ char *replace_json_val(const char *input_str, main_ctx_t *MAIN_CTX, nf_retrieve_
       ],
    }
 */
-json_object *search_json_object(json_object *obj, char *key_string)
-{
-    char *ptr = strtok(key_string, "/");
-    json_object *input = obj;
-    json_object *output = NULL;
-
-    while (ptr != NULL) {
-        int cnvt_num = check_number(ptr);
-
-        if (cnvt_num >= 0) {
-            if (json_object_get_type(input) != json_type_array)
-                return NULL;
-            if ((output = json_object_array_get_idx(input, cnvt_num)) == NULL)
-                return NULL;
-        } else {
-            if (json_object_object_get_ex(input, ptr, &output) == 0)
-                return NULL;
-        }
-
-        input = output;
-        ptr = strtok(NULL, "/");
-    }
-    return output;
-}
 
 void set_cfg_sys_info(config_t *CFG)
 {

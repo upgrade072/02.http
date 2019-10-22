@@ -371,6 +371,9 @@ void message_handle(evutil_socket_t fd, short what, void *arg)
 	/* handle all pending msgs */
 	while (msgrcv(MAIN_CTX.my_qid.nrfm_qid, msg, sizeof(GeneralQMsgType), 0, IPC_NOWAIT) >= 0) {
 		switch (msg->mtype) {
+			case MTYPE_SETPRINT:
+				adjust_loglevel((TrcLibSetPrintMsgType *)msg);
+				continue;
 			/* OMP MML */
 			case MTYPE_MMC_REQUEST:
 				mml_function((IxpcQMsgType *)msg->body);

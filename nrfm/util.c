@@ -3,15 +3,6 @@
 extern main_ctx_t MAIN_CTX;
 
 
-int check_number(char *ptr)
-{
-    for (int i = 0; i < strlen(ptr); i++) {
-        if (isdigit(ptr[i]) == 0)
-            return -1;
-    }
-    return atoi(ptr);
-}
-
 void dump_pkt_log(void *msg, ssize_t size)
 {
 	FILE *temp_file = NULL; 
@@ -135,9 +126,13 @@ void handle_ctx_timeout(evutil_socket_t fd, short what, void *arg)
 
 void LOG_JSON_OBJECT(const char *banner, json_object *js_obj)
 {
+#if 0
 	char temp_buff[1024 *12] = {0,};
 	sprintf(temp_buff, "%s", json_object_to_json_string_ext(js_obj, JSON_C_PRETTY_NOSLASH));
 	APPLOG(APPLOG_ERR, "[%s]\n%s\n", banner, temp_buff);
+#else
+	APPLOG(APPLOG_ERR, "[%s]\n%s\n", banner, json_object_to_json_string_ext(js_obj, JSON_C_PRETTY_NOSLASH));
+#endif
 }
 
 void start_ctx_timer(int ctx_type, nrf_ctx_t *nf_ctx)

@@ -26,6 +26,13 @@ typedef enum {
 	NF_TYPE_NWDAF
 } nf_comm_type;
 
+// TODO
+typedef enum {
+	NF_ADD_RAW = 0,
+	NF_ADD_NRF,
+	NF_ADD_MML
+} nf_add_type;
+
 typedef struct {
 	char mcc[12];
 	char mnc[12];
@@ -86,6 +93,7 @@ typedef struct {
 #define NF_MAX_LB_NUM				5
 #define NF_MAX_AVAIL_LIST			(1024 * 4) /* MAX_CON_NUM : 1024 (host) * 4 (addr) */
 typedef struct {
+	int nf_avail_cnt[NF_MAX_LB_NUM]; /* num of item */
 	nf_service_info nf_avail[NF_MAX_LB_NUM][NF_MAX_AVAIL_LIST];
 } nf_list_shm_t;
 

@@ -34,6 +34,8 @@ int sn_cmp_type(void *input, void *compare)
     compare_input_t *comm_input = (compare_input_t *)input;
     select_node_t *node_data = (select_node_t *)compare;
 
+	//APPLOG(APPLOG_ERR, "%s comp %s:%s", __func__, node_data->name, comm_input->type);
+
     if (strlen(comm_input->type) == 0)
         return 0;
     else
@@ -44,6 +46,8 @@ int sn_cmp_host(void *input, void *compare)
 {
     compare_input_t *comm_input = (compare_input_t *)input;
     select_node_t *node_data = (select_node_t *)compare;
+
+	//APPLOG(APPLOG_ERR, "%s comp %s:%s", __func__, node_data->name, comm_input->host);
 
     if (strlen(comm_input->host) == 0)
         return 0;
@@ -56,6 +60,8 @@ int sn_cmp_ip(void *input, void *compare)
     compare_input_t *comm_input = (compare_input_t *)input;
     select_node_t *node_data = (select_node_t *)compare;
 
+	//APPLOG(APPLOG_ERR, "%s comp %s:%s", __func__, node_data->name, comm_input->ip);
+
     if (strlen(comm_input->ip) == 0)
         return 0;
     else
@@ -66,6 +72,8 @@ int sn_cmp_port(void *input, void *compare)
 {
     compare_input_t *comm_input = (compare_input_t *)input;
     select_node_t *node_data = (select_node_t *)compare;
+
+	//APPLOG(APPLOG_ERR, "%s comp %d:%d", __func__, node_data->val, comm_input->port);
 
     if (comm_input->port == 0)
         return 0;

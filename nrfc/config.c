@@ -1,5 +1,16 @@
 #include <nrfc.h>
 
+extern main_ctx_t MAIN_CTX;
+
+void write_cfg(main_ctx_t *MAIN_CTX)
+{
+	char conf_path[1024] = {0,};
+	sprintf(conf_path,"%s/data/nrfc.cfg", getenv(IV_HOME));
+
+    // save with indent
+    config_set_tab_width(&MAIN_CTX->CFG, 4);
+	config_write_file(&MAIN_CTX->CFG, conf_path);
+}
 
 int init_cfg(config_t *CFG)
 {
@@ -14,11 +25,22 @@ int init_cfg(config_t *CFG)
     } else {
         fprintf(stderr, "TODO| config read from ./nrfc.cfg success!\n");
     }   
+
+	// sysconfig
+	save_sysconfig(CFG, &MAIN_CTX);
         
-    // save with indent
-    config_set_tab_width(CFG, 4);
-    config_write_file(CFG, conf_path);
+    write_cfg(&MAIN_CTX);
     
     return 0;
 }       
 
+#define CF_SYS_DBG_MODE		"nrfc_cfg.sys_config.debug_mode"
+int save_sysconfig(config_t *CFG, main_ctx_t *MAIN_CTX)
+{
+	if (config_lookup_int(CFG, CF_SYS_DBG_MODE, &MAIN_CTX->sysconfig.debug_mode) == CONFIG_FALSE) {
+		APPLOG(APPLOG_ERR, "DBG| (%s) .cfg [%s] not exist!", __func__, CF_SYS_DBG_MODE);
+		return -1;
+	}
+
+	return 0;
+}

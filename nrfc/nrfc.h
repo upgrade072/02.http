@@ -40,6 +40,7 @@
 
 typedef struct qid_info {
     int nrfc_qid;       // my recv queue
+	int ixpc_qid;
 	int isifc_tx_qid;	// send
 	int isifs_rx_qid;	// recv
 } qid_info_t;
@@ -50,25 +51,52 @@ typedef struct fep_nfs_info {
 	int inProgress;
 } fep_nfs_info_t;
 
+typedef struct sys_conf {
+	int debug_mode;
+} sys_conf_t;
+
+typedef struct mml_conf {
+	char conf_name[128];
+	char nf_type[128];
+	nf_service_info service_info;
+	json_object *js_raw_profile;
+	char target_hostname[128];
+} mml_conf_t;
+
 typedef struct main_ctx {
     config_t CFG;
     struct event_base *EVBASE;
+
+	sys_conf_t sysconfig;
 
     svr_info_t my_info;
 	qid_info_t my_qid;
 	GSList *lb_assoc_list;		// dynamic
 	GSList *my_service_list;	// static
+	GSList *opr_mml_list;		// mml_conf_t
 
 	nfs_avail_shm_t *SHM_NFS_AVAIL;
 	struct timeval last_pub_time;
 	fep_nfs_info_t fep_nfs_info[NF_MAX_LB_NUM];
 } main_ctx_t;
+
+
+/* ------------------------- mml.c --------------------------- */
+void    init_mml(main_ctx_t *MAIN_CTX);
+void    destry_mml(mml_conf_t *mml_conf, main_ctx_t *MAIN_CTX);
+void    reload_mml(main_ctx_t *MAIN_CTX);
+void    mml_append_item_to_list(main_ctx_t *MAIN_CTX, config_setting_t *mml_item, const char *nf_type_str, config_setting_t *mml_profile, const char *hostname);
+
 /* ------------------------- config.c --------------------------- */
+void    write_cfg(main_ctx_t *MAIN_CTX);
 int     init_cfg(config_t *CFG);
+int     save_sysconfig(config_t *CFG, main_ctx_t *MAIN_CTX);
 
 /* ------------------------- status.c --------------------------- */
+void    attach_mml_info(nf_service_info *svc_mml, nf_service_info *svc_info, nf_service_info *nf_avail_each_lb);
+void    attach_mml_info_into_lb_shm(mml_conf_t *mml_conf, nf_service_info *nf_avail_each_lb);
+void    attach_mml_info_into_shm(mml_conf_t *mml_conf, main_ctx_t *MAIN_CTX);
 void    isif_save_recv_lb_status(main_ctx_t *MAIN_CTX, nf_service_info *nf_info);
-void    printf_fep_nfs(nfs_avail_shm_t *SHM_NFS_AVAIL);
 void    clear_fep_nfs(evutil_socket_t fd, short what, void *arg);
 
 /* ------------------------- isif.c --------------------------- */
@@ -95,7 +123,22 @@ void    send_status_to_lb(service_info_t *fep_svc, assoc_t *lb_assoc);
 void    broad_status_to_lb(assoc_t *lb_assoc);
 void    service_status_broadcast(evutil_socket_t fd, short what, void *arg);
 void    start_loop(main_ctx_t *MAIN_CTX);
-void    message_handle(evutil_socket_t fd, short what, void *arg);
 void    shmq_recv_handle(evutil_socket_t fd, short what, void *arg);
 void    directory_watch_action(const char *file_name);
 void    start_watching_dir(struct event_base *evbase);
+
+
+/* ------------------------- command.c --------------------------- */
+void    init_cmd(main_ctx_t *MAIN_CTX);
+void    message_handle(evutil_socket_t fd, short what, void *arg);
+void    mml_function(IxpcQMsgType *rxIxpcMsg);
+void    adjust_loglevel(TrcLibSetPrintMsgType *trcMsg);
+void    printf_nf_mml(main_ctx_t *MAIN_CTX, char *printBuff);
+void    printf_fep_nfs(nfs_avail_shm_t *SHM_NFS_AVAIL, char *printBuff);
+int     func_dis_nf_status(IxpcQMsgType *rxIxpcMsg);
+int     add_cfg_nf_mml_udm(main_ctx_t *MAIN_CTX, const char *conf_name, const char *target_host, const char *nf_type, MMLReqMsgType *mmlReq, config_setting_t *mml_list, char *resBuf);
+int     add_cfg_nf_mml(main_ctx_t *MAIN_CTX, const char *conf_name, const char *target_host, const char *nf_type, MMLReqMsgType *mml_req, char *resBuf);
+int     del_cfg_nf_mml(main_ctx_t *MAIN_CTX, int ID, char *resBuf);
+int     func_dis_nf_mml(IxpcQMsgType *rxIxpcMsg);
+int     func_add_nf_mml(IxpcQMsgType *rxIxpcMsg);
+int     func_del_nf_mml(IxpcQMsgType *rxIxpcMsg);

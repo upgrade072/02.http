@@ -1,6 +1,10 @@
 
 #include <restsvr.h>
 
+/* log */
+int logLevel = APPLOG_DEBUG;
+int *lOG_FLAG = &logLevel;
+
 config_t MAIN_CFG; /* ~.cfg */
 char CONF_PATH[1024] = {0,};
 
@@ -56,6 +60,9 @@ static size_t next_proto_list_len;
 /* proto */
 char *replace_value_body(const char *value, http2_stream_data *stream_data, key_value_t token[TOKEN_MAX_NUM]);
 static void eventcb(struct bufferevent *bev, short events, void *ptr);
+int watch_directory_init(struct event_base *evbase, const char *path_name);
+int keepalivelib_init(char *processName);
+void keepalivelib_increase();
 
 static int next_proto_cb(SSL *ssl, const unsigned char **data,
                          unsigned int *len, void *arg) {
@@ -92,7 +99,7 @@ static SSL_CTX *create_ssl_ctx(const char *key_file, const char *cert_file) {
 
   ssl_ctx = SSL_CTX_new(SSLv23_server_method());
   if (!ssl_ctx) {
-    fprintf(stderr, "Could not create SSL/TLS context: %s\n",
+    APPLOG(APPLOG_ERR, "Could not create SSL/TLS context: %s",
          ERR_error_string(ERR_get_error(), NULL));
   }
   SSL_CTX_set_options(ssl_ctx,
@@ -102,17 +109,17 @@ static SSL_CTX *create_ssl_ctx(const char *key_file, const char *cert_file) {
 
   ecdh = EC_KEY_new_by_curve_name(NID_X9_62_prime256v1);
   if (!ecdh) {
-    fprintf(stderr, "EC_KEY_new_by_curv_name failed: %s\n",
+    APPLOG(APPLOG_ERR, "EC_KEY_new_by_curv_name failed: %s",
          ERR_error_string(ERR_get_error(), NULL));
   }
   SSL_CTX_set_tmp_ecdh(ssl_ctx, ecdh);
   EC_KEY_free(ecdh);
 
   if (SSL_CTX_use_PrivateKey_file(ssl_ctx, key_file, SSL_FILETYPE_PEM) != 1) {
-    fprintf(stderr, "Could not read private key file %s\n", key_file);
+    APPLOG(APPLOG_ERR, "Could not read private key file %s", key_file);
   }
   if (SSL_CTX_use_certificate_chain_file(ssl_ctx, cert_file) != 1) {
-    fprintf(stderr, "Could not read certificate file %s\n", cert_file);
+    APPLOG(APPLOG_ERR, "Could not read certificate file %s", cert_file);
   }
 
   next_proto_list[0] = NGHTTP2_PROTO_VERSION_ID_LEN;
@@ -134,7 +141,7 @@ static SSL *create_ssl(SSL_CTX *ssl_ctx) {
   SSL *ssl;
   ssl = SSL_new(ssl_ctx);
   if (!ssl) {
-    fprintf(stderr, "Could not create SSL/TLS session object: %s\n",
+    APPLOG(APPLOG_ERR, "Could not create SSL/TLS session object: %s",
          ERR_error_string(ERR_get_error(), NULL));
   }
   return ssl;
@@ -176,7 +183,6 @@ create_http2_stream_data(http2_session_data *session_data, int32_t stream_id) {
 }
 
 void free_char_ptr(char *ptr) {
-	//fprintf(stderr, "{{{dbg}}} free (%x)\n", ptr);
 	free(ptr);
 }
 
@@ -186,7 +192,6 @@ static void delete_http2_stream_data(http2_stream_data *stream_data) {
   }
 
   g_slist_free_full(stream_data->cnvt_list, (GDestroyNotify)free_char_ptr);
-  //fprintf(stderr, "{{{dbg}}} glist now %x\n", stream_data->cnvt_list);
 
   fclose(stream_data->trace_file);
   free(stream_data->trace_ptr);
@@ -220,13 +225,13 @@ static http2_session_data *create_http2_session_data(app_context *app_ctx,
       BEV_OPT_CLOSE_ON_FREE | BEV_OPT_DEFER_CALLBACKS);
 #else
   if (app_ctx->ssl_ctx != NULL) {
-	  fprintf(stderr, "CON| ssl connected!\n");
+	  APPLOG(APPLOG_ERR, "CON| ssl connected!");
 	  sprintf(session_data->scheme, "%s", "https");
 	  session_data->bev = bufferevent_openssl_socket_new(
 			  app_ctx->evbase, fd, ssl, BUFFEREVENT_SSL_ACCEPTING,
 			  BEV_OPT_CLOSE_ON_FREE | BEV_OPT_DEFER_CALLBACKS);
   } else {
-	  fprintf(stderr, "CON| tcp connected!\n");
+	  APPLOG(APPLOG_ERR, "CON| tcp connected!");
 	  sprintf(session_data->scheme, "%s", "http");
 	  session_data->bev = bufferevent_socket_new(
 			  app_ctx->evbase, fd, BEV_OPT_CLOSE_ON_FREE | BEV_OPT_DEFER_CALLBACKS);
@@ -251,7 +256,7 @@ static http2_session_data *create_http2_session_data(app_context *app_ctx,
 static void delete_http2_session_data(http2_session_data *session_data) {
   http2_stream_data *stream_data;
 
-  fprintf(stderr, "%s disconnected\n", session_data->client_addr);
+  APPLOG(APPLOG_ERR, "%s disconnected", session_data->client_addr);
 
   if (!strcmp(session_data->scheme, "https")) {
 	  SSL *ssl = bufferevent_openssl_get_ssl(session_data->bev);
@@ -389,11 +394,11 @@ static ssize_t ptr_read_callback(nghttp2_session *session, int32_t stream_id,
 	http2_stream_data *stream_data = (http2_stream_data *)source->ptr;
 
 	if (stream_data->from_file) {
-		char temp_buff[8192] = {0,};
+		char temp_buff[8192 * 12] = {0,};
 		while ((r = read(stream_data->fd, temp_buff, length)) == -1 && errno == EINTR)
 			;
 		if (r == -1) {
-			fprintf(stderr, "error r is (-1)\n");
+			APPLOG(APPLOG_ERR, "error r is (-1)");
 			return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
 		}
 		char *check_replace = replace_value_body((const char *)temp_buff, stream_data, stream_data->token);
@@ -407,8 +412,12 @@ static ssize_t ptr_read_callback(nghttp2_session *session, int32_t stream_id,
 		}
 		*data_flags |= NGHTTP2_DATA_FLAG_EOF;
 
+#if 0
 		fwrite(buf, len, 1, stderr);
-		fprintf(stderr, "\n");
+#else
+		buf[len] = '\0';
+		APPLOG(APPLOG_ERR, "\n%s", buf);
+#endif
 		return len;
 	} else {
 		if (stream_data->body_ptr != NULL) {
@@ -423,8 +432,12 @@ static ssize_t ptr_read_callback(nghttp2_session *session, int32_t stream_id,
 		}
 		*data_flags |= NGHTTP2_DATA_FLAG_EOF;
 
+#if 0
 		fwrite(buf, len, 1, stderr);
-		fprintf(stderr, "\n\n");
+#else
+		buf[len] = '\0';
+		APPLOG(APPLOG_ERR, "%s\n", buf);
+#endif
 		return len;
 	}
 }
@@ -435,9 +448,9 @@ static int send_response(nghttp2_session *session, int32_t stream_id,
   nghttp2_data_provider data_prd;
 
   if (stream_data->from_file == 0) {
-	  fprintf(stderr, "response from ptr\n");
+	  APPLOG(APPLOG_ERR, "response from ptr");
   } else {
-	  fprintf(stderr, "response from file\n");
+	  APPLOG(APPLOG_ERR, "response from file");
   }
   data_prd.source.ptr = stream_data;
   data_prd.read_callback = ptr_read_callback;
@@ -570,7 +583,7 @@ int save_into_array(const char *api, char array[][TOKEN_MAX_LEN], int array_num)
         token_num ++;
         ptr = strtok(NULL, "/");
         if (token_num >= array_num) {
-            fprintf(stderr, "%s() exceed max token_num[%d]\n", __func__, array_num);
+            APPLOG(APPLOG_ERR, "%s() exceed max token_num[%d]", __func__, array_num);
             goto stop_and_return;
         }
     }
@@ -640,13 +653,13 @@ int find_from_cfg(config_setting_t *setting, http2_stream_data *stream_data, key
 			!strcmp(api_action, "noans"))
 		return -2; // silence discard
 
-	fprintf(stderr, "matched with [%s] token is ...\n", setting->name);
+	APPLOG(APPLOG_ERR, "matched with [%s] token is ...", setting->name);
 	for (int i = 0; i < TOKEN_MAX_NUM; i++) {
 		if (strlen(token[i].key) != 0) {
-			fprintf(stderr, "%s:%s\n", token[i].key, token[i].value);
+			APPLOG(APPLOG_ERR, "%s:%s", token[i].key, token[i].value);
 		}
 	}
-	fprintf(stderr, "------------------------------\n");
+	APPLOG(APPLOG_ERR, "------------------------------");
 	return 0;
 }
 
@@ -737,10 +750,10 @@ int resp_from_cfg(config_setting_t *setting,
 						key_value_t token[TOKEN_MAX_NUM]) {
 	config_setting_t *cf_hdrs = config_setting_get_member(setting, "response_hdrs");
 	if (cf_hdrs == NULL) {
-		fprintf(stderr, "can't find member [response_hdrs] from [%s]\n", setting->name);
+		APPLOG(APPLOG_ERR, "can't find member [response_hdrs] from [%s]", setting->name);
 	}
 	int hdrs_num = config_setting_length(cf_hdrs);
-	fprintf(stderr, "headers num [%d]\n", hdrs_num);
+	APPLOG(APPLOG_ERR, "headers num [%d]", hdrs_num);
 
 	stream_data->resp_hdrs = calloc(sizeof(nghttp2_nv), hdrs_num);
 
@@ -756,14 +769,14 @@ int resp_from_cfg(config_setting_t *setting,
 
 		nghttp2_nv temp_hdr[] = {MAKE_NV_STR(name, check_replace == NULL ? value : check_replace)};
 		memcpy(&stream_data->resp_hdrs[i], temp_hdr, sizeof(nghttp2_nv));
-		fprintf(stderr, "header] %s %s\n", name, check_replace == NULL ? value : check_replace);
+		APPLOG(APPLOG_ERR, "header] %s %s", name, check_replace == NULL ? value : check_replace);
 	}
 
 	const char *body_path = NULL;
 
 	config_setting_t *cf_bodys = config_setting_get_member(setting, "response_bodys");
 	if (cf_hdrs == NULL) {
-		fprintf(stderr, "can't find member [response_bodys] from [%s]\n", setting->name);
+		APPLOG(APPLOG_ERR, "can't find member [response_bodys] from [%s]", setting->name);
 	}
 	config_setting_lookup_bool(cf_bodys, "from_file", &stream_data->from_file);
 	if (stream_data->from_file) {
@@ -788,7 +801,7 @@ int resp_from_cfg(config_setting_t *setting,
 
 int resp_action_noans(http2_session_data *session_data,
                            http2_stream_data *stream_data) {
-	fprintf(stderr, "* response_action is \"noans\", will silent discard\n");
+	APPLOG(APPLOG_ERR, "* response_action is \"noans\", will silent discard");
 	return nghttp2_session_close_stream(session_data->session, stream_data->stream_id, NGHTTP2_INTERNAL_ERROR);
 }
 
@@ -814,7 +827,7 @@ int find_and_response(nghttp2_session *session,
 	}
 
 	/* schlee, can't find */
-	fprintf(stderr, "* can't find resp api [%s:%s(%s)]\n", stream_data->method, stream_data->request_path, stream_data->query);
+	APPLOG(APPLOG_ERR, "* can't find resp api [%s:%s(%s)]", stream_data->method, stream_data->request_path, stream_data->query);
     if (error_reply(session, stream_data) != 0) {
       return NGHTTP2_ERR_CALLBACK_FAILURE;
     }
@@ -824,15 +837,19 @@ int find_and_response(nghttp2_session *session,
 static int on_request_recv(nghttp2_session *session,
                            http2_session_data *session_data,
                            http2_stream_data *stream_data) {
-  fprintf(stderr, "\n* request receive) mathod[%s] path[%s] query[%s]\n",
+  APPLOG(APPLOG_ERR, "* request receive) mathod[%s] path[%s] query[%s]",
 		  stream_data->method,
 		  stream_data->request_path,
 		  stream_data->query);
 
   fflush(stream_data->trace_file);
-  fprintf(stderr, "* received pkt (size:%ld)\n", stream_data->trace_size);
+  APPLOG(APPLOG_ERR, "* received pkt (size:%ld)", stream_data->trace_size);
+#if 0
   fwrite(stream_data->trace_ptr, stream_data->trace_size, 1, stderr);
-  fprintf(stderr, "\n");
+#else
+  APPLOG(APPLOG_ERR, "\n%s", stream_data->trace_ptr);
+#endif
+  APPLOG(APPLOG_ERR, "\n");
 
   if (!stream_data->request_path) {
     if (error_reply(session, stream_data) != 0) {
@@ -990,7 +1007,7 @@ static void eventcb(struct bufferevent *bev, short events, void *ptr) {
     SSL *ssl;
     (void)bev;
 
-    fprintf(stderr, "%s connected\n", session_data->client_addr);
+    APPLOG(APPLOG_ERR, "%s connected", session_data->client_addr);
 
 	if (!strcmp(session_data->scheme, "https")) {
 		ssl = bufferevent_openssl_get_ssl(session_data->bev);
@@ -1002,7 +1019,7 @@ static void eventcb(struct bufferevent *bev, short events, void *ptr) {
 		}
 #endif // OPENSSL_VERSION_NUMBER >= 0x10002000L
 		if (alpn == NULL || alpnlen != 2 || memcmp("h2", alpn, 2) != 0) {
-			fprintf(stderr, "%s h2 is not negotiated\n", session_data->client_addr);
+			APPLOG(APPLOG_ERR, "%s h2 is not negotiated", session_data->client_addr);
 			delete_http2_session_data(session_data);
 			return;
 		}
@@ -1019,11 +1036,11 @@ static void eventcb(struct bufferevent *bev, short events, void *ptr) {
     return;
   }
   if (events & BEV_EVENT_EOF) {
-    fprintf(stderr, "%s EOF\n", session_data->client_addr);
+    APPLOG(APPLOG_ERR, "%s EOF", session_data->client_addr);
   } else if (events & BEV_EVENT_ERROR) {
-    fprintf(stderr, "%s network error\n", session_data->client_addr);
+    APPLOG(APPLOG_ERR, "%s network error", session_data->client_addr);
   } else if (events & BEV_EVENT_TIMEOUT) {
-    fprintf(stderr, "%s timeout\n", session_data->client_addr);
+    APPLOG(APPLOG_ERR, "%s timeout", session_data->client_addr);
   }
   delete_http2_session_data(session_data);
 }
@@ -1079,6 +1096,11 @@ static void initialize_app_context(app_context *app_ctx, SSL_CTX *ssl_ctx,
   app_ctx->evbase = evbase;
 }
 
+void main_tick_callback(evutil_socket_t fd, short what, void *arg)
+{
+    keepalivelib_increase();
+}
+
 // service = port_string
 static void run()
 {
@@ -1097,11 +1119,16 @@ static void run()
   config_lookup_string(&MAIN_CFG, "restsvr_cfg.cert_file", &cert_file);
   config_lookup_string(&MAIN_CFG, "restsvr_cfg.key_file", &key_file);
 
-  fprintf(stderr, "INIT| https port[%s] http port[%s] cert_file[%s] key_file[%s]\n", 
+  APPLOG(APPLOG_ERR, "INIT| https port[%s] http port[%s] cert_file[%s] key_file[%s]", 
 		  https_port, http_port, cert_file, key_file);
 
   ssl_ctx = create_ssl_ctx(key_file, cert_file);
   evbase = event_base_new();
+
+  // tick
+  struct timeval tic_sec = {1,0};
+  struct event *ev_tick = event_new(evbase, -1, EV_PERSIST, main_tick_callback, NULL);
+  event_add(ev_tick, &tic_sec);
 
   // check config file changed
   char watch_directory[1024] = {0,};
@@ -1126,13 +1153,13 @@ int init_cfg(config_t *CFG)
 {   
     sprintf(CONF_PATH,"%s/data/restsvr.cfg", getenv("IV_HOME"));
     if (!config_read_file(CFG, CONF_PATH)) {
-        fprintf(stderr, "config read fail! (%s|%d - %s)\n",
+        APPLOG(APPLOG_ERR, "config read fail! (%s|%d - %s)",
                 config_error_file(CFG),
                 config_error_line(CFG),
                 config_error_text(CFG));
         return (-1);
     } else {
-        fprintf(stderr, "INIT| config read from ./restsvr.cfg success!\n");
+        APPLOG(APPLOG_ERR, "INIT| config read from ./restsvr.cfg success!");
     }
     
     return 0;
@@ -1141,26 +1168,38 @@ int init_cfg(config_t *CFG)
 void directory_watch_action(const char *file_name)
 {
 	if (!strcmp(file_name, "restsvr.cfg")) {
-		fprintf(stderr, "CONF| main config changed, will reload it!\n");
+		APPLOG(APPLOG_ERR, "CONF| main config changed, will reload it!");
 		config_destroy(&MAIN_CFG);
 		init_cfg(&MAIN_CFG);
-		fprintf(stderr, "--> done\n");
+		APPLOG(APPLOG_ERR, "--> done");
 	}
 }
 
+void initialize()
+{
+	keepalivelib_init("RESTSVR");
+
+#ifdef LOG_APP
+    char log_path[1024] = {0,};
+    sprintf(log_path, "%s/log", getenv(IV_HOME));
+    LogInit("RESTSVR", log_path);
+#endif
+}
+
 int main(int argc, char **argv) {
-  struct sigaction act;
+	struct sigaction act;
 
-  init_cfg(&MAIN_CFG);
+	initialize();
+	init_cfg(&MAIN_CFG);
 
-  memset(&act, 0, sizeof(struct sigaction));
-  act.sa_handler = SIG_IGN;
-  sigaction(SIGPIPE, &act, NULL);
+	memset(&act, 0, sizeof(struct sigaction));
+	act.sa_handler = SIG_IGN;
+	sigaction(SIGPIPE, &act, NULL);
 
-  SSL_load_error_strings();
-  SSL_library_init();
+	SSL_load_error_strings();
+	SSL_library_init();
 
-  run();
+	run();
 
-  return 0;
+	return 0;
 }

@@ -33,6 +33,14 @@
 #include <gmodule.h>
 #include <nrf_comm.h>
 
+#ifdef LOG_LIB
+#include <sysconf.h>
+#include <loglib.h>
+#elif LOG_APP
+#include <sysconf.h>
+#include <appLog.h>
+#elif LOG_PRINT
+#endif
 
 #define OUTPUT_WOULDBLOCK_THRESHOLD (1 << 16)
 
@@ -50,3 +58,4 @@
     (uint8_t *)NAME, (uint8_t *)VALUE, strlen(NAME), strlen(VALUE),            \
         NGHTTP2_NV_FLAG_NONE                                                   \
   }
+

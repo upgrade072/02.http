@@ -72,13 +72,18 @@ void NF_MANAGE_RESTORE_HTTPC_CONN(main_ctx_t *MAIN_CTX)
 void nf_manage_collect_avail_each_nf(nf_retrieve_item_t *nf_item, nf_list_pkt_t *my_avail_nfs)
 {
 	json_object *js_specific_info = NULL;
-	int nfType = nf_manage_search_specific_info(nf_item->item_nf_profile, &js_specific_info);
+	int nfType = nf_search_specific_info(nf_item->item_nf_profile, &js_specific_info);
+
+	if (nfType < 0) {
+		APPLOG(APPLOG_ERR, "{{{DBG}}} %s fail to search nf_info [uuid:%s]", __func__, nf_item->nf_uuid);
+		return;
+	}
 
 	nf_type_info nf_specific_info = {0,};
-	nf_manage_get_specific_info(nfType, js_specific_info, &nf_specific_info);
+	nf_get_specific_info(nfType, js_specific_info, &nf_specific_info);
 
 	nf_comm_plmn allowdPlmns[NF_MAX_ALLOWD_PLMNS] = {0,};
-	int allowdPlmnsNum = nf_manage_get_allowd_plmns(nf_item->item_nf_profile, &allowdPlmns[0]);
+	int allowdPlmnsNum = nf_get_allowd_plmns(nf_item->item_nf_profile, &allowdPlmns[0]);
 
 	int pos = SHM_HTTP_PTR->current;
 	nrfm_mml_t *nf_mml = &nf_item->httpc_cmd;
@@ -139,9 +144,9 @@ void nf_manage_collect_httpc_conn_status(main_ctx_t *MAIN_CTX)
 		/* collect auto added */
 		g_slist_foreach(MAIN_CTX->nf_retrieve_list, (GFunc)nf_manage_collect_avail_each_type, &my_avail_nfs);
 
-		printf_avail_nfs(&my_avail_nfs);
+		if (MAIN_CTX->sysconfig.debug_mode)
+			printf_avail_nfs(&my_avail_nfs);
 
-		//nf_manage_print_my_avail_nfs(&my_avail_nfs);
 		nf_manage_broadcast_nfs_to_fep(MAIN_CTX, &my_avail_nfs);
 	}
 
@@ -373,64 +378,6 @@ int nf_manage_fill_nrfm_mml(nrfm_mml_t *nrfm_cmd, const char *service, const cha
 	return nrfm_cmd->info_cnt;
 }
 
-int nf_manage_get_allowd_plmns(json_object *nf_profile, nf_comm_plmn *allowdPlmns)
-{
-	char key_allowd_plmns[128] = "allowedPlmns";
-	json_object *js_allowd_plmns = search_json_object(nf_profile, key_allowd_plmns);
-
-	int allowdPlmnsNum = (json_object_array_length(js_allowd_plmns) > NF_MAX_ALLOWD_PLMNS) ?
-		NF_MAX_ALLOWD_PLMNS : json_object_array_length(js_allowd_plmns);
-
-	for (int i = 0; i < allowdPlmnsNum; i++) {
-		json_object *js_allowd_plmn_elem = json_object_array_get_idx(js_allowd_plmns, i);
-		char key_mcc[128] = "mcc";
-		char key_mnc[128] = "mnc";
-		json_object *js_mcc = search_json_object(js_allowd_plmn_elem, key_mcc);
-		json_object *js_mnc = search_json_object(js_allowd_plmn_elem, key_mnc);
-		sprintf(allowdPlmns[i].mcc, "%s", json_object_get_string(js_mcc));
-		sprintf(allowdPlmns[i].mnc, "%s", json_object_get_string(js_mnc));
-	}
-
-	return allowdPlmnsNum;
-}
-
-void nf_manage_get_specific_info(int nfType, json_object *js_specific_info, nf_type_info *nf_specific_info)
-{
-	if (nfType == NF_TYPE_UDM) {
-		nf_udm_info *udmInfo = &nf_specific_info->udmInfo;
-
-		/* group Id */
-		char key_groupId[128] = "groupId";
-		json_object *js_group_id = search_json_object(js_specific_info, key_groupId);
-		sprintf(udmInfo->groupId, "%s", json_object_get_string(js_group_id));
-
-		/* supiRanges */
-		char key_supi_ranges[128] = "supiRanges";
-		json_object *js_supi_ranges = search_json_object(js_specific_info, key_supi_ranges);
-		udmInfo->supiRangesNum = (json_object_array_length(js_supi_ranges) > NF_MAX_SUPI_RANGES) ?
-			NF_MAX_SUPI_RANGES : json_object_array_length(js_supi_ranges);
-		for (int i = 0; i < udmInfo->supiRangesNum; i++) {
-			json_object *js_supi_elem = json_object_array_get_idx(js_supi_ranges, i);
-			char key_start[128] = "start";
-			char key_end[128] = "end";
-			json_object *js_start = search_json_object(js_supi_elem, key_start);
-			json_object *js_end = search_json_object(js_supi_elem, key_end);
-			sprintf(udmInfo->supiRanges[i].start, "%s", json_object_get_string(js_start));
-			sprintf(udmInfo->supiRanges[i].end, "%s", json_object_get_string(js_end));
-		}
-
-		/* routingIndicators */
-		char key_routing_indicators[128] = "routingIndicators";
-		json_object *js_routing_indicators = search_json_object(js_specific_info, key_routing_indicators);
-		udmInfo->routingIndicatorsNum = (json_object_array_length(js_routing_indicators) > NF_MAX_RI) ?
-			NF_MAX_RI : json_object_array_length(js_routing_indicators);
-		for (int i = 0; i < udmInfo->routingIndicatorsNum; i++) {
-			json_object *js_ri_elem = json_object_array_get_idx(js_routing_indicators, i);
-			sprintf(udmInfo->routingIndicators[i], "%s", json_object_get_string(js_ri_elem));
-		}
-	}
-}
-
 void nf_manage_handle_cmd_res(nrfm_mml_t *httpc_cmd_res)
 {
 	APPLOG(APPLOG_ERR, "{{{DBG}}} %s called", __func__);
@@ -472,11 +419,7 @@ void nf_manage_handle_httpc_alive(nrfm_noti_t *httpc_noti)
 	}
 }
 
-void nf_manage_print_my_avail_nfs(nf_list_pkt_t *avail_nfs)
-{
-	printf_avail_nfs(avail_nfs);
-}
-
+#if 0
 int nf_manage_search_specific_info(json_object *nf_profile, json_object **js_specific_info)
 {
 	char key_nfType[128] = "nfType";
@@ -496,6 +439,7 @@ int nf_manage_search_specific_info(json_object *nf_profile, json_object **js_spe
 		return NF_TYPE_UNKNOWN;
 	}
 }
+#endif
 
 void nf_manage_send_httpc_cmd(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item)
 {

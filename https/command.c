@@ -8,7 +8,6 @@ extern int ixpcQid;
 extern server_conf SERVER_CONF;
 extern thrd_context THRD_WORKER[MAX_THRD_NUM];
 
-char resBuf[MAX_LEN_RES_BUF] = {0,};
 char respMsg[MAX_MML_RESULT_LEN], respBuff[MAX_MML_RESULT_LEN];
 
 typedef enum server_cmd {
@@ -291,6 +290,7 @@ int func_chg_http_client(IxpcQMsgType *rxIxpcMsg)
     int ID = -1;
     char IPADDR[64];
     int MAX = -1;
+	int LIMIT = -1;
 	int AUTH_ACT = -1;
     struct sockaddr_in sa;
     struct sockaddr_in6 sa6;
@@ -303,6 +303,8 @@ int func_chg_http_client(IxpcQMsgType *rxIxpcMsg)
         return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(IPADDR)");
     if ((MAX = get_mml_para_int(mmlReq, "MAX")) < 0)
         return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(MAX)");
+    if ((LIMIT = get_mml_para_int(mmlReq, "LIMIT")) < 0)
+        return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(LIMIT)");
     if ((AUTH_ACT = get_mml_para_int(mmlReq, "AUTH_ACT")) < 0)
         return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(AUTH_ACT)");
 
@@ -315,10 +317,12 @@ int func_chg_http_client(IxpcQMsgType *rxIxpcMsg)
 	}
     if (MAX <= 0 || MAX >= 65535)
         return send_mml_res_failMsg(rxIxpcMsg, "INVALID MAX");
+	if (LIMIT < 0)
+        return send_mml_res_failMsg(rxIxpcMsg, "INVALID LIMIT");
 	if (AUTH_ACT != 0 && AUTH_ACT != 1)
         return send_mml_res_failMsg(rxIxpcMsg, "INVALID AUTH_ACT");
 
-    if (chgcfg_client_max_cnt_with_auth_act(ID, IPADDR, MAX, AUTH_ACT) < 0)
+    if (chgcfg_client_max_cnt_with_auth_act_and_limit(ID, IPADDR, MAX, AUTH_ACT, LIMIT) < 0)
         return send_mml_res_failMsg(rxIxpcMsg, "MAX CHG FAIL");
 
     write_list(resBuf);

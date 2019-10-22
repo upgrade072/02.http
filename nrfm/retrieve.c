@@ -200,9 +200,10 @@ void nf_retrieve_item_token_add(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_ite
 		nf_item->token_id = token_info->token_id;
 		nf_token_add_shm_by_nf(token_info, nf_item);
 
-		char respBuff[MAX_MML_RESULT_LEN] = {0,};
+		char *respBuff = malloc(1024 * 1024);
 		print_token_info_raw(MAIN_CTX->nrf_access_token.ACC_TOKEN_LIST, respBuff);
 		APPLOG(APPLOG_ERR, "NOW TOKEN SHM IS >>>\n%s", respBuff);
+		free(respBuff);
 	}
 }
 

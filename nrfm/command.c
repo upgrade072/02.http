@@ -42,16 +42,36 @@ void mml_function(IxpcQMsgType *rxIxpcMsg)
     }
 }
 
+void adjust_loglevel(TrcLibSetPrintMsgType *trcMsg)
+{
+    if (trcMsg->trcLogFlag.pres) {
+        if (trcMsg->trcLogFlag.octet == 9) {
+            MAIN_CTX.sysconfig.debug_mode = (MAIN_CTX.sysconfig.debug_mode == 1 ? 0 : 1);
+            APPLOG(APPLOG_ERR,"---- log level 9 (debug_mode on/off) now [%s]", MAIN_CTX.sysconfig.debug_mode == 1 ? "ON" : "OFF");
+        } else {
+            APPLOG(APPLOG_ERR,"---- log level change (%d -> %d)\n", *lOG_FLAG, trcMsg->trcLogFlag.octet);
+            *lOG_FLAG = trcMsg->trcLogFlag.octet;
+        }
+    }
+}
+
 int func_dis_acc_token(IxpcQMsgType *rxIxpcMsg)
 {   
 	APPLOG(APPLOG_DEBUG, "%s() called", __func__);
 
-	char *resBuf=respMsg;
+	char *resBuf=malloc(1024 * 1024);
+	resBuf[0] = '\0';
+
 	sprintf(mySysName, "%s", MAIN_CTX.my_info.mySysName);
 	sprintf(myProcName, "%s", MAIN_CTX.my_info.myProcName);
 
 	print_token_info_raw(MAIN_CTX.nrf_access_token.ACC_TOKEN_LIST, resBuf);
 
 	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
-	return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
+
+	int res = send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
+
+	free(resBuf);
+	return res;
 }  
+

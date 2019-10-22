@@ -328,10 +328,19 @@ void send_to_remote(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx)
 	if (recv_ctx->user_ctx.head.hopped_cnt == 0) 
 		sprintf(recv_ctx->user_ctx.head.fep_origin_addr, "%s", sock_ctx->client_ip);
 
+#if 0
 	/* our config lib can't use www.aaa.com, modified name is www_aaa_com */
 	desthost_case_sensitive(recv_ctx);
+#endif
 
 	if ((httpc_conn = find_packet_index(&tcp_ctx->root_select, &recv_ctx->user_ctx.head)) == NULL) {
+		if (CLIENT_CONF.debug_mode == 1) {
+			APPLOG(APPLOG_ERR, "{{{DBG}}} searchDest fail ahifPkt type=(%s) host=(%s) ip=(%s) port=(%d)",
+					recv_ctx->user_ctx.head.destType,
+					recv_ctx->user_ctx.head.destHost,
+					recv_ctx->user_ctx.head.destIp,
+					recv_ctx->user_ctx.head.destPort);
+		}
 		tcp_ctx->tcp_stat.send_to_peer++;
 		send_to_peerlb(sock_ctx, recv_ctx);
 	} else {

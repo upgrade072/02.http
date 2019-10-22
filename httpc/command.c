@@ -411,7 +411,8 @@ int func_dis_http_server(IxpcQMsgType *rxIxpcMsg)
 {
 	APPLOG(APPLOG_DEBUG, "%s() called", __func__);
 
-	char *resBuf=respMsg;
+	char *resBuf = malloc(1024 * 1024);
+	resBuf[0] = '\0';
 	conn_list_status_t CONN_STATUS[MAX_CON_NUM];
 
 	memset(CONN_STATUS, 0x00, sizeof(conn_list_status_t) * MAX_CON_NUM);
@@ -422,7 +423,10 @@ int func_dis_http_server(IxpcQMsgType *rxIxpcMsg)
 	print_list(CONN_STATUS);
 
 	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
-	return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
+	int res = send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
+
+	free(resBuf);
+	return res;
 }
 
 int func_add_http_server(IxpcQMsgType *rxIxpcMsg)
@@ -431,7 +435,6 @@ int func_add_http_server(IxpcQMsgType *rxIxpcMsg)
 
 	MMLReqMsgType   *mmlReq=(MMLReqMsgType*)rxIxpcMsg->body;
 
-	char *resBuf=respMsg;
 	char HOSTNAME[64];
 	char TYPE[64];
 	conn_list_status_t CONN_STATUS[MAX_CON_NUM];
@@ -448,6 +451,9 @@ int func_add_http_server(IxpcQMsgType *rxIxpcMsg)
 	if (addcfg_server_hostname(HOSTNAME, TYPE) < 0)
 		return send_mml_res_failMsg(rxIxpcMsg, "HOSTNAME ADD FAIL");
 
+	char *resBuf = malloc(1024 * 1024);
+	resBuf[0] = '\0';
+
 	// node change, remake
 	trig_refresh_select_node(&LB_CTX);
 
@@ -456,7 +462,10 @@ int func_add_http_server(IxpcQMsgType *rxIxpcMsg)
 	write_list(CONN_STATUS, resBuf);
 
 	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
-	return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
+	int res = send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
+
+	free(resBuf);
+	return res;
 }
 
 int func_add_http_svr_ip(IxpcQMsgType *rxIxpcMsg)
@@ -465,7 +474,6 @@ int func_add_http_svr_ip(IxpcQMsgType *rxIxpcMsg)
 
 	MMLReqMsgType   *mmlReq=(MMLReqMsgType*)rxIxpcMsg->body;
 
-	char *resBuf=respMsg;
 	int ID = -1;
 	char SCHEME[64];
 	char IPADDR[64];
@@ -512,6 +520,9 @@ int func_add_http_svr_ip(IxpcQMsgType *rxIxpcMsg)
 	if (addcfg_server_ipaddr(ID, SCHEME, IPADDR, PORT, CONN_CNT, TOKEN_ID) < 0)
 		return send_mml_res_failMsg(rxIxpcMsg, "IPADDR ADD FAIL");
 
+	char *resBuf = malloc(1024 * 1024);
+	resBuf[0] = '\0';
+
 	// node change, remake
 	trig_refresh_select_node(&LB_CTX);
 
@@ -520,7 +531,10 @@ int func_add_http_svr_ip(IxpcQMsgType *rxIxpcMsg)
 	write_list(CONN_STATUS, resBuf);
 
 	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
-	return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
+	int res = send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
+	
+	free(resBuf);
+	return res;
 }
 
 int func_act_http_server(IxpcQMsgType *rxIxpcMsg)
@@ -590,7 +604,6 @@ int func_chg_http_server(IxpcQMsgType *rxIxpcMsg)
 
 	MMLReqMsgType   *mmlReq=(MMLReqMsgType*)rxIxpcMsg->body;
 
-	char *resBuf=respMsg;
 	int ID = -1;
 	char SCHEME[64];
 	char IPADDR[64];
@@ -637,6 +650,9 @@ int func_chg_http_server(IxpcQMsgType *rxIxpcMsg)
 	if (chgcfg_server_conn_cnt(ID, SCHEME, IPADDR, PORT, CONN_CNT, TOKEN_ID) < 0)
 		return send_mml_res_failMsg(rxIxpcMsg, "CONN COUNT CHG FAIL");
 
+	char *resBuf = malloc(1024 * 1024);
+	resBuf[0] = '\0';
+
 	// node change, remake
 	trig_refresh_select_node(&LB_CTX);
 
@@ -645,7 +661,10 @@ int func_chg_http_server(IxpcQMsgType *rxIxpcMsg)
 	write_list(CONN_STATUS, resBuf);
 
 	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
-	return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
+	int res = send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
+
+	free(resBuf);
+	return res;
 }
 
 int func_del_http_svr_ip(IxpcQMsgType *rxIxpcMsg)
@@ -654,7 +673,6 @@ int func_del_http_svr_ip(IxpcQMsgType *rxIxpcMsg)
 
 	MMLReqMsgType   *mmlReq=(MMLReqMsgType*)rxIxpcMsg->body;
 
-	char *resBuf=respMsg;
 	int ID = -1;
 	char IPADDR[64];
 	int PORT = -1;
@@ -685,6 +703,9 @@ int func_del_http_svr_ip(IxpcQMsgType *rxIxpcMsg)
 	if (delcfg_server_ipaddr(ID, IPADDR, PORT) < 0)
 		return send_mml_res_failMsg(rxIxpcMsg, "IPADDR DEL FAIL");
 
+	char *resBuf = malloc(1024 * 1024);
+	resBuf[0] = '\0';
+
 	// node change, remake
 	trig_refresh_select_node(&LB_CTX);
 
@@ -693,7 +714,10 @@ int func_del_http_svr_ip(IxpcQMsgType *rxIxpcMsg)
 	write_list(CONN_STATUS, resBuf);
 
 	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
-	return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
+	int res = send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
+
+	free(resBuf);
+	return res;
 }
 
 int func_del_http_server(IxpcQMsgType *rxIxpcMsg)
@@ -702,7 +726,6 @@ int func_del_http_server(IxpcQMsgType *rxIxpcMsg)
 
 	MMLReqMsgType   *mmlReq=(MMLReqMsgType*)rxIxpcMsg->body;
 
-	char *resBuf=respMsg;
 	int ID = -1;
 	conn_list_status_t CONN_STATUS[MAX_CON_NUM];
 
@@ -717,6 +740,9 @@ int func_del_http_server(IxpcQMsgType *rxIxpcMsg)
 	if (delcfg_server_hostname(ID) < 0)
 		return send_mml_res_failMsg(rxIxpcMsg, "HOSTNAME DEL FAIL");
 
+	char *resBuf = malloc(1024 * 1024);
+	resBuf[0] = '\0';
+
 	// node change, remake
 	trig_refresh_select_node(&LB_CTX);
 
@@ -725,7 +751,10 @@ int func_del_http_server(IxpcQMsgType *rxIxpcMsg)
 	write_list(CONN_STATUS, resBuf);
 
 	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
-	return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
+	int res = send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
+
+	free(resBuf);
+	return res;
 }
 
 int func_dis_http_svr_ping(IxpcQMsgType *rxIxpcMsg)

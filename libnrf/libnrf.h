@@ -189,6 +189,12 @@ void    getTypeSpecStr(nf_service_info *nf_info, char *resBuf);
 void    getAllowdPlmns(nf_service_info *nf_info, char *resBuf);
 void    printf_avail_nfs(nf_list_pkt_t *avail_nfs);
 char    *get_nrfm_cmd_str(int cmd);
+int     cnvt_cfg_to_json(json_object *obj, config_setting_t *setting, int callerType);
+int     check_number(char *ptr);
+json_object     *search_json_object(json_object *obj, char *key_string);
+int     nf_search_specific_info(json_object *nf_profile, json_object **js_specific_info);
+void    nf_get_specific_info(int nfType, json_object *js_specific_info, nf_type_info *nf_specific_info);
+int     nf_get_allowd_plmns(json_object *nf_profile, nf_comm_plmn *allowdPlmns);
 
 #endif /* __NRF_COMMON_H__ */
 
