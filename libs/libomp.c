@@ -16,14 +16,21 @@ extern index_t INDEX[MAX_LIST_NUM];
  */
 void http_report_status(SFM_HttpConnStatusList *http_status, int msgId)
 {
-	GeneralQMsgType	txGenQMsg;
+	GeneralQMsgType	txGenQMsg = {0,};
 	IxpcQMsgType	*txIxpcMsg;
 	int i, totalLen = 0, txLen = 0, len = 0;
-	char *ptr;
+	char *ptr = NULL;
+	int lenCnt = 0;
+	char *lenPtr = NULL;
 	int destQid = ixpcQid;
 
 	txIxpcMsg = (IxpcQMsgType*)txGenQMsg.body;
 	ptr = (char *)txIxpcMsg->body;
+
+	/* first first space pointing num of item */
+	lenPtr = ptr;
+	ptr += sizeof(int);
+	len += sizeof(int);
 
 	/* ixpc routing header */
 	strcpy (txIxpcMsg->head.srcSysName, mySysName);
@@ -45,39 +52,42 @@ void http_report_status(SFM_HttpConnStatusList *http_status, int msgId)
 		txIxpcMsg->head.segFlag = 1;
 	}
 
-	for (i = 0; i < http_status->cnt; i++) {
-		if (i == 0) {
-			memcpy(ptr, &http_status->cnt, sizeof(int));
-			ptr += sizeof(int);
-			len += sizeof(int);
-		}
+	for (i = 0; i < http_status->cnt; i++, lenCnt++) {
 		memcpy(ptr, &http_status->conn[i], sizeof(SFM_HttpConnStatus));
 		ptr += sizeof(SFM_HttpConnStatus);
 		len += sizeof(SFM_HttpConnStatus);
 
 		/* check next size, send fulfilled msg  */
-		if ((len + sizeof(SFM_HttpConnStatus)) > MAX_IXPC_QMSG_LEN) {
+		if ((len + sizeof(SFM_HttpConnStatus)) > (MAX_IXPC_QMSG_LEN - 1024)) {
+
+			memcpy(lenPtr, &lenCnt, sizeof(int)); /* len ptr pointing first space */
+
 			/* send */
 			txIxpcMsg->head.seqNo ++;
 			txIxpcMsg->head.bodyLen = len;
 			txLen = sizeof(txIxpcMsg->head) + txIxpcMsg->head.bodyLen;
-			//DumpHex(&txGenQMsg, txLen);
 			if (msgsnd(destQid, (void*)&txGenQMsg, txLen, IPC_NOWAIT) < 0) {
-				//APPLOG(APPLOG_ERR, "DBG] http status send fail qid[%s]\n", strerror(errno));
 				return;
-			} else {
-				/* init */
-				ptr = (char *)&txIxpcMsg;
-				len = 0;
-			}
+			} 
+
+			/* init */
+			ptr = (char *)txIxpcMsg->body;
+			len = 0;
+			lenCnt = 0;
+
+			lenPtr = ptr;
+			ptr += sizeof(int);
+			len += sizeof(int);
 		}
 	}
+
+	memcpy(lenPtr, &lenCnt, sizeof(int)); /* len ptr pointing first space */
+
 	/* send last msg*/
 	txIxpcMsg->head.segFlag = 0;
 	txIxpcMsg->head.seqNo ++;
 	txIxpcMsg->head.bodyLen = len;
 	txLen = sizeof(txIxpcMsg->head) + txIxpcMsg->head.bodyLen;
-	//DumpHex(&txGenQMsg, txLen);
 	if (msgsnd(destQid, (void*)&txGenQMsg, txLen, IPC_NOWAIT) < 0) {
 		//APPLOG(APPLOG_ERR, "DBG] http status send fail qid[%s]\n", strerror(errno));
 		return;
@@ -133,7 +143,7 @@ void stat_function(IxpcQMsgType *rxIxpcMsg, int running_thrd_num, int httpc, int
 
 	IxpcQMsgType *sxIxpcMsg = (IxpcQMsgType*)sxGenQMsg.body;
 
-	STM_CommonStatMsgType *commStatMsg=NULL;
+	STM_CommonStatMsgType *commStatMsg=(STM_CommonStatMsgType *)sxIxpcMsg->body;
 	STM_CommonStatMsg     *commStatItem=NULL;
 
     sxGenQMsg.mtype = MTYPE_STATISTICS_REPORT;
@@ -159,11 +169,14 @@ void stat_function(IxpcQMsgType *rxIxpcMsg, int running_thrd_num, int httpc, int
 		return;
 	}
 
-	commStatMsg = (STM_CommonStatMsgType *)sxIxpcMsg->body;
-	commStatItem = &commStatMsg->info[0];
 	for (i = 0; i < HTTP_MAX_HOST; i++) {
+		commStatItem = &commStatMsg->info[write_count];
+
 		if (i != 0  && INDEX[i].occupied == 0) 
 			continue;
+		else
+			write_count++;
+
 		if (i == 0)
 			snprintf(commStatItem->strkey1, sizeof(commStatItem->strkey1), "%s", "UNKNOWN");
 		else
@@ -178,25 +191,27 @@ void stat_function(IxpcQMsgType *rxIxpcMsg, int running_thrd_num, int httpc, int
 				commStatItem->ldata[j] += http_stat_host[i][pos];
 			}
 		}
-		write_count++;
+
 		commStatMsg->num = write_count;
 		len += sizeof (STM_CommonStatMsg);
 		print_stat(commStatMsg, commStatItem, item_str, item_size);
 
 		/* check next size, send fulfilled msg  */
-		if ((len + sizeof (STM_CommonStatMsg)) > MAX_IXPC_QMSG_LEN) {
+		if (((len + sizeof (STM_CommonStatMsg)) > MAX_IXPC_QMSG_LEN) ||
+				write_count >= MAX_STAT_DATA_NUM) {
 			sxIxpcMsg->head.segFlag = 1;
 			sxIxpcMsg->head.seqNo++;
 			sxIxpcMsg->head.bodyLen = len;
 			txLen = sizeof(sxIxpcMsg->head) + sxIxpcMsg->head.bodyLen;
-			commStatItem = (STM_CommonStatMsg *)sxIxpcMsg->body;
+			write_count = 0;
 			len = 0;
 			if (msgsnd(ixpcQid, (void*)&sxGenQMsg, txLen, IPC_NOWAIT) < 0) {
 				//APPLOG(APPLOG_ERR, "DBG] http status send fail qid[%s]\n", strerror(errno));
 				goto HTTP_STATUS_SEND_FAIL;
 			}
-		} else {
-			commStatItem ++;
+			commStatMsg = (STM_CommonStatMsgType *)sxIxpcMsg->body;
+			commStatItem = &commStatMsg->info[0];
+			memset(commStatMsg, 0x00, sizeof(STM_CommonStatMsgType));
 		}
 	}
 
@@ -205,11 +220,7 @@ void stat_function(IxpcQMsgType *rxIxpcMsg, int running_thrd_num, int httpc, int
 	sxIxpcMsg->head.seqNo++;
 	sxIxpcMsg->head.bodyLen = len;
 	txLen = sizeof(sxIxpcMsg->head) + sxIxpcMsg->head.bodyLen;
-#if 0 // for test
-    fprintf(stderr, "\n\nDBG STAT SEND]\n");
-    DumpHex(&sxGenQMsg, txLen);
-    fprintf(stderr, "\n\n");
-#endif
+
 	if (msgsnd(ixpcQid, (void*)&sxGenQMsg, txLen, IPC_NOWAIT) < 0) {
 		//APPLOG(APPLOG_ERR, "DBG] http status send fail qid[%s]\n", strerror(errno));
 		goto HTTP_STATUS_SEND_FAIL;
@@ -222,8 +233,6 @@ HTTP_STATUS_SEND_FAIL:
 
 void print_stat(STM_CommonStatMsgType *commStatMsg, STM_CommonStatMsg *commStatItem, char (*str)[128], int size)
 {
-	//APPLOG(APPLOG_ERR, "CommStatMsg num now [%d]\n", commStatMsg->num);
-	//APPLOG(APPLOG_ERR, "Item Write [%-15s]  ", commStatItem->strkey1);
 	for (int i = 0; i < size; i++) {
 		APPLOG(APPLOG_ERR, "%-15s: %-7ld ", str[i], commStatItem->ldata[i]);
 	}

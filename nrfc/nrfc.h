@@ -46,8 +46,6 @@ typedef struct qid_info {
 } qid_info_t;
 
 typedef struct fep_nfs_info {
-	int lbId;
-	int seqNo;
 	int inProgress;
 } fep_nfs_info_t;
 

@@ -83,6 +83,8 @@ void handle_nrfm_request(GeneralQMsgType *msg)
 	memcpy(&httpc_ctx->user_ctx.vheader, &ahifPkt->vheader, sizeof(hdr_relay) * ahifPkt->head.vheaderCnt);
 	memcpy(&httpc_ctx->user_ctx.data, &ahifPkt->data, 
 			ahifPkt->head.queryLen + ahifPkt->head.bodyLen);
+	int dataLen = ahifPkt->head.queryLen + ahifPkt->head.bodyLen;
+	httpc_ctx->user_ctx.data[dataLen + 1] = '\0';
 
 	httpc_ctx->user_ctx.head.mtype = set_nrfm_response_msg(httpc_ctx->user_ctx.head.mtype);    // in advance set
 
@@ -137,13 +139,14 @@ void handle_nrfm_mmc(nrfm_mml_t *nrfm_cmd)
 
 void nrfm_mmc_res_log()
 {
+	if (CLIENT_CONF.debug_mode != 1)
+		return;
+
 	conn_list_status_t temp_conn_status[MAX_CON_NUM] = {0,};
 	char resBuf[1024 * 12] = {0,};
 
 	gather_list(temp_conn_status);
 	write_list(temp_conn_status, resBuf);
-
-	APPLOG(APPLOG_ERR, "{{{DBG}}} RES IS \n%s", resBuf);
 }
 
 void nrfm_mmc_send_resp(nrfm_mml_t *nrfm_cmd_req)
@@ -198,8 +201,7 @@ void nrfm_mmc_add_proc(nrfm_mml_t *nrfm_cmd)
 	nrfm_mmc_send_resp(nrfm_cmd);
 
 	// node change, remake
-	trig_refresh_select_node(&LB_CTX);
-
+	trig_refresh_select_node(&CLIENT_CONF);
 }
 
 void nrfm_mmc_act_dact_proc(nrfm_mml_t *nrfm_cmd, int act)
@@ -232,7 +234,7 @@ void nrfm_mmc_act_dact_proc(nrfm_mml_t *nrfm_cmd, int act)
 	nrfm_mmc_send_resp(nrfm_cmd);
 
 	// node change, remake
-	trig_refresh_select_node(&LB_CTX);
+	trig_refresh_select_node(&CLIENT_CONF);
 }
 
 void nrfm_mmc_del_proc(nrfm_mml_t *nrfm_cmd)
@@ -265,8 +267,7 @@ void nrfm_mmc_del_proc(nrfm_mml_t *nrfm_cmd)
 	nrfm_mmc_send_resp(nrfm_cmd);
 
 	// node change, remake
-	trig_refresh_select_node(&LB_CTX);
-
+	trig_refresh_select_node(&CLIENT_CONF);
 }
 
 void nrfm_mmc_clear_proc()
@@ -289,8 +290,16 @@ void nrfm_mmc_clear_proc()
 		http2_session_data_t *session_data = get_session(CONN_LIST[k].thrd_index,
 				CONN_LIST[k].session_index, CONN_LIST[k].session_id);
 		if (session_data != NULL) {
-			delete_http2_session_data(session_data);
+			/* disconnect must act in worker */
+			intl_req_t intl_req = {0,};
+			int thrd_index = session_data->thrd_index;
+			set_intl_req_msg(&intl_req, thrd_index, 0, session_data->session_index,
+					session_data->session_id, 0, HTTP_INTL_SESSION_DEL);
+			if (-1 == msgsnd(THRD_WORKER[thrd_index].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0)) {
+				APPLOG(APPLOG_DEBUG, "%s() msgsnd fail!!!", __func__);
+			}
 		}
+		/* for fast delete */
 		memset(&CONN_LIST[k], 0x00, sizeof(conn_list_t));
 	}
 	nrfm_mmc_res_log();
@@ -298,7 +307,7 @@ void nrfm_mmc_clear_proc()
 	/* no response */
 
 	// node change, remake
-	trig_refresh_select_node(&LB_CTX);
+	trig_refresh_select_node(&CLIENT_CONF);
 }
 
 int set_nrfm_response_msg(int ahif_msg_type) 
@@ -455,7 +464,7 @@ int func_add_http_server(IxpcQMsgType *rxIxpcMsg)
 	resBuf[0] = '\0';
 
 	// node change, remake
-	trig_refresh_select_node(&LB_CTX);
+	trig_refresh_select_node(&CLIENT_CONF);
 
 	gather_list(CONN_STATUS);
 
@@ -524,7 +533,7 @@ int func_add_http_svr_ip(IxpcQMsgType *rxIxpcMsg)
 	resBuf[0] = '\0';
 
 	// node change, remake
-	trig_refresh_select_node(&LB_CTX);
+	trig_refresh_select_node(&CLIENT_CONF);
 
 	gather_list(CONN_STATUS);
 
@@ -654,7 +663,7 @@ int func_chg_http_server(IxpcQMsgType *rxIxpcMsg)
 	resBuf[0] = '\0';
 
 	// node change, remake
-	trig_refresh_select_node(&LB_CTX);
+	trig_refresh_select_node(&CLIENT_CONF);
 
 	gather_list(CONN_STATUS);
 
@@ -707,7 +716,7 @@ int func_del_http_svr_ip(IxpcQMsgType *rxIxpcMsg)
 	resBuf[0] = '\0';
 
 	// node change, remake
-	trig_refresh_select_node(&LB_CTX);
+	trig_refresh_select_node(&CLIENT_CONF);
 
 	gather_list(CONN_STATUS);
 
@@ -744,7 +753,7 @@ int func_del_http_server(IxpcQMsgType *rxIxpcMsg)
 	resBuf[0] = '\0';
 
 	// node change, remake
-	trig_refresh_select_node(&LB_CTX);
+	trig_refresh_select_node(&CLIENT_CONF);
 
 	gather_list(CONN_STATUS);
 

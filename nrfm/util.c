@@ -131,7 +131,11 @@ void LOG_JSON_OBJECT(const char *banner, json_object *js_obj)
 	sprintf(temp_buff, "%s", json_object_to_json_string_ext(js_obj, JSON_C_PRETTY_NOSLASH));
 	APPLOG(APPLOG_ERR, "[%s]\n%s\n", banner, temp_buff);
 #else
-	APPLOG(APPLOG_ERR, "[%s]\n%s\n", banner, json_object_to_json_string_ext(js_obj, JSON_C_PRETTY_NOSLASH));
+	if (js_obj == NULL) {
+		APPLOG(APPLOG_ERR, "{{{DBG}}} %s something wrong [%s], json_obj == NULL", __func__, banner);
+	} else {
+		APPLOG(APPLOG_ERR, "[%s]\n%s\n", banner, json_object_to_json_string_ext(js_obj, JSON_C_PRETTY_NOSLASH));
+	}
 #endif
 }
 

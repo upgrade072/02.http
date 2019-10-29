@@ -200,10 +200,12 @@ void nf_retrieve_item_token_add(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_ite
 		nf_item->token_id = token_info->token_id;
 		nf_token_add_shm_by_nf(token_info, nf_item);
 
-		char *respBuff = malloc(1024 * 1024);
-		print_token_info_raw(MAIN_CTX->nrf_access_token.ACC_TOKEN_LIST, respBuff);
-		APPLOG(APPLOG_ERR, "NOW TOKEN SHM IS >>>\n%s", respBuff);
-		free(respBuff);
+		if (MAIN_CTX->sysconfig.debug_mode) {
+			char *respBuff = malloc(1024 * 1024);
+			print_token_info_raw(MAIN_CTX->nrf_access_token.ACC_TOKEN_LIST, respBuff);
+			APPLOG(APPLOG_ERR, "NOW TOKEN SHM IS >>>\n%s", respBuff);
+			free(respBuff);
+		}
 	}
 }
 
@@ -216,9 +218,12 @@ void nf_retrieve_item_token_del(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_ite
 	} else {
 		nf_token_del_shm_by_nf(token_info);
 
-		char respBuff[MAX_MML_RESULT_LEN] = {0,};
-		print_token_info_raw(MAIN_CTX->nrf_access_token.ACC_TOKEN_LIST, respBuff);
-		APPLOG(APPLOG_ERR, "NOW TOKEN SHM IS >>>\n%s", respBuff);
+		if (MAIN_CTX->sysconfig.debug_mode) {
+			char *respBuff = malloc(1024 * 1024);
+			print_token_info_raw(MAIN_CTX->nrf_access_token.ACC_TOKEN_LIST, respBuff);
+			APPLOG(APPLOG_ERR, "NOW TOKEN SHM IS >>>\n%s", respBuff);
+			free(respBuff);
+		}
 	}
 }
 
@@ -377,12 +382,21 @@ int nf_retrieve_save_response(nf_retrieve_info_t *nf_retr_info, AhifHttpCSMsgTyp
 		json_object_put(nf_retr_info->js_retrieve_response);
 	}
 
-	nf_retr_info->js_retrieve_response = json_tokener_parse(ahifPkt->data);
+	if ((nf_retr_info->js_retrieve_response = json_tokener_parse(ahifPkt->data)) == NULL) {
+		APPLOG(APPLOG_ERR, "{{{DBG}}} %s response json something wrong", __func__);
+		return -1;
+	}
 
 	LOG_JSON_OBJECT("NF RETRIEVE RESPONSE IS", nf_retr_info->js_retrieve_response);
 
 	char key[128] = "_links/item";
 	json_object *js_item = search_json_object(nf_retr_info->js_retrieve_response, key);
+
+	if (js_item == NULL) {
+		APPLOG(APPLOG_ERR, "{{{DBG}}} %s can't find \"_links/item\"", __func__);
+		json_object_put(nf_retr_info->js_retrieve_response);
+		return -1;
+	}
 
 	LOG_JSON_OBJECT("NF RETRIEVE NF URI IS", js_item);
 

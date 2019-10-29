@@ -357,9 +357,12 @@ int load_access_token_cfg(main_ctx_t *MAIN_CTX)
 		memset(&(token_info->due_date), 0x00, sizeof(time_t));
 	}
 
-	char respBuff[MAX_MML_RESULT_LEN] = {0,};
-	print_token_info_raw(MAIN_CTX->nrf_access_token.ACC_TOKEN_LIST, respBuff);
-	APPLOG(APPLOG_ERR, "NOW TOKEN SHM IS >>>\n%s", respBuff);
+	if (MAIN_CTX->sysconfig.debug_mode) {
+		char *respBuff = malloc(1024 * 1024);
+		print_token_info_raw(MAIN_CTX->nrf_access_token.ACC_TOKEN_LIST, respBuff);
+		APPLOG(APPLOG_ERR, "NOW TOKEN SHM IS >>>\n%s", respBuff);
+		free(respBuff);
+	}
 
 	return count;
 }

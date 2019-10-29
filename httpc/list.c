@@ -36,6 +36,7 @@ void clear_and_free_ctx(httpc_ctx_t *httpc_ctx)
 	httpc_ctx->user_ctx.head.queryLen = 0;
 	memset(httpc_ctx->user_ctx.vheader, 0x00, sizeof(hdr_relay) * MAX_HDR_RELAY_CNT);
 	httpc_ctx->user_ctx.head.vheaderCnt = 0;
+	httpc_ctx->for_nrfm_ctx = 0;
 	httpc_ctx->occupied = 0;
 }
 
