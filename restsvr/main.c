@@ -7,6 +7,7 @@ int *lOG_FLAG = &logLevel;
 
 config_t MAIN_CFG; /* ~.cfg */
 char CONF_PATH[1024] = {0,};
+int *INT_FOR_EACH_API;
 
 #define TOKEN_MAX_NUM 12
 #define TOKEN_MAX_LEN 128
@@ -394,7 +395,7 @@ static ssize_t ptr_read_callback(nghttp2_session *session, int32_t stream_id,
 	http2_stream_data *stream_data = (http2_stream_data *)source->ptr;
 
 	if (stream_data->from_file) {
-		char temp_buff[8192 * 12] = {0,};
+		char temp_buff[1024 * 1024] = {0,};
 		while ((r = read(stream_data->fd, temp_buff, length)) == -1 && errno == EINTR)
 			;
 		if (r == -1) {
@@ -417,6 +418,7 @@ static ssize_t ptr_read_callback(nghttp2_session *session, int32_t stream_id,
 #else
 		buf[len] = '\0';
 		APPLOG(APPLOG_ERR, "\n%s", buf);
+		APPLOG(APPLOG_ERR, "TEST|body len [%d]", len);
 #endif
 		return len;
 	} else {
@@ -743,6 +745,15 @@ char *replace_value_body(const char *value, http2_stream_data *stream_data, key_
 	return last_replace;
 }
 
+const char *config_get_body_by_order(config_setting_t *setting, config_setting_t *cf_body_ref)
+{
+	int my_index = config_setting_index(setting);
+	int array_num = config_setting_length(cf_body_ref);
+	int curr_pos = INT_FOR_EACH_API[my_index];
+	INT_FOR_EACH_API[my_index] = (curr_pos + 1) % array_num;
+	return config_setting_get_string_elem(cf_body_ref, curr_pos);
+}
+
 int resp_from_cfg(config_setting_t *setting,
 						nghttp2_session *session,
 						http2_session_data *session_data,
@@ -780,7 +791,13 @@ int resp_from_cfg(config_setting_t *setting,
 	}
 	config_setting_lookup_bool(cf_bodys, "from_file", &stream_data->from_file);
 	if (stream_data->from_file) {
-		config_setting_lookup_string(cf_bodys, "body_ref", &body_path);
+		config_setting_t *cf_body_ref = config_setting_get_member(cf_bodys, "body_ref");
+		if (config_setting_type(cf_body_ref) == CONFIG_TYPE_ARRAY) {
+			body_path = config_get_body_by_order(setting, cf_body_ref);
+		} else {
+			config_setting_lookup_string(cf_bodys, "body_ref", &body_path);
+		}
+
 		stream_data->fd = open(body_path, O_RDONLY);
 		if (stream_data->fd == -1) {
 			if (error_reply(session, stream_data) != 0) {
@@ -788,7 +805,12 @@ int resp_from_cfg(config_setting_t *setting,
 			}
 		}
 	} else {
-		config_setting_lookup_string(cf_bodys, "body_ref", &stream_data->body_ptr);
+		config_setting_t *cf_body_ref = config_setting_get_member(cf_bodys, "body_ref");
+		if (config_setting_type(cf_body_ref) == CONFIG_TYPE_ARRAY) {
+			stream_data->body_ptr = config_get_body_by_order(setting, cf_body_ref);
+		} else {
+			config_setting_lookup_string(cf_bodys, "body_ref", &stream_data->body_ptr);
+		}
 	}
 
 	if (send_response(session, stream_data->stream_id, &stream_data->resp_hdrs[0], hdrs_num, 
@@ -947,8 +969,17 @@ static void initialize_nghttp2_session(http2_session_data *session_data) {
 /* Send HTTP/2 client connection header, which includes 24 bytes
    magic octets and SETTINGS frame */
 static int send_server_connection_header(http2_session_data *session_data) {
+#if 0
   nghttp2_settings_entry iv[1] = {
       {NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS, 100}};
+#else
+    nghttp2_settings_entry iv[5] = {
+        {NGHTTP2_SETTINGS_HEADER_TABLE_SIZE, 65535},
+        {NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS, 65535},
+        {NGHTTP2_SETTINGS_MAX_FRAME_SIZE, 65535},
+        {NGHTTP2_SETTINGS_INITIAL_WINDOW_SIZE, 65535},
+        {NGHTTP2_SETTINGS_MAX_HEADER_LIST_SIZE, 65535}};
+#endif
   int rv;
 
   rv = nghttp2_submit_settings(session_data->session, NGHTTP2_FLAG_NONE, iv,
@@ -1161,6 +1192,16 @@ int init_cfg(config_t *CFG)
     } else {
         APPLOG(APPLOG_ERR, "INIT| config read from ./restsvr.cfg success!");
     }
+
+	config_setting_t *setting = config_lookup(CFG, "api_list");
+	int api_num = config_setting_length(setting);
+	APPLOG(APPLOG_ERR, "INIT| API num is [%d]", api_num);
+	INT_FOR_EACH_API = malloc(sizeof(int) * api_num);
+	memset(INT_FOR_EACH_API, 0x00, sizeof(int) * api_num);
+
+	// save with indent
+	config_set_tab_width(CFG, 4);
+	config_write_file(CFG, CONF_PATH);
     
     return 0;
 }   
@@ -1169,7 +1210,12 @@ void directory_watch_action(const char *file_name)
 {
 	if (!strcmp(file_name, "restsvr.cfg")) {
 		APPLOG(APPLOG_ERR, "CONF| main config changed, will reload it!");
+
+		/* destroy */
 		config_destroy(&MAIN_CFG);
+		free(INT_FOR_EACH_API);
+
+		/* reload */
 		init_cfg(&MAIN_CFG);
 		APPLOG(APPLOG_ERR, "--> done");
 	}

@@ -1,6 +1,6 @@
 diff -urN ./nghttp2-1.31.1/lib/nghttp2_frame.h ./nghttp2-1.31.1_modified/lib/nghttp2_frame.h
 --- ./nghttp2-1.31.1/lib/nghttp2_frame.h	2018-04-12 23:46:47.000000000 +0900
-+++ ./nghttp2-1.31.1_modified/lib/nghttp2_frame.h	2019-10-23 15:29:18.187934611 +0900
++++ ./nghttp2-1.31.1_modified/lib/nghttp2_frame.h	2018-06-26 11:29:40.813564607 +0900
 @@ -45,7 +45,11 @@
  #define NGHTTP2_MAX_FRAME_SIZE_MAX ((1 << 24) - 1)
  #define NGHTTP2_MAX_FRAME_SIZE_MIN (1 << 14)
@@ -13,15 +13,3 @@ diff -urN ./nghttp2-1.31.1/lib/nghttp2_frame.h ./nghttp2-1.31.1_modified/lib/ngh
  /* The one frame buffer length for tranmission.  We may use several of
     them to support CONTINUATION.  To account for Pad Length field, we
     allocate extra 1 byte, which saves extra large memcopying. */
-@@ -53,7 +57,11 @@
-   (NGHTTP2_FRAME_HDLEN + 1 + NGHTTP2_MAX_PAYLOADLEN)
- 
- /* The default length of DATA frame payload. */
-+#if 0
- #define NGHTTP2_DATA_PAYLOADLEN NGHTTP2_MAX_FRAME_SIZE_MIN
-+#else
-+#define NGHTTP2_DATA_PAYLOADLEN 65535
-+#endif
- 
- /* Maximum headers block size to send, calculated using
-    nghttp2_hd_deflate_bound().  This is the default value, and can be

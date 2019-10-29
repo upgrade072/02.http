@@ -405,7 +405,11 @@ void lb_buff_readcb(struct bufferevent *bev, void *arg)
             MAX_RCV_BUFF_LEN - sock_ctx->rcv_len);
 
 	if (rcv_len <= 0) {
+#if 0
 		if (errno != EINTR && errno != EAGAIN) {
+#else
+		if (errno != EINTR) {
+#endif
 			APPLOG(APPLOG_ERR, "%s() fep sock error! %d : %s\n", __func__, errno, strerror(errno));
 			release_conncb(sock_ctx);
 			return;

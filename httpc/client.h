@@ -74,6 +74,7 @@ typedef struct client_conf {
 	nghttp2_option *nghttp2_option;
 
 	acc_token_shm_t *ACC_TOKEN_LIST; // access token shared memory (from NRFM)
+	int refresh_node_requested;	// connection list changed
 } client_conf_t;
 
 typedef struct thrd_context {
@@ -355,6 +356,7 @@ void    *fep_stat_thread(void *arg);
 void    attach_lb_thread(lb_global_t *lb_conf, lb_ctx_t *lb_ctx);
 int     create_lb_thread();
 
+
 /* ------------------------- select.c --------------------------- */
 conn_list_t     *find_nrfm_inf_dest(AhifHttpCSMsgType *ahifPkt);
 int     sn_cmp_type(void *input, void *compare);
@@ -362,7 +364,6 @@ int     sn_cmp_host(void *input, void *compare);
 int     sn_cmp_ip(void *input, void *compare);
 int     sn_cmp_port(void *input, void *compare);
 int     sn_cmp_conn_id(void *input, void *compare);
-char    *depth_to_str(int depth);
 GNode   *new_select_data(compare_input_t *comm_input, int depth, conn_list_t *conn_list);
 int     depth_compare(int depth, select_node_t *select_node, compare_input_t *comm_input);
 select_node_t   *search_select_node(GNode *parent_node, compare_input_t *comm_input, int depth);
@@ -371,6 +372,8 @@ void    create_compare_data_with_list(conn_list_t *conn_list, compare_input_t *c
 void    create_compare_data_with_pkt(AhifHttpCSMsgHeadType *pkt_head, compare_input_t *comm_input);
 void    reorder_select_node(select_node_t *root_node);
 gboolean        traverse_memset(GNode *node, gpointer data);
+void    traverse_parent_move_index(GNode *start_node);
+int     bsearch_avail_node(GNode *curr_node, compare_input_t *comm_input);
 conn_list_t     *search_conn_list(GNode *curr_node, compare_input_t *comm_input, select_node_t *root_node);
 conn_list_t     *find_packet_index(select_node_t *root_select, AhifHttpCSMsgHeadType *pkt_head);
 void    create_select_node(select_node_t *root_node);
@@ -380,7 +383,7 @@ void    refresh_select_node(evutil_socket_t fd, short what, void *arg);
 void    set_refresh_select_node(GNode *root_node);
 void    init_refresh_select_node(lb_ctx_t *lb_ctx);
 void    once_refresh_select_node(GNode *root_node);
-void    trig_refresh_select_node(lb_ctx_t *lb_ctx);
+void    trig_refresh_select_node(client_conf_t *CLIENT_CONF);
 
 
 /* ------------------------- main.c --------------------------- */

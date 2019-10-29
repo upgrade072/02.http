@@ -352,24 +352,21 @@ int main()
 void main_tick_callback(evutil_socket_t fd, short what, void *arg)
 {
 	keepalivelib_increase();
-
-	/* for debug */
-#if 0
-	char respBuff[MAX_MML_RESULT_LEN] = {0,};
-	print_token_info_raw(MAIN_CTX.nrf_access_token.ACC_TOKEN_LIST, respBuff);
-	APPLOG(APPLOG_ERR, "NOW TOKEN SHM IS >>>\n%s", respBuff);
-#endif
 }
 
 void message_handle(evutil_socket_t fd, short what, void *arg)
 {
+#if 0
 	char msgBuff[1024*64];
+#else
+	char msgBuff[65535];
+#endif
 
 	GeneralQMsgType *msg = (GeneralQMsgType *)msgBuff;
 	AhifHttpCSMsgType *ahifPkt = (AhifHttpCSMsgType *)msg->body;
 
 	/* handle all pending msgs */
-	while (msgrcv(MAIN_CTX.my_qid.nrfm_qid, msg, sizeof(GeneralQMsgType), 0, IPC_NOWAIT) >= 0) {
+	while (msgrcv(MAIN_CTX.my_qid.nrfm_qid, msg, 65535, 0, IPC_NOWAIT) >= 0) {
 		switch (msg->mtype) {
 			case MTYPE_SETPRINT:
 				adjust_loglevel((TrcLibSetPrintMsgType *)msg);

@@ -66,12 +66,10 @@ void add_shm_avail_count(main_ctx_t *MAIN_CTX)
 void isif_save_recv_lb_status(main_ctx_t *MAIN_CTX, nf_service_info *nf_info)
 {   
 	int lbId = (nf_info->lbId - 1) % NF_MAX_LB_NUM;
-	//int seqNo = nf_info->seqNo;
 	int index = (nf_info->index) % NF_MAX_AVAIL_LIST;
 
 	int prepare_pos = 0;
 
-	//MAIN_CTX->fep_nfs_info[lbId].seqNo = seqNo;
 	prepare_pos = (MAIN_CTX->SHM_NFS_AVAIL->curr_pos + 1) % MAX_NFS_SHM_POS;
 	nf_list_shm_t *nf_avail_shm_prepare = &MAIN_CTX->SHM_NFS_AVAIL->nfs_avail_shm[prepare_pos];
 	memcpy(&nf_avail_shm_prepare->nf_avail[lbId][index], nf_info, sizeof(nf_service_info));
@@ -105,6 +103,8 @@ void isif_save_recv_lb_status(main_ctx_t *MAIN_CTX, nf_service_info *nf_info)
 
 		nf_list_shm_t *nf_avail_shm_prepare = &MAIN_CTX->SHM_NFS_AVAIL->nfs_avail_shm[next_pos];
 		memset(nf_avail_shm_prepare, 0x00, sizeof(nf_list_shm_t));
+
+		memset(&MAIN_CTX->fep_nfs_info, 0x00, sizeof(fep_nfs_info_t) * NF_MAX_LB_NUM);
 
 		if (MAIN_CTX->sysconfig.debug_mode) {
 			printf_fep_nfs(MAIN_CTX->SHM_NFS_AVAIL, NULL);

@@ -1,5 +1,6 @@
 #include <client.h>
 
+extern client_conf_t CLIENT_CONF;
 extern conn_list_t CONN_LIST[MAX_SVR_NUM];
 int LAST_INDEX_FOR_NRFM;
 
@@ -34,8 +35,6 @@ int sn_cmp_type(void *input, void *compare)
     compare_input_t *comm_input = (compare_input_t *)input;
     select_node_t *node_data = (select_node_t *)compare;
 
-	//APPLOG(APPLOG_ERR, "%s comp %s:%s", __func__, node_data->name, comm_input->type);
-
     if (strlen(comm_input->type) == 0)
         return 0;
     else
@@ -46,8 +45,6 @@ int sn_cmp_host(void *input, void *compare)
 {
     compare_input_t *comm_input = (compare_input_t *)input;
     select_node_t *node_data = (select_node_t *)compare;
-
-	//APPLOG(APPLOG_ERR, "%s comp %s:%s", __func__, node_data->name, comm_input->host);
 
     if (strlen(comm_input->host) == 0)
         return 0;
@@ -60,8 +57,6 @@ int sn_cmp_ip(void *input, void *compare)
     compare_input_t *comm_input = (compare_input_t *)input;
     select_node_t *node_data = (select_node_t *)compare;
 
-	//APPLOG(APPLOG_ERR, "%s comp %s:%s", __func__, node_data->name, comm_input->ip);
-
     if (strlen(comm_input->ip) == 0)
         return 0;
     else
@@ -72,8 +67,6 @@ int sn_cmp_port(void *input, void *compare)
 {
     compare_input_t *comm_input = (compare_input_t *)input;
     select_node_t *node_data = (select_node_t *)compare;
-
-	//APPLOG(APPLOG_ERR, "%s comp %d:%d", __func__, node_data->val, comm_input->port);
 
     if (comm_input->port == 0)
         return 0;
@@ -163,13 +156,25 @@ select_node_t *search_select_node(GNode *parent_node, compare_input_t *comm_inpu
     if (child_num == 0) 
         return NULL;
 
-    for (int i = 0; i < child_num; i++) {
-        GNode *nth_child = g_node_nth_child(parent_node, i);
-        select_node_t *select_node = (select_node_t *)nth_child->data;
-        if (depth_compare(depth, select_node, comm_input) == 0) {
-            return select_node;
-        }
-    }
+	/* let's b-search */
+	int low = 0;
+	int high = (child_num - 1);
+	int nth = 0;
+
+	while (low <= high) {
+		nth = (low + high) / 2;
+		GNode *nth_child = g_node_nth_child(parent_node, nth);
+		select_node_t *select_node = (select_node_t *)nth_child->data;
+
+		int compare_res = (depth_compare(depth, select_node, comm_input));
+		if (compare_res == 0) {
+			return select_node;
+		} else if (compare_res < 0) {
+			high = nth - 1;
+		} else {
+			low = nth + 1;
+		}
+	}
 
     return NULL;
 }
@@ -183,8 +188,29 @@ select_node_t *add_select_node(GNode *parent_node, compare_input_t *comm_input, 
     if (new_node == NULL) 
         return NULL;
 
-    g_node_append(parent_node, new_node);
+	GNode *last_node = g_node_last_child(parent_node);
 
+	if (last_node == NULL) {
+		g_node_append(parent_node, new_node); // no child, add first
+	} else {
+		select_node_t *select_node = (select_node_t *)last_node->data;
+
+		if (depth_compare(depth, select_node, comm_input) > 0) {
+			g_node_append(parent_node, new_node); // I'm the biggest , add last
+		} else {
+			unsigned int child_num = g_node_n_children(parent_node);
+			// ascending
+			for (int i = 0; i < child_num; i++) {
+				GNode *nth_child = g_node_nth_child(parent_node, i);
+				select_node_t *select_node = (select_node_t *)nth_child->data;
+				if (depth_compare(depth, select_node, comm_input) < 0) {
+					g_node_insert_before(parent_node, nth_child, new_node); // add in middle
+					goto NODE_ADDED;
+				}
+			}
+		}
+	}
+NODE_ADDED:
     return new_node->data;
 }
 
@@ -260,6 +286,30 @@ void traverse_parent_move_index(GNode *start_node)
 	}
 }
 
+int bsearch_avail_node(GNode *curr_node, compare_input_t *comm_input) {
+    select_node_t *node_data = (select_node_t *)curr_node->data;
+
+	if (node_data == NULL)
+		return 0;
+
+	if (G_NODE_IS_ROOT(curr_node)) {
+		return strlen(comm_input->type);
+	} else {
+		switch (node_data->depth) {
+			case SN_TYPE:
+				return strlen(comm_input->host);
+			case SN_HOST:
+				return strlen(comm_input->ip);
+			case SN_IP:
+				return comm_input->port;
+			case SN_PORT:
+				return comm_input->index;
+			default:
+				return 0;
+		}
+	}
+}
+
 conn_list_t *search_conn_list(GNode *curr_node, compare_input_t *comm_input, select_node_t *root_node)
 {
     select_node_t *node_data = (select_node_t *)curr_node->data;
@@ -287,30 +337,48 @@ conn_list_t *search_conn_list(GNode *curr_node, compare_input_t *comm_input, sel
     if (child_num == 0) 
         return NULL;
 
-    int start_line = node_data->last_selected;
-    for (int i = 0; i < child_num; i++) {
-        int nth = (start_line + i) % child_num;
+	if (bsearch_avail_node(curr_node, comm_input)) {
+		/* let's b-search */
+		int low = 0;
+		int high = (child_num - 1);
+		int nth = 0;
 
-        GNode *nth_child = g_node_nth_child(curr_node, nth);
-        select_node_t *select_node = (select_node_t *)nth_child->data;
+		while (low <= high) {
+			nth = (low + high) / 2;
+			GNode *nth_child = g_node_nth_child(curr_node, nth);
+			select_node_t *select_node = (select_node_t *)nth_child->data;
 
-        if (select_node->func_ptr(comm_input, select_node) == 0) {
-            conn_list_t *res_conn_list = search_conn_list(nth_child, comm_input, root_node);
-            if (res_conn_list != NULL) {
-#if 0
-				/* move forward for round robin */
-				--replace to--> traverse_parent_move_index()
+			int compare_res = select_node->func_ptr(comm_input, select_node);
 
-                node_data->select_vector++;
-                if (node_data->select_vector >= g_node_n_nodes(nth_child, G_TRAVERSE_LEAVES)) {
-                    node_data->select_vector = 0;
-                    node_data->last_selected = (node_data->last_selected + 1) % child_num;
-                }
-#endif
-                return res_conn_list;
-            }
-        }
-    }
+			if (compare_res == 0) {
+				conn_list_t *res_conn_list = search_conn_list(nth_child, comm_input, root_node);
+				if (res_conn_list != NULL) {
+					return res_conn_list;
+				}
+			} else if (compare_res < 0) {
+				high = nth - 1;
+			} else {
+				low = nth + 1;
+			}
+		}
+	} else {
+		/* or round-robin */
+		int start_line = node_data->last_selected;
+		for (int i = 0; i < child_num; i++) {
+			int nth = (start_line + i) % child_num;
+
+			GNode *nth_child = g_node_nth_child(curr_node, nth);
+			select_node_t *select_node = (select_node_t *)nth_child->data;
+
+			if (select_node->func_ptr(comm_input, select_node) == 0) {
+				conn_list_t *res_conn_list = search_conn_list(nth_child, comm_input, root_node);
+				if (res_conn_list != NULL) {
+					return res_conn_list;
+				}
+			}
+		}
+	}
+
     return NULL;
 }
 
@@ -361,10 +429,10 @@ void set_refresh_select_node(GNode *root_node)
 
 		struct event_base *evbase = tcp_ctx->evbase;
 
-		struct timeval ten_sec = {10, 0};
+		struct timeval one_min = {60, 0};
 		struct event *ev_tick;
 		ev_tick = event_new(evbase, -1, EV_PERSIST, refresh_select_node, &tcp_ctx->root_select);
-		event_add(ev_tick, &ten_sec);
+		event_add(ev_tick, &one_min);
 	}
 }
 
@@ -389,8 +457,7 @@ void once_refresh_select_node(GNode *root_node)
 	}
 }
 
-void trig_refresh_select_node(lb_ctx_t *lb_ctx)
+void trig_refresh_select_node(client_conf_t *CLIENT_CONF)
 {
-    once_refresh_select_node(lb_ctx->fep_rx_thrd);
-	once_refresh_select_node(lb_ctx->peer_rx_thrd);
+	CLIENT_CONF->refresh_node_requested = 1;
 }

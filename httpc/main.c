@@ -65,12 +65,12 @@ static http2_session_data_t * create_http2_session_data()
 
 void delete_http2_session_data(http2_session_data_t *session_data) 
 {
+	pthread_mutex_lock(&ONLY_CRT_SESS_LOCK);
+
 	session_data->connected = 0;
 
 	/* stat HTTP_DISCONN */
 	http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_DISCONN);
-
-	pthread_mutex_lock(&ONLY_CRT_SESS_LOCK);
 
 	if (!strcmp(session_data->scheme, "https")) {
 		SSL *ssl = bufferevent_openssl_get_ssl(session_data->bev);
@@ -118,6 +118,10 @@ static ssize_t send_callback(nghttp2_session *session, const uint8_t *data,
 	struct bufferevent *bev = session_data->bev;
 	(void)session;
 	(void)flags;
+
+	/* if already deleted */
+	if (bev == NULL)
+		return 0;
 
 	bufferevent_write(bev, data, length);
 	return (ssize_t)length;
@@ -395,7 +399,7 @@ static int on_data_chunk_recv_callback(nghttp2_session *session, uint8_t flags,
 		int idx = stream_data->ctx_id;
 
 		if ((httpc_ctx = get_context(thrd_idx, idx, 1)) == NULL) {
-			APPLOG(APPLOG_ERR, "%s() get_context fail!", __func__);
+			APPLOG(APPLOG_ERR, "%s() get_context fail! (thrd_idx:%d ctx_idx:%d)", __func__, thrd_idx, idx);
 			return 0;
 		}
 
@@ -420,7 +424,7 @@ void send_response_to_nrfm(httpc_ctx_t *httpc_ctx)
 	int thrd_idx = httpc_ctx->thrd_idx;
 	int ctx_idx = httpc_ctx->ctx_idx;
 
-	char msgBuff[sizeof(GeneralQMsgType)] = {0,};
+	char msgBuff[65535] = {0,};
 
 	GeneralQMsgType *msg = (GeneralQMsgType *)msgBuff;
 	msg->mtype = (long)MSGID_HTTPC_NRFM_RESPONSE;
@@ -433,7 +437,7 @@ void send_response_to_nrfm(httpc_ctx_t *httpc_ctx)
 
 	int res = msgsnd(nrfmQid, msg, shmqlen, 0);
 	if (res < 0) {
-		APPLOG(APPLOG_ERR, "%s(), fail to send resp to NRFM! (res:%d)", __func__, res);
+		APPLOG(APPLOG_ERR, "%s() msgsnd fail err=%d(%s)", __func__, errno, strerror(errno));
 	}
 
 	clear_and_free_ctx(httpc_ctx);
@@ -1195,7 +1199,7 @@ void candidate_session_del(evutil_socket_t fd, short what, void *arg)
 		// wait 5 sec for outbound request response
 		if ((CONN_LIST[i].reconn_candidate > 0) && (CONN_LIST[i].reconn_candidate++ >= 5)) {
 #endif
-			intl_req_t intl_req;
+			intl_req_t intl_req = {0,};
 			int thrd_index = CONN_LIST[i].thrd_index;
 			set_intl_req_msg(&intl_req, thrd_index, 0, CONN_LIST[i].session_index,
 					CONN_LIST[i].session_id, 0, HTTP_INTL_SESSION_DEL);
@@ -1209,6 +1213,7 @@ void candidate_session_del(evutil_socket_t fd, short what, void *arg)
 	}
 CANDIDATE_RECONN_END_JOB:
 	pthread_mutex_unlock(&ONLY_CRT_SESS_LOCK);
+	return;
 }
 
 #define MAX_THRD_WAIT_NUM 5
@@ -1265,6 +1270,12 @@ void main_tick_callback(evutil_socket_t fd, short what, void *arg)
 	keepalivelib_increase();
 #endif
 
+	if (CLIENT_CONF.refresh_node_requested) {
+		once_refresh_select_node(LB_CTX.fep_rx_thrd);
+		once_refresh_select_node(LB_CTX.peer_rx_thrd);
+		CLIENT_CONF.refresh_node_requested = 0;
+	}
+
 	if (CLIENT_CONF.debug_mode == 1) {
 		IxpcQMsgType Ixpc = {0,};
 
@@ -1277,6 +1288,8 @@ void main_tick_callback(evutil_socket_t fd, short what, void *arg)
 
 void send_nrfm_notify(evutil_socket_t fd, short what, void *arg)
 {
+	APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s called", __func__);
+
 	char msgBuff[sizeof(GeneralQMsgType)] = {0,};
 
 	GeneralQMsgType *msg = (GeneralQMsgType *)msgBuff;

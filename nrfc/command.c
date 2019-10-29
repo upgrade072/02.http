@@ -178,7 +178,7 @@ void printf_fep_nfs(nfs_avail_shm_t *SHM_NFS_AVAIL, char *printBuff)
 	}
 
 	if (printBuff != NULL) {
-		snprintf(printBuff, (MAX_MML_RESULT_LEN - 128), "%s", ft_to_string(table));
+		sprintf(printBuff, "%s", ft_to_string(table));
 	} else {
 		APPLOG(APPLOG_ERR, "\n%s", ft_to_string(table));
 	}
@@ -191,7 +191,7 @@ int func_dis_nf_status(IxpcQMsgType *rxIxpcMsg)
 {
 	APPLOG(APPLOG_DEBUG, "%s() called", __func__);
 
-	char *resBuf = malloc(1024 * 1024);
+	char *resBuf = malloc(1024 * 1024 * 12);
 	resBuf[0] = '\0';
 
 	printf_fep_nfs(MAIN_CTX.SHM_NFS_AVAIL, resBuf);
