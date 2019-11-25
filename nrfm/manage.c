@@ -158,6 +158,52 @@ void nf_manage_collect_httpc_conn_status_cb(evutil_socket_t fd, short what, void
 	nf_manage_collect_httpc_conn_status(&MAIN_CTX);
 }
 
+int nf_manage_setting_opr_type(char *type)
+{
+	if (!strcmp(type, "NRF"))
+		return NF_TYPE_NRF;
+	else if (!strcmp(type, "UDM"))
+		return NF_TYPE_UDM;
+	else if (!strcmp(type, "AMF"))
+		return NF_TYPE_AMF;
+	else if (!strcmp(type, "SMF"))
+		return NF_TYPE_SMF;
+	else if (!strcmp(type, "AUSF"))
+		return NF_TYPE_AUSF;
+	else if (!strcmp(type, "NEF"))
+		return NF_TYPE_NEF;
+	else if (!strcmp(type, "PCF"))
+		return NF_TYPE_PCF;
+	else if (!strcmp(type, "SMSF"))
+		return NF_TYPE_SMSF;
+	else if (!strcmp(type, "NSSF"))
+		return NF_TYPE_NSSF;
+	else if (!strcmp(type, "UDR"))
+		return NF_TYPE_UDR;
+	else if (!strcmp(type, "LMF"))
+		return NF_TYPE_LMF;
+	else if (!strcmp(type, "GMLC"))
+		return NF_TYPE_GMLC;
+	else if (!strcmp(type, "EIR"))
+		return NF_TYPE_5G_EIR;
+	else if (!strcmp(type, "SEPP"))
+		return NF_TYPE_SEPP;
+	else if (!strcmp(type, "UPF"))
+		return NF_TYPE_UPF;
+	else if (!strcmp(type, "N3IWF"))
+		return NF_TYPE_N3IWF;
+	else if (!strcmp(type, "AF"))
+		return NF_TYPE_AF;
+	else if (!strcmp(type, "UDSF"))
+		return NF_TYPE_UDSF;
+	else if (!strcmp(type, "BSF"))
+		return NF_TYPE_BSF;
+	else if (!strcmp(type, "CHF"))
+		return NF_TYPE_CHF;
+	else 
+		return NF_TYPE_UNKNOWN;
+}
+
 void nf_manage_collect_oper_added_nf(main_ctx_t *MAIN_CTX, nf_list_pkt_t *my_avail_nfs)
 {
 	int pos = SHM_HTTP_PTR->current;
@@ -181,6 +227,7 @@ void nf_manage_collect_oper_added_nf(main_ctx_t *MAIN_CTX, nf_list_pkt_t *my_ava
 		nf_avail->lbId = MAIN_CTX->my_info.myLabelNum;
 
 		sprintf(nf_avail->hostname, "%s", conn_raw->host);
+		nf_avail->nfType = nf_manage_setting_opr_type(conn_raw->type);
 		sprintf(nf_avail->type, "%s", conn_raw->type);
 		sprintf(nf_avail->scheme, "%s", conn_raw->scheme);
 		sprintf(nf_avail->ipv4Address, "%s", conn_raw->ip);
@@ -289,6 +336,29 @@ void nf_manage_create_httpc_cmd_conn_del(main_ctx_t *MAIN_CTX, nf_retrieve_item_
 	return;
 }
 
+int nf_manage_create_lb_list_get_load(json_object *nf_profile, char *service_name)
+{
+	char key_services[128] = "nfServices";
+	json_object *js_services = search_json_object(nf_profile, key_services);
+
+	int array_length = json_object_array_length(js_services);
+	for (int i = 0; i < array_length; i++) {
+		json_object *js_elem = json_object_array_get_idx(js_services, i);
+
+		char key_service_name[128] = "serviceName";
+		char key_load[128] = "load";
+		json_object *js_service_name = search_json_object(js_elem, key_service_name);
+		json_object *js_load = search_json_object(js_elem, key_load);
+		const char *serviceName = json_object_get_string(js_service_name);
+		int load = json_object_get_int(js_load);
+
+		if (!strcmp(serviceName, service_name))
+			return load;
+	}
+
+	return 0; /* lowest */
+}
+
 int nf_manage_create_lb_list_get_priority(json_object *nf_profile, char *service_name)
 {
 	char key_services[128] = "nfServices";
@@ -336,6 +406,7 @@ void nf_manage_create_lb_list_pkt(main_ctx_t *MAIN_CTX, conn_list_status_t *conn
 		sprintf(nf_avail->ipv4Address, "%s", nf_conn->ip);
 		nf_avail->port = nf_conn->port;
 		nf_avail->priority = nf_manage_create_lb_list_get_priority(nf_profile, nf_avail->serviceName);
+		nf_avail->load = nf_manage_create_lb_list_get_load(nf_profile, nf_avail->serviceName);
 
 		nf_avail->auto_add = 1;
 	}
@@ -380,7 +451,7 @@ int nf_manage_fill_nrfm_mml(nrfm_mml_t *nrfm_cmd, const char *service, const cha
 
 void nf_manage_handle_cmd_res(nrfm_mml_t *httpc_cmd_res)
 {
-	APPLOG(APPLOG_ERR, "{{{DBG}}} %s called", __func__);
+	APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s called", __func__);
 
 	nf_retrieve_item_t *nf_item = nf_retrieve_search_item_via_seqNo(&MAIN_CTX, NF_ITEM_CTX_TYPE_CMD, httpc_cmd_res->seqNo);
 
@@ -459,9 +530,12 @@ void nf_manage_send_httpc_cmd(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item)
                 __func__, res, MAIN_CTX->my_qid.httpc_qid);
     } else {
         /* start timer */
-        APPLOG(APPLOG_ERR, "{{{DBG}}} %s called, res (%d:succ), will wait {httpc_qid:%d}",
+#if 0
+		/* if 1) del cmd 2) ctx free --> 3) ref free mem  */
+        APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s called, res (%d:succ), will wait {httpc_qid:%d}",
                 __func__, res, MAIN_CTX->my_qid.httpc_qid);
         start_ctx_timer(NF_CTX_TYPE_HTTPC_CMD, &nf_item->httpc_cmd_ctx);
+#endif
     }
 }
 

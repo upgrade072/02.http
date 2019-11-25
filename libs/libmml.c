@@ -111,7 +111,12 @@ int send_response_mml(IxpcQMsgType *rxIxpcMsg, char *resbuf, char resCode, char 
 		int send_limit_len = (MAX_MML_RESULT_LEN - 128); // maybe omp process use this buff
 		int process_len = ((remain_len >= send_limit_len) ? send_limit_len : remain_len);
 		memcpy(txResMsg->body, resbuf, process_len);
+#if 0
 		txResMsg->body[process_len + 1] = '\0';
+#else
+		txResMsg->body[process_len] = '\n';
+		txResMsg->body[process_len + 1] = '\0';
+#endif
 
 		resbuf += process_len;
 		remain_len -= process_len;

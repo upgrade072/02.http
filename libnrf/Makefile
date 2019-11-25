@@ -3,7 +3,7 @@ include ../MakeVars
 CFLAG       = $(CFLAGS)
 BUILD_INC_PATH  = -I../build/include -I../build/include/glib-2.0 -I../build/lib/glib-2.0/include
 
-SRCS		= libnrf.c
+SRCS		= libnrf.c libnrf_app.c
 OBJS		= $(SRCS:.c=.o)
 
 AOUT		= libnrf.a

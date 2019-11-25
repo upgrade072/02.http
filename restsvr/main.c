@@ -417,8 +417,7 @@ static ssize_t ptr_read_callback(nghttp2_session *session, int32_t stream_id,
 		fwrite(buf, len, 1, stderr);
 #else
 		buf[len] = '\0';
-		APPLOG(APPLOG_ERR, "\n%s", buf);
-		APPLOG(APPLOG_ERR, "TEST|body len [%d]", len);
+		APPLOG(APPLOG_DEBUG, "\n%s", buf);
 #endif
 		return len;
 	} else {
@@ -438,7 +437,7 @@ static ssize_t ptr_read_callback(nghttp2_session *session, int32_t stream_id,
 		fwrite(buf, len, 1, stderr);
 #else
 		buf[len] = '\0';
-		APPLOG(APPLOG_ERR, "%s\n", buf);
+		APPLOG(APPLOG_DEBUG, "%s\n", buf);
 #endif
 		return len;
 	}
@@ -450,9 +449,9 @@ static int send_response(nghttp2_session *session, int32_t stream_id,
   nghttp2_data_provider data_prd;
 
   if (stream_data->from_file == 0) {
-	  APPLOG(APPLOG_ERR, "response from ptr");
+	  APPLOG(APPLOG_DEBUG, "response from ptr");
   } else {
-	  APPLOG(APPLOG_ERR, "response from file");
+	  APPLOG(APPLOG_DEBUG, "response from file");
   }
   data_prd.source.ptr = stream_data;
   data_prd.read_callback = ptr_read_callback;
@@ -538,8 +537,9 @@ static int on_header_callback(nghttp2_session *session,
         ;
       stream_data->request_path = percent_decode(value, j);
 	  /* schlee, if query exist */
-	  if (j < valuelen)
+	  if (j < valuelen) {
 		  stream_data->query = percent_decode(value + j + 1, valuelen - j - 1);
+	  }
     } else if (namelen == sizeof(METHOD) - 1 && memcmp(METHOD, name, namelen) == 0) {
 		sprintf(stream_data->method, "%s", value);
 	}
@@ -655,13 +655,13 @@ int find_from_cfg(config_setting_t *setting, http2_stream_data *stream_data, key
 			!strcmp(api_action, "noans"))
 		return -2; // silence discard
 
-	APPLOG(APPLOG_ERR, "matched with [%s] token is ...", setting->name);
+	APPLOG(APPLOG_DEBUG, "matched with [%s] token is ...", setting->name);
 	for (int i = 0; i < TOKEN_MAX_NUM; i++) {
 		if (strlen(token[i].key) != 0) {
-			APPLOG(APPLOG_ERR, "%s:%s", token[i].key, token[i].value);
+			APPLOG(APPLOG_DEBUG, "%s:%s", token[i].key, token[i].value);
 		}
 	}
-	APPLOG(APPLOG_ERR, "------------------------------");
+	APPLOG(APPLOG_DEBUG, "------------------------------");
 	return 0;
 }
 
@@ -764,7 +764,7 @@ int resp_from_cfg(config_setting_t *setting,
 		APPLOG(APPLOG_ERR, "can't find member [response_hdrs] from [%s]", setting->name);
 	}
 	int hdrs_num = config_setting_length(cf_hdrs);
-	APPLOG(APPLOG_ERR, "headers num [%d]", hdrs_num);
+	APPLOG(APPLOG_DEBUG, "headers num [%d]", hdrs_num);
 
 	stream_data->resp_hdrs = calloc(sizeof(nghttp2_nv), hdrs_num);
 
@@ -780,7 +780,7 @@ int resp_from_cfg(config_setting_t *setting,
 
 		nghttp2_nv temp_hdr[] = {MAKE_NV_STR(name, check_replace == NULL ? value : check_replace)};
 		memcpy(&stream_data->resp_hdrs[i], temp_hdr, sizeof(nghttp2_nv));
-		APPLOG(APPLOG_ERR, "header] %s %s", name, check_replace == NULL ? value : check_replace);
+		APPLOG(APPLOG_DEBUG, "header] %s %s", name, check_replace == NULL ? value : check_replace);
 	}
 
 	const char *body_path = NULL;
@@ -792,8 +792,21 @@ int resp_from_cfg(config_setting_t *setting,
 	config_setting_lookup_bool(cf_bodys, "from_file", &stream_data->from_file);
 	if (stream_data->from_file) {
 		config_setting_t *cf_body_ref = config_setting_get_member(cf_bodys, "body_ref");
+#if 0
 		if (config_setting_type(cf_body_ref) == CONFIG_TYPE_ARRAY) {
 			body_path = config_get_body_by_order(setting, cf_body_ref);
+#else
+		if (config_setting_type(cf_body_ref) == CONFIG_TYPE_ARRAY) {
+			int select_mod = 0;
+			if (config_setting_lookup_bool(cf_bodys, "rr_with_mod", &select_mod) && (select_mod > 0)) {
+				int last_digit = stream_data->request_path[strlen(stream_data->request_path) - 1];
+				int select_pos = last_digit % config_setting_length(cf_body_ref);
+				APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s api=(%s) <rr_with_mod> last_digit=(%d) \"%c\" pos=(%d)", __func__, stream_data->request_path, last_digit, last_digit, select_pos);
+				body_path = config_setting_get_string_elem(cf_body_ref, select_pos);
+			} else {
+				body_path = config_get_body_by_order(setting, cf_body_ref);
+			}
+#endif
 		} else {
 			config_setting_lookup_string(cf_bodys, "body_ref", &body_path);
 		}
@@ -859,19 +872,19 @@ int find_and_response(nghttp2_session *session,
 static int on_request_recv(nghttp2_session *session,
                            http2_session_data *session_data,
                            http2_stream_data *stream_data) {
-  APPLOG(APPLOG_ERR, "* request receive) mathod[%s] path[%s] query[%s]",
+  APPLOG(APPLOG_DEBUG, "* request receive) mathod[%s] path[%s] query[%s]",
 		  stream_data->method,
 		  stream_data->request_path,
 		  stream_data->query);
 
   fflush(stream_data->trace_file);
-  APPLOG(APPLOG_ERR, "* received pkt (size:%ld)", stream_data->trace_size);
+  APPLOG(APPLOG_DEBUG, "* received pkt (size:%ld)", stream_data->trace_size);
 #if 0
   fwrite(stream_data->trace_ptr, stream_data->trace_size, 1, stderr);
 #else
-  APPLOG(APPLOG_ERR, "\n%s", stream_data->trace_ptr);
+  APPLOG(APPLOG_DEBUG, "\n%s", stream_data->trace_ptr);
 #endif
-  APPLOG(APPLOG_ERR, "\n");
+  APPLOG(APPLOG_DEBUG, "\n");
 
   if (!stream_data->request_path) {
     if (error_reply(session, stream_data) != 0) {
@@ -1199,15 +1212,23 @@ int init_cfg(config_t *CFG)
 	INT_FOR_EACH_API = malloc(sizeof(int) * api_num);
 	memset(INT_FOR_EACH_API, 0x00, sizeof(int) * api_num);
 
+	/* loglevel */
+	config_setting_t *set_log = config_lookup(CFG, "restsvr_cfg.log_level");
+	int log_level = config_setting_get_int(set_log);
+	APPLOG(APPLOG_ERR, "INIT| log level adjust [%d]", log_level);
+	*lOG_FLAG = log_level;
 	// save with indent
+#if 0
 	config_set_tab_width(CFG, 4);
 	config_write_file(CFG, CONF_PATH);
+#endif
     
     return 0;
 }   
 
 void directory_watch_action(const char *file_name)
 {
+#if 0
 	if (!strcmp(file_name, "restsvr.cfg")) {
 		APPLOG(APPLOG_ERR, "CONF| main config changed, will reload it!");
 
@@ -1219,6 +1240,7 @@ void directory_watch_action(const char *file_name)
 		init_cfg(&MAIN_CFG);
 		APPLOG(APPLOG_ERR, "--> done");
 	}
+#endif
 }
 
 void initialize()

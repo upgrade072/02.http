@@ -1,6 +1,7 @@
 #include <nrfm.h>
 
 extern main_ctx_t MAIN_CTX;
+extern nrf_stat_t NRF_STAT;
 
 void nf_token_acquire_token(main_ctx_t *MAIN_CTX, acc_token_info_t *token_info)
 {
@@ -18,6 +19,8 @@ void nf_token_acquire_token(main_ctx_t *MAIN_CTX, acc_token_info_t *token_info)
     size_t shmqlen = AHIF_APP_MSG_HEAD_LEN + AHIF_VHDR_LEN + ahifPkt->head.queryLen + ahifPkt->head.bodyLen;
 
     int res = msgsnd(MAIN_CTX->my_qid.httpc_qid, msg, shmqlen, 0);
+
+	NRF_STAT_INC(&NRF_STAT, AccessToken, NRFS_ATTEMPT);
 
     if (res < 0) {
         /* CHECK !!! after 1 sec will auto retry */
@@ -54,10 +57,12 @@ void nf_token_acquire_handlde_resp_proc(AhifHttpCSMsgType *ahifPkt)
 
 	switch (head->respCode) {
 		case 200:
+			NRF_STAT_INC(&NRF_STAT, AccessToken, NRFS_SUCCESS);
 			nf_token_update_shm_process(&MAIN_CTX, token_request, ahifPkt);
 			break;
 
 		default:
+			NRF_STAT_INC(&NRF_STAT, AccessToken, NRFS_FAIL);
 			nf_token_handle_resp_nok(&MAIN_CTX, token_request);
 			break;
 	}

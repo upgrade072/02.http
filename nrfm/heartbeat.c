@@ -1,6 +1,7 @@
 #include <nrfm.h>
 
 extern main_ctx_t MAIN_CTX;
+extern nrf_stat_t NRF_STAT;
 
 void https_save_recv_fep_status(main_ctx_t *MAIN_CTX)
 {
@@ -84,6 +85,8 @@ int nf_heartbeat_create_body(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ahifPkt)
 			capacity += svc_info->ovld_tps;
 			load += svc_info->curr_load;
 		}
+		APPLOG(APPLOG_ERR, "{{{DBG}}} %s fep_num=(%d) capacity=(%d) collected", __func__, fep_num, capacity);
+
 		if (capacity >= 65535) capacity = 65535;
 		if (fep_num != 0) load = (double)load / (double)fep_num;
 
@@ -126,6 +129,7 @@ void nf_heartbeat_create_pkt(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ahifPkt)
     /* scheme / method / rsrcUri */
     sprintf(head->scheme, "%s", "https"); // WE MUST USE TLS
     sprintf(head->httpMethod, "%s", "PATCH");
+#if 0
     config_setting_t *setting = config_lookup(&MAIN_CTX->CFG, CF_MY_INSTANCE_ID);
     if (setting == NULL) {
         APPLOG(APPLOG_ERR, "{{{DBG}}} %s called, cant find setting [%s]", __func__, CF_MY_INSTANCE_ID);
@@ -133,6 +137,11 @@ void nf_heartbeat_create_pkt(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ahifPkt)
     } else {
         sprintf(head->rsrcUri, "/nnrf-nfm/v1/nf-instances/%s", config_setting_get_string(setting));
     }
+#else
+	char *my_uuid = cfg_get_my_uuid(MAIN_CTX); //free
+	sprintf(head->rsrcUri, "/nnrf-nfm/v1/nf-instances/%s", my_uuid);
+	free(my_uuid);
+#endif
 
     /* destType */
     sprintf(head->destType, "%s", "NRF");
@@ -166,11 +175,13 @@ void nf_heartbeat_handle_resp_proc(AhifHttpCSMsgType *ahifPkt)
             
     switch (head->respCode) {
         case 204: // No Content
+			NRF_STAT_INC(&NRF_STAT, NFUpdate, NRFS_SUCCESS);
 			// TODO
             break;
 		case 200: // with nfProfile
+			NRF_STAT_INC(&NRF_STAT, NFUpdate, NRFS_SUCCESS);
+
 			/* save received nf_profile */
-			
 			nf_regi_save_recv_nf_profile(&MAIN_CTX, ahifPkt);
 
 			if (nf_regi_save_recv_heartbeat_timer(&MAIN_CTX) < 0)
@@ -181,10 +192,9 @@ void nf_heartbeat_handle_resp_proc(AhifHttpCSMsgType *ahifPkt)
 				return nf_regi_retry_after_while();
 
 			nf_heartbeat_start_process(&MAIN_CTX);
-
             break;
         default:
-			// TODO
+			NRF_STAT_INC(&NRF_STAT, NFUpdate, NRFS_FAIL);
             break;
     }
 }
@@ -205,6 +215,8 @@ void nf_heartbeat_send_proc(evutil_socket_t fd, short what, void *arg)
 	size_t shmqlen = AHIF_APP_MSG_HEAD_LEN + AHIF_VHDR_LEN + ahifPkt->head.queryLen + ahifPkt->head.bodyLen;
 
 	int res = msgsnd(MAIN_CTX.my_qid.httpc_qid, msg, shmqlen, 0);
+
+	NRF_STAT_INC(&NRF_STAT, NFUpdate, NRFS_ATTEMPT);
 
 	nf_heartbeat_clear_status(&MAIN_CTX);
 

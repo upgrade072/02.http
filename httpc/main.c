@@ -1288,8 +1288,6 @@ void main_tick_callback(evutil_socket_t fd, short what, void *arg)
 
 void send_nrfm_notify(evutil_socket_t fd, short what, void *arg)
 {
-	APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s called", __func__);
-
 	char msgBuff[sizeof(GeneralQMsgType)] = {0,};
 
 	GeneralQMsgType *msg = (GeneralQMsgType *)msgBuff;
@@ -1411,24 +1409,24 @@ void directory_watch_action(const char *file_name) { }
 #define NRFM_ACC_TOKEN_SHM_KEY "nrfm_cfg.sys_config.access_token_shm_key"
 int get_acc_token_shm(client_conf_t *CLIENT_CONF)
 {
-	config_t CFG = {0,};
+	config_t CFG_LOCAL = {0,};
 
 	// load nrfm.cfg
 	char conf_path[1024] = {0,};
 	sprintf(conf_path, "%s/data/nrfm.cfg", getenv(IV_HOME));
 
-    if (!config_read_file(&CFG, conf_path)) {
+    if (!config_read_file(&CFG_LOCAL, conf_path)) {
         fprintf(stderr, "config read fail! (%s|%d - %s)\n",
-                config_error_file(&CFG),
-                config_error_line(&CFG),
-                config_error_text(&CFG));
+                config_error_file(&CFG_LOCAL),
+                config_error_line(&CFG_LOCAL),
+                config_error_text(&CFG_LOCAL));
         return (-1);
     } else {
         fprintf(stderr, "TODO| config read from ./nrfm.cfg success!\n");
     }
 
 	int nrfm_acc_token_shm_key = 0;
-	if (config_lookup_int(&CFG, NRFM_ACC_TOKEN_SHM_KEY, &nrfm_acc_token_shm_key) < 0) {
+	if (config_lookup_int(&CFG_LOCAL, NRFM_ACC_TOKEN_SHM_KEY, &nrfm_acc_token_shm_key) < 0) {
         fprintf(stderr, "TODO| fail to get (%s) shm key fail!\n", NRFM_ACC_TOKEN_SHM_KEY);
 		return (-1);
 	}
@@ -1444,6 +1442,8 @@ int get_acc_token_shm(client_conf_t *CLIENT_CONF)
         fprintf(stderr, "TODO| fail to attach to access token shm fail!\n");
 		return (-1);
 	}
+
+	config_destroy(&CFG_LOCAL);
 
 	return 0;
 }

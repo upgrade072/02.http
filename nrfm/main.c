@@ -1,6 +1,7 @@
 #include <nrfm.h>
 
 main_ctx_t MAIN_CTX;
+nrf_stat_t NRF_STAT;
 
 int logLevel = APPLOG_DEBUG;
 int *lOG_FLAG = &logLevel;
@@ -30,12 +31,13 @@ int get_httpc_shm()
     int httpc_shm_key = 0;
     if (config_lookup_int(&CFG, HTTPC_CONN_STATUS_KEY, &httpc_shm_key) < 0) {
         fprintf(stderr, "TODO| fail to get (%s) shm key fail!\n", HTTPC_CONN_STATUS_KEY);
+		config_destroy(&CFG);
         return (-1);
     } else {
 		APPLOG(APPLOG_ERR, "{{{FUCK}}} SHM KEY IS [%x]", httpc_shm_key);
+		config_destroy(&CFG);
+		return get_http_shm(httpc_shm_key);
 	}
-
-	return get_http_shm(httpc_shm_key);
 }
 
 int get_my_profile(main_ctx_t *MAIN_CTX)
@@ -374,6 +376,10 @@ void message_handle(evutil_socket_t fd, short what, void *arg)
 			/* OMP MML */
 			case MTYPE_MMC_REQUEST:
 				mml_function((IxpcQMsgType *)msg->body);
+				continue;
+			/* OMP STAT */
+			case MTYPE_STATISTICS_REQUEST:
+				nrf_stat_function(ixpcQid, (IxpcQMsgType *)msg->body, cfg_get_nrf_stat_code(&MAIN_CTX), &NRF_STAT);
 				continue;
 			/* FEP conn status from https */
 			case MSGID_HTTPS_NRFM_FEP_ALIVE_NOTI:

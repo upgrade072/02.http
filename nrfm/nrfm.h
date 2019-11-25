@@ -46,6 +46,7 @@
 #define CF_SVC_NIC			"nrfm_cfg.sys_config.svc_nic"
 #define CF_NOTIFY_PORT		"nrfm_cfg.sys_config.notify_listen_port"
 #define CF_ACC_TOKEN_SHM	"nrfm_cfg.sys_config.access_token_shm_key"
+#define CF_NRF_STAT_CODE	"nrfm_cfg.sys_config.nrfm_stat_code"
 #define CF_MP_SYS_TYPE		"nrfm_cfg.sys_config.mp_sys_type"
 #define CF_LOGLEVEL			"nrfm_cfg.sys_config.log_level"
 //#define CF_UUID_FILE		"nrfm_cfg.sys_config.uuid_file"
@@ -193,6 +194,7 @@ typedef struct main_ctx {
 char *strptime(const char *s, const char *format, struct tm *tm);
 
 /* ------------------------- config.c --------------------------- */
+int		cfg_get_nrf_stat_code(main_ctx_t *MAIN_CTX);
 int     cfg_get_access_token_shm_key(main_ctx_t *MAIN_CTX);
 char    *cfg_get_my_ip(main_ctx_t *MAIN_CTX);
 char    *cfg_get_mp_nf_type(main_ctx_t *MAIN_CTX);
@@ -290,6 +292,7 @@ void    nf_manage_collect_oper_added_nf(main_ctx_t *MAIN_CTX, nf_list_pkt_t *my_
 void    nf_manage_create_httpc_cmd_conn_act_dact(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item, int act);
 void    nf_manage_create_httpc_cmd_conn_add(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item);
 void    nf_manage_create_httpc_cmd_conn_del(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item);
+int     nf_manage_create_lb_list_get_load(json_object *nf_profile, char *service_name);
 int     nf_manage_create_lb_list_get_priority(json_object *nf_profile, char *service_name);
 void    nf_manage_create_lb_list_pkt(main_ctx_t *MAIN_CTX, conn_list_status_t *conn_raw, int nfType, nf_type_info *nf_specific_info, int allowdPlmnsNum, nf_comm_plmn *allowdPlmns, nf_conn_info_t *nf_conn, json_object *nf_profile, nf_list_pkt_t *my_avail_nfs);
 int     nf_manage_fill_nrfm_mml(nrfm_mml_t *nrfm_cmd, const char *service, const char *scheme, const char *ip, int port);

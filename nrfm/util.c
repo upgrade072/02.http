@@ -1,7 +1,7 @@
 #include <nrfm.h>
 
 extern main_ctx_t MAIN_CTX;
-
+extern nrf_stat_t NRF_STAT;
 
 void dump_pkt_log(void *msg, ssize_t size)
 {
@@ -90,34 +90,43 @@ void handle_ctx_timeout(evutil_socket_t fd, short what, void *arg)
 	switch (timer->type) {
 		// re try to another NRF
 		case NF_CTX_TYPE_REGI:
+			NRF_STAT_INC(&NRF_STAT, NFRegister, NRFS_TIMEOUT);
 			APPLOG(APPLOG_ERR, "{{{DBG}}} %s nf register ctx timed out!", __func__);
 			nf_regi_init_proc(&MAIN_CTX);
 			break;
 		case NF_CTX_TYPE_HEARTBEAT:
+			NRF_STAT_INC(&NRF_STAT, NFUpdate, NRFS_TIMEOUT);
 			APPLOG(APPLOG_ERR, "{{{DBG}}} %s nf heartbeat ctx timed out!", __func__);
 			break;
 		case NF_CTX_TYPE_RETRIEVE_LIST:
+			NRF_STAT_INC(&NRF_STAT, NFListRetrieval, NRFS_TIMEOUT);
 			APPLOG(APPLOG_ERR, "{{{DBG}}} %s nf retrieve(list) ctx timed out!", __func__);
 			nf_retrieve_list_handle_timeout(timer->my_ctx);
 			break;
 		case NF_CTX_TYPE_RETRIEVE_PROFILE:
+			NRF_STAT_INC(&NRF_STAT, NFProfileRetrieval, NRFS_TIMEOUT);
 			APPLOG(APPLOG_ERR, "{{{DBG}}} %s nf retrieve(profile) ctx timed out!", __func__);
 			nf_retrieve_item_handle_timeout(timer->my_ctx);
 			break;
 		case NF_CTX_TYPE_SUBSCRIBE:
+			NRF_STAT_INC(&NRF_STAT, NFStatusSubscribe, NRFS_TIMEOUT);
 			APPLOG(APPLOG_ERR, "{{{DBG}}} %s nf subscribe ctx timed out!", __func__);
 			nf_subscribe_nf_type_handle_timeout(timer->my_ctx);
 			break;
 		case NF_CTX_TYPE_SUBSCR_PATCH:
+			NRF_STAT_INC(&NRF_STAT, NFStatusSubscribePatch, NRFS_TIMEOUT);
 			APPLOG(APPLOG_ERR, "{{{DBG}}} %s nf subscribe ctx timed out!", __func__);
 			break;
 		case NF_CTX_TYPE_ACQUIRE_TOKEN:
+			NRF_STAT_INC(&NRF_STAT, AccessToken, NRFS_TIMEOUT);
 			APPLOG(APPLOG_ERR, "{{{DBG}}} %s nf acuire token ctx timed out!", __func__);
 			nf_token_acquire_token_handle_timeout(&MAIN_CTX, timer->my_ctx);
 			break;
+#if 0
 		case NF_CTX_TYPE_HTTPC_CMD:
 			APPLOG(APPLOG_ERR, "{{{DBG}}} %s nf management ctx timed out!", __func__);
 			break;
+#endif
 		default:
 			APPLOG(APPLOG_ERR, "{{{DBG}}} %s recv unknown type(%d)", __func__, timer->type);
 			break;
@@ -126,17 +135,11 @@ void handle_ctx_timeout(evutil_socket_t fd, short what, void *arg)
 
 void LOG_JSON_OBJECT(const char *banner, json_object *js_obj)
 {
-#if 0
-	char temp_buff[1024 *12] = {0,};
-	sprintf(temp_buff, "%s", json_object_to_json_string_ext(js_obj, JSON_C_PRETTY_NOSLASH));
-	APPLOG(APPLOG_ERR, "[%s]\n%s\n", banner, temp_buff);
-#else
 	if (js_obj == NULL) {
 		APPLOG(APPLOG_ERR, "{{{DBG}}} %s something wrong [%s], json_obj == NULL", __func__, banner);
 	} else {
-		APPLOG(APPLOG_ERR, "[%s]\n%s\n", banner, json_object_to_json_string_ext(js_obj, JSON_C_PRETTY_NOSLASH));
+		APPLOG(APPLOG_DEBUG, "[%s]\n%s\n", banner, json_object_to_json_string_ext(js_obj, JSON_C_PRETTY_NOSLASH));
 	}
-#endif
 }
 
 void start_ctx_timer(int ctx_type, nrf_ctx_t *nf_ctx)
@@ -147,8 +150,10 @@ void start_ctx_timer(int ctx_type, nrf_ctx_t *nf_ctx)
 	timer_sec.tv_sec = config_setting_get_int(setting);
 
 	if (nf_ctx->timer.ev_timeout != NULL) {
+#if 0
 		APPLOG(APPLOG_ERR, "{{{CAUTION!!!}}} %s find already timer exist (from seqNo:%d) and free it!!",
 				__func__, nf_ctx->seqNo);
+#endif
 		event_free(nf_ctx->timer.ev_timeout);
 		nf_ctx->timer.ev_timeout = NULL;
 	}

@@ -143,10 +143,13 @@ void nrfm_mmc_res_log()
 		return;
 
 	conn_list_status_t temp_conn_status[MAX_CON_NUM] = {0,};
-	char resBuf[1024 * 12] = {0,};
+	char *resBuf = malloc(1024 * 1024);
+	resBuf[0] = '\0';
 
 	gather_list(temp_conn_status);
 	write_list(temp_conn_status, resBuf);
+
+	free(resBuf);
 }
 
 void nrfm_mmc_send_resp(nrfm_mml_t *nrfm_cmd_req)
@@ -168,10 +171,19 @@ void nrfm_mmc_send_resp(nrfm_mml_t *nrfm_cmd_req)
 void nrfm_mmc_add_proc(nrfm_mml_t *nrfm_cmd)
 {
 	int list_index = new_list(nrfm_cmd->host);
-
+	
+#if 0
 	for (int i = 0; i < nrfm_cmd->info_cnt; i++) {
+#else
+	for (int i = 0; (list_index > 0) && (i < nrfm_cmd->info_cnt); i++) {
+#endif
 		nf_conn_info_t *nf_conn = &nrfm_cmd->nf_conns[i];
 		int item_index = new_item(list_index, nf_conn->ip, nf_conn->port);
+
+		if (item_index < 0) {
+			APPLOG(APPLOG_ERR, "{{{DBG}}} %s cause full of list[%d] or item[%d] skip", __func__, list_index, item_index);
+			continue;
+		}
 
 		int added_cnt = 0;
 		for (int k = 1; k < MAX_SVR_NUM ; k++) {

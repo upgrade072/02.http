@@ -335,7 +335,8 @@ void send_to_remote(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx)
 
 	if ((httpc_conn = find_packet_index(&tcp_ctx->root_select, &recv_ctx->user_ctx.head)) == NULL) {
 		if (CLIENT_CONF.debug_mode == 1) {
-			APPLOG(APPLOG_ERR, "{{{DBG}}} searchDest fail ahifPkt type=(%s) host=(%s) ip=(%s) port=(%d)",
+			APPLOG(APPLOG_ERR, "{{{DBG}}} searchDest fail ahifPkt api=[%s] type=(%s) host=(%s) ip=(%s) port=(%d)",
+					recv_ctx->user_ctx.head.rsrcUri,
 					recv_ctx->user_ctx.head.destType,
 					recv_ctx->user_ctx.head.destHost,
 					recv_ctx->user_ctx.head.destIp,

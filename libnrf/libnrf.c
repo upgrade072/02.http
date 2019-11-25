@@ -290,7 +290,7 @@ void print_nrfm_mml_raw(nrfm_mml_t *httpc_cmd)
 			httpc_cmd->type,
 			httpc_cmd->info_cnt,
 			ft_to_string(table_c));
-	APPLOG(APPLOG_ERR, "\n%s", ft_to_string(table_m));
+	APPLOG(APPLOG_DEBUG, "\n%s", ft_to_string(table_m));
 	ft_destroy_table(table_c);
 	ft_destroy_table(table_m);
 }
@@ -316,9 +316,8 @@ void getAllowdPlmns(nf_service_info *nf_info, char *resBuf)
 {
 	for (int k = 0; k < nf_info->allowdPlmnsNum; k++) {
 		nf_comm_plmn *plmns = &nf_info->allowdPlmns[k];
-		sprintf(resBuf + strlen(resBuf),
-				"%s%s%s", 
-				plmns->mcc, plmns->mnc, k == (nf_info->allowdPlmnsNum - 1) ? "" : "\n");
+		sprintf(resBuf + strlen(resBuf), "%s%s%s", 
+			plmns->mcc, plmns->mnc, k == (nf_info->allowdPlmnsNum - 1) ? "" : "\n");
 	}
 }
 
@@ -562,3 +561,89 @@ int nf_get_allowd_plmns(json_object *nf_profile, nf_comm_plmn *allowdPlmns)
             
     return allowdPlmnsNum;
 } 
+
+/*
+ * statistics
+ */
+void NRF_STAT_INC(nrf_stat_t *NRF_STAT, int operation, int category)
+{
+	if (operation < 0 || operation >= NRFS_OP_MAX)
+		return;
+	if (category < 0 || category >= NRFS_CATE_MAX)
+		return;
+
+	NRF_STAT->stat_count[operation][category]++;
+
+	return;
+}
+
+char *nrf_stat_op_str[] = {
+	"NFRegister",
+	"NFUpdate",
+	"NFListRetrieval",
+	"NFProfileRetrieval",
+	"NFStatusSubscribe",
+	"NFStatusSubscribePatch",
+	"NFStatusNotify",
+	"AccessToken",
+	"NRFS_OP_MAX"
+};
+
+char *nrf_stat_cate_str[] = {
+    "NRFS_ATTEMPT",
+    "NRFS_SUCCESS",
+    "NRFS_FAIL",
+    "NRFS_TIMEOUT",
+    "NRFS_CATE_MAX"
+};
+
+void nrf_stat_function(int ixpcQid, IxpcQMsgType *rxIxpcMsg, int event_code, nrf_stat_t *NRF_STAT)
+{
+	int len = sizeof(int), txLen = 0;
+
+    APPLOG(APPLOG_ERR, "%s() recv MTYPE_STATISTICS_REQUEST from OMP", __func__);
+
+    GeneralQMsgType sxGenQMsg;
+    memset(&sxGenQMsg, 0x00, sizeof(GeneralQMsgType));
+
+    IxpcQMsgType *sxIxpcMsg = (IxpcQMsgType*)sxGenQMsg.body;
+
+    STM_CommonStatMsgType *commStatMsg=(STM_CommonStatMsgType *)sxIxpcMsg->body;
+    STM_CommonStatMsg     *commStatItem=NULL;
+
+    sxGenQMsg.mtype = MTYPE_STATISTICS_REPORT;
+    sxIxpcMsg->head.msgId = event_code;
+    sxIxpcMsg->head.seqNo = 0; // start from 1
+
+    strcpy(sxIxpcMsg->head.srcSysName, rxIxpcMsg->head.dstSysName);
+    strcpy(sxIxpcMsg->head.srcAppName, rxIxpcMsg->head.dstAppName);
+    strcpy(sxIxpcMsg->head.dstSysName, rxIxpcMsg->head.srcSysName);
+    strcpy(sxIxpcMsg->head.dstAppName, rxIxpcMsg->head.srcAppName);
+
+	commStatMsg->num = NRFS_OP_MAX;
+	for (int i = 0; i < NRFS_OP_MAX; i++) {
+		commStatItem = &commStatMsg->info[i];
+		len += sizeof (STM_CommonStatMsg);
+
+		snprintf(commStatItem->strkey1, sizeof(commStatItem->strkey1), "%s", nrf_stat_op_str[i]);
+
+		APPLOG(APPLOG_ERR, "[STAT OP : %s]", commStatItem->strkey1);
+		for (int k = 0; k < NRFS_CATE_MAX; k++) {
+			commStatItem->ldata[k] = NRF_STAT->stat_count[i][k];
+			APPLOG(APPLOG_ERR, "--cate %s, VAL %d", nrf_stat_cate_str[k], commStatItem->ldata[k]);
+		}
+	}
+
+    sxIxpcMsg->head.segFlag = 0;
+    sxIxpcMsg->head.seqNo++;
+    sxIxpcMsg->head.bodyLen = len;
+    txLen = sizeof(sxIxpcMsg->head) + sxIxpcMsg->head.bodyLen;
+
+    if (msgsnd(ixpcQid, (void*)&sxGenQMsg, txLen, IPC_NOWAIT) < 0) {
+        APPLOG(APPLOG_ERR, "DBG] nrfm status send fail IXPC qid[%d] err[%s]\n", ixpcQid, strerror(errno));
+    }
+
+	memset(NRF_STAT, 0x00, sizeof(nrf_stat_t));
+
+	return;
+}

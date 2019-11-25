@@ -8,11 +8,13 @@ void attach_mml_info(nf_service_info *svc_mml, nf_service_info *svc_info, nf_ser
 		nf_service_info *nf_avail = &nf_avail_each_lb[i];
 		if (nf_avail->occupied == 0) {
 			nf_avail->occupied = 1;
+			nf_avail->table_index = i;
 			nf_avail->lbId = svc_info->lbId;
 			nf_avail->nfType = svc_mml->nfType;
-			memcpy(&nf_avail->nfTypeInfo, &svc_mml->nfTypeInfo, sizeof(nf_service_info));
+			memcpy(&nf_avail->nfTypeInfo, &svc_mml->nfTypeInfo, sizeof(nf_type_info));
 			nf_avail->allowdPlmnsNum = svc_mml->allowdPlmnsNum;
 			memcpy(nf_avail->allowdPlmns, svc_mml->allowdPlmns, sizeof(nf_comm_plmn) * NF_MAX_ALLOWD_PLMNS);
+			memcpy(nf_avail->serviceName, svc_mml->serviceName, sizeof(nf_avail->serviceName));
 
 			sprintf(nf_avail->hostname, "%s", svc_info->hostname);
 			sprintf(nf_avail->type, "%s", svc_info->type);
@@ -73,6 +75,7 @@ void isif_save_recv_lb_status(main_ctx_t *MAIN_CTX, nf_service_info *nf_info)
 	prepare_pos = (MAIN_CTX->SHM_NFS_AVAIL->curr_pos + 1) % MAX_NFS_SHM_POS;
 	nf_list_shm_t *nf_avail_shm_prepare = &MAIN_CTX->SHM_NFS_AVAIL->nfs_avail_shm[prepare_pos];
 	memcpy(&nf_avail_shm_prepare->nf_avail[lbId][index], nf_info, sizeof(nf_service_info));
+	nf_avail_shm_prepare->nf_avail[lbId][index].table_index = index;
 	MAIN_CTX->fep_nfs_info[lbId].inProgress = (index == nf_info->lastIndex) ? 0 : 1;
 
 	struct timeval now = {0,};

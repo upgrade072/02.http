@@ -58,11 +58,16 @@ void http_report_status(SFM_HttpConnStatusList *http_status, int msgId)
 		len += sizeof(SFM_HttpConnStatus);
 
 		/* check next size, send fulfilled msg  */
+#if 0
 		if ((len + sizeof(SFM_HttpConnStatus)) > (MAX_IXPC_QMSG_LEN - 1024)) {
+#else
+		if (lenCnt >= 100) { /* because omp receive logic inaccuracy */
+#endif
 
 			memcpy(lenPtr, &lenCnt, sizeof(int)); /* len ptr pointing first space */
 
 			/* send */
+			txIxpcMsg->head.segFlag = 1;
 			txIxpcMsg->head.seqNo ++;
 			txIxpcMsg->head.bodyLen = len;
 			txLen = sizeof(txIxpcMsg->head) + txIxpcMsg->head.bodyLen;

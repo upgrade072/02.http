@@ -1,5 +1,5 @@
-#ifndef __NRF_COMMON_H__
-#define __NRF_COMMON_H__
+#ifndef __LIBNRF_H__
+#define __LIBNRF_H__
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -169,6 +169,92 @@ typedef struct acc_token_shm_t {
 } acc_token_shm_t;
 #define SHM_ACC_TOKEN_TABLE_SIZE (sizeof(acc_token_shm_t))
 
+/* for NRF Statistics  -- start */
+typedef enum {
+    NRFS_ATTEMPT,
+    NRFS_SUCCESS,
+    NRFS_FAIL,
+    NRFS_TIMEOUT,
+    NRFS_CATE_MAX
+} nrf_stat_cate_t;
+
+typedef enum {
+    NFRegister,
+    NFUpdate,
+    NFListRetrieval,
+    NFProfileRetrieval,
+    NFStatusSubscribe,
+    NFStatusSubscribePatch,
+    NFStatusNotify,
+    AccessToken,
+    NRFS_OP_MAX
+} nrf_stat_op_enum_t;
+
+typedef struct {
+    int stat_count[NRFS_OP_MAX][NRFS_CATE_MAX];
+} nrf_stat_t;
+/* for NRF Statistics  -- end */
+
+
+/* for NRF APP -- start */
+typedef struct {
+    int index;          /* my table index */
+    int occupied;       /* use or not */
+    int priority;       /* service priority - lowest better */ 
+    int sel_count;      /* select count - lowest lowest */
+
+    nf_comm_type    nfType;                         /* UDM UDR ETC DTC ... (now only avail UDM) */
+    nf_type_info    nfTypeInfo;                     /* udmInfo udrInfo etc dtc ... (only avail udmInfo) */
+
+    int allowdPlmnsNum;                             /* if 0, any plmn allowd */
+    nf_comm_plmn allowdPlmns[NF_MAX_ALLOWD_PLMNS];  /* mcc mnc */
+
+    char serviceName[32];                           /* nudm-ueauth ... */
+    char hostname[52];                              /* nfInstance UUID */
+
+    time_t validityPeriod;                          /* NOW + remain time sec */
+} nf_discover_raw;
+
+#define MAX_NF_CACHE_NUM    1024
+typedef struct {
+    nf_discover_raw disc_cache[MAX_NF_CACHE_NUM];
+} nf_discover_table;
+
+typedef struct {
+	int start_lbId;			/* lb id */
+	int lbNum;				/* total lb num = 2 */
+
+	int nfType;
+#define NF_DISC_ST_SUPI		0x0001
+#define NF_DISC_ST_SUCI		0x0002
+	int nfSearchType;
+
+	const char *mcc;
+	const char *mnc;
+	const char *routing_indicators;
+	const char *supi;
+
+	const char *serviceName;
+
+#define NF_DISC_SE_LOW		0x0001
+#define NF_DISC_SE_PRI		0x0002
+	int selectionType;
+
+} nf_discover_key;
+/* for NRF APP -- end */
+
+typedef struct {
+	int occupied;
+	int disc_raw_index;
+	int disc_raw_vector;
+} nf_discover_res_info;
+
+#define MAX_NF_CACHE_RES	5
+typedef struct {
+	int res_num;
+	nf_discover_res_info nf_disc_res[MAX_NF_CACHE_RES];
+} nf_discover_local_res;
+
 /* ------------------------- libnrf.c --------------------------- */
 void    def_sigaction();
 GSList  *get_associate_node(GSList *node_assoc_list, const char *type_str);
@@ -195,7 +281,24 @@ json_object     *search_json_object(json_object *obj, char *key_string);
 int     nf_search_specific_info(json_object *nf_profile, json_object **js_specific_info);
 void    nf_get_specific_info(int nfType, json_object *js_specific_info, nf_type_info *nf_specific_info);
 int     nf_get_allowd_plmns(json_object *nf_profile, nf_comm_plmn *allowdPlmns);
+void    NRF_STAT_INC(nrf_stat_t *NRF_STAT, int operation, int category);
+void    nrf_stat_function(int ixpcQid, IxpcQMsgType *rxIxpcMsg, int event_code, nrf_stat_t *NRF_STAT);
 
-#endif /* __NRF_COMMON_H__ */
+/* ------------------------- libnrf_app.c --------------------------- */
+nf_service_info *nf_discover_search_cache(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE);
+nf_service_info *nf_discover_search_udm(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE);
+nf_service_info *nf_discover_search_udm_supi(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE);
+nf_service_info *nf_discover_search_udm_suci(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE);
+nf_service_info *nf_discover_result(nf_discover_local_res *result_cache, nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE);
+void    nf_discover_order_local_res(nf_discover_raw *disc_raw, nf_discover_local_res *result_cache, int selectionType);
+void    nf_discover_res_log(nf_discover_local_res *result_cache, int selectionType);
+int     nf_discover_check_cache_raw(nf_discover_raw *disc_raw, nf_discover_key *search_info);
+int     nf_discover_table_handle(nf_discover_table *DISC_TABLE, char *json_string);
+int     nf_discover_table_update(nf_discover_table *DISC_TABLE, json_object *js_nf_profile, time_t *validity_time);
+void    nf_discover_raw_update(nf_discover_table *DISC_TABLE, int nfType, nf_type_info *nf_specific_info, int allowdPlmnsNum, nf_comm_plmn *allowdPlmns, const char *serviceName, const char *nfInstanceId, int priority, time_t *validity_time);
+int     nf_discover_table_clear_cached(nf_discover_table *DISC_TABLE);
+void    nf_discover_table_print(nf_discover_table *DISC_TABLE, char *print_buffer, size_t buffer_size);
+
+#endif /* __LIBNRF_H__ */
 
 

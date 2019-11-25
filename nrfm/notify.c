@@ -1,6 +1,7 @@
 #include <nrfm.h>
 
 extern main_ctx_t MAIN_CTX;
+extern nrf_stat_t NRF_STAT;
 
 #define ERROR_NRFM_NOTIFICATION "\
 {\
@@ -81,7 +82,8 @@ int nf_notify_handle_check_req(AhifHttpCSMsgType *ahifPkt, char **problemDetail)
 	nf_retrieve_item_t *nf_item = nf_notify_search_item_by_uuid(&MAIN_CTX, temp_nf_item.nf_uuid);
 
 	if (strcmp(event_value, "NF_REGISTERED") && nf_item == NULL) {
-		APPLOG(APPLOG_ERR, "{{{DBG}}} %s event value \"NF_DEREGISTERED\"|\"NF_PROFILE_CHANGED\" but nf item not exist!", __func__);
+		APPLOG(APPLOG_ERR, "{{{DBG}}} %s event value \"NF_DEREGISTERED\"|\"NF_PROFILE_CHANGED\" but nf item (%s) not exist!", 
+				__func__, temp_nf_item.nf_uuid);
 		*problemDetail = NRFM_NOTI_ERR_SUBSCR_NOT_FOUND;
 		respCode = 404;
 		goto NNHCR_RET;
@@ -152,12 +154,12 @@ void nf_notify_handle_profile_changed(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *
 	char nfStatus[128] = {0,};
 	sprintf(nfStatus, "%s", json_object_get_string(js_nf_status));
 	if (!strcmp(nfStatus, "REGISTERED")) {
-		APPLOG(APPLOG_ERR, "{{{DBG}}} %s nf (uuid:%s) status [%s], it trigger ACT", 
-				__func__, nfStatus, nf_item->nf_uuid);
+		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s nf (uuid:%s) status [%s], it trigger ACT", 
+				__func__, nf_item->nf_uuid, nfStatus);
 		NF_MANAGE_NF_ACT(MAIN_CTX, nf_item);
 	} else {
-		APPLOG(APPLOG_ERR, "{{{DBG}}} %s nf (uuid:%s) status [%s], it trigger ACT", 
-				__func__, nfStatus, nf_item->nf_uuid);
+		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s nf (uuid:%s) status [%s], it trigger DACT", 
+				__func__, nf_item->nf_uuid, nfStatus);
 		NF_MANAGE_NF_DACT(MAIN_CTX, nf_item);
 	}
 }
@@ -166,6 +168,8 @@ void nf_notify_handle_request_proc(AhifHttpCSMsgType *ahifPkt)
 {
 	char *problemDetail = NRFM_NOTI_ERR_MSG_EMPTY;
 	int respCode = nf_notify_handle_check_req(ahifPkt, &problemDetail);
+
+	NRF_STAT_INC(&NRF_STAT, NFStatusNotify, NRFS_ATTEMPT);
 
 	/* send response */
 	nf_notify_send_resp(ahifPkt, respCode, problemDetail);
@@ -195,15 +199,15 @@ int nf_notify_profile_add(nf_retrieve_item_t *nf_older_item, json_object *js_nf_
 
 	if (nf_older_item != NULL) {
 		nf_retr_info->nf_retrieve_items = g_slist_remove(nf_retr_info->nf_retrieve_items, nf_older_item);
-		APPLOG(APPLOG_ERR, "{{{DBG}}} %s remove item addr(%x)", __func__, nf_older_item);
+		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s remove item addr(%x)", __func__, nf_older_item);
 
 		if (nf_older_item->item_nf_profile) {
-			APPLOG(APPLOG_ERR, "{{{DBG}}} %s remove nf_profile addr(%x)", __func__, nf_older_item->item_nf_profile);
+			APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s remove nf_profile addr(%x)", __func__, nf_older_item->item_nf_profile);
 			json_object_put(nf_older_item->item_nf_profile);
 		}
 		if (nf_older_item) {
 			NF_MANAGE_NF_DEL(&MAIN_CTX, nf_older_item);
-			APPLOG(APPLOG_ERR, "{{{DBG}}} %s free nf_item addr(%x)", __func__, nf_older_item);
+			APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s free nf_item addr(%x)", __func__, nf_older_item);
 			free(nf_older_item);
 		}
 	}
@@ -298,15 +302,15 @@ int nf_notify_profile_remove(nf_retrieve_item_t *nf_item)
 	nf_retrieve_info_t *nf_retr_info = nf_notify_search_info_by_uuid(&MAIN_CTX, nf_item->nf_uuid);
 
 	nf_retr_info->nf_retrieve_items = g_slist_remove(nf_retr_info->nf_retrieve_items, nf_item);
-	APPLOG(APPLOG_ERR, "{{{DBG}}} %s remove item addr(%x)", __func__, nf_item);
+	APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s remove item addr(%x)", __func__, nf_item);
 
 	if (nf_item->item_nf_profile) {
-		APPLOG(APPLOG_ERR, "{{{DBG}}} %s remove nf_profile addr(%x)", __func__, nf_item->item_nf_profile);
+		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s remove nf_profile addr(%x)", __func__, nf_item->item_nf_profile);
 		json_object_put(nf_item->item_nf_profile);
 	}
 	if (nf_item) {
 		NF_MANAGE_NF_DEL(&MAIN_CTX, nf_item);
-		APPLOG(APPLOG_ERR, "{{{DBG}}} %s free nf_item addr(%x)", __func__, nf_item);
+		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s free nf_item addr(%x)", __func__, nf_item);
 		free(nf_item);
 	}
 
@@ -369,7 +373,7 @@ nf_retrieve_item_t *nf_notify_search_item_by_uuid(main_ctx_t *MAIN_CTX, const ch
 
 void nf_notify_send_resp(AhifHttpCSMsgType *ahifPktRecv, int respCode, char *problemDetail)
 {
-    APPLOG(APPLOG_ERR, "{{{DBG}}} %s called, ahifPktCid(%d)", __func__, ahifPktRecv->head.ahifCid);
+    APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s called, ahifPktCid(%d)", __func__, ahifPktRecv->head.ahifCid);
 
     char msgBuff[sizeof(GeneralQMsgType)] = {0,};
 
@@ -397,16 +401,17 @@ void nf_notify_send_resp(AhifHttpCSMsgType *ahifPktRecv, int respCode, char *pro
 
 	switch(respCode) {
 		case 204: // no contents
+			NRF_STAT_INC(&NRF_STAT, NFStatusNotify, NRFS_SUCCESS);
 			break;
 		default:
+			NRF_STAT_INC(&NRF_STAT, NFStatusNotify, NRFS_FAIL);
+
 			head->bodyLen = sprintf(ahifPkt->data, ERROR_NRFM_NOTIFICATION, respCode, problemDetail);
 			APPLOG(APPLOG_ERR, "{{{TEST}}} AHIF DATA is (%s)", ahifPkt->data);
 			break;
 	}
 
 	size_t shmqlen = AHIF_APP_MSG_HEAD_LEN + AHIF_VHDR_LEN + ahifPkt->head.queryLen + ahifPkt->head.bodyLen;
-
-	APPLOG(APPLOG_ERR, "{{{DBG}}} %s() head->bodyLen(%d) shmqlen(%ld)", __func__, head->bodyLen, shmqlen);
 
 	int res = msgsnd(MAIN_CTX.my_qid.https_qid, msg, shmqlen, 0);
 

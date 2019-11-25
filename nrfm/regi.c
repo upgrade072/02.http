@@ -1,6 +1,7 @@
 #include <nrfm.h>
 
 extern main_ctx_t MAIN_CTX;
+extern nrf_stat_t NRF_STAT;
 
 int nf_regi_check_registered_status(main_ctx_t *MAIN_CTX)
 {
@@ -84,6 +85,8 @@ void nf_regi_handle_resp_proc(AhifHttpCSMsgType *ahifPkt)
 
 	switch (head->respCode) {
 		case 201: // SUCCESS
+			NRF_STAT_INC(&NRF_STAT, NFRegister, NRFS_SUCCESS);
+
 			nf_regi_save_recv_nf_profile(&MAIN_CTX, ahifPkt);
 
 			if (nf_regi_save_recv_heartbeat_timer(&MAIN_CTX) < 0)
@@ -101,6 +104,8 @@ void nf_regi_handle_resp_proc(AhifHttpCSMsgType *ahifPkt)
 
 			break;
 		default:
+			NRF_STAT_INC(&NRF_STAT, NFRegister, NRFS_FAIL);
+
 			nf_regi_retry_after_while();
 			break;
 	}
@@ -122,6 +127,9 @@ void nf_regi_init_proc(main_ctx_t *MAIN_CTX)
 	size_t shmqlen = AHIF_APP_MSG_HEAD_LEN + AHIF_VHDR_LEN + ahifPkt->head.queryLen + ahifPkt->head.bodyLen;
 
 	int res = msgsnd(MAIN_CTX->my_qid.httpc_qid, msg, shmqlen, 0);
+
+	NRF_STAT_INC(&NRF_STAT, NFRegister, NRFS_ATTEMPT);
+
 	if (res < 0) {
 		APPLOG(APPLOG_ERR, "{{{DBG}}} %s called, res (%d:fail), will retry {httpc_qid:%d}", 
 				__func__, res, MAIN_CTX->my_qid.httpc_qid);

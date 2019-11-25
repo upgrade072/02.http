@@ -1,6 +1,7 @@
 #include <nrfm.h>
 
 extern main_ctx_t MAIN_CTX;
+extern nrf_stat_t NRF_STAT;
 
 void nf_subscribe_check_time(evutil_socket_t fd, short what, void *arg)
 {
@@ -90,6 +91,9 @@ void nf_subscribe_nf_type(nf_retrieve_info_t *nf_retr_info, main_ctx_t *MAIN_CTX
 	size_t shmqlen = AHIF_APP_MSG_HEAD_LEN + AHIF_VHDR_LEN + ahifPkt->head.queryLen + ahifPkt->head.bodyLen;
 
     int res = msgsnd(MAIN_CTX->my_qid.httpc_qid, msg, shmqlen, 0);
+
+	NRF_STAT_INC(&NRF_STAT, NFStatusSubscribe, NRFS_ATTEMPT);
+
     if (res < 0) {
         APPLOG(APPLOG_ERR, "{{{DBG}}} %s called, res (%d:fail), will retry {httpc_qid:%d}",
                 __func__, res, MAIN_CTX->my_qid.httpc_qid);
@@ -131,6 +135,7 @@ void nf_subscribe_nf_type_handle_resp_proc(AhifHttpCSMsgType *ahifPkt)
 
 	switch (head->respCode) {
 		case 201: 
+			NRF_STAT_INC(&NRF_STAT, NFStatusSubscribe, NRFS_SUCCESS);
 			nf_subscribe_nf_type_print_log(ahifPkt, "NF SUBSCRIBE (for nfType) RESPONSE IS ...");
 
 			if (nf_subscribe_nf_type_recv_subcription_id(nf_retr_info, ahifPkt) < 0) {
@@ -142,13 +147,14 @@ void nf_subscribe_nf_type_handle_resp_proc(AhifHttpCSMsgType *ahifPkt)
 
 			/* update subscription before expire */
 			nf_subscribe_nf_type_update_process(&MAIN_CTX, nf_retr_info);
-
 			break;
 		case 400: // json object fail
 		case 500: // NRF have problem
+			NRF_STAT_INC(&NRF_STAT, NFStatusSubscribe, NRFS_FAIL);
 			nf_subscribe_nf_type_retry_while_after(nf_retr_info);
 			break;
 		default:
+			NRF_STAT_INC(&NRF_STAT, NFStatusSubscribe, NRFS_FAIL);
 			nf_subscribe_nf_type_retry_while_after(nf_retr_info);
 			break;
 	}
@@ -349,6 +355,7 @@ void nf_subscribe_patch_handle_resp_proc(AhifHttpCSMsgType *ahifPkt)
 
 	switch (head->respCode) {
 		case 200: 
+			NRF_STAT_INC(&NRF_STAT, NFStatusSubscribePatch, NRFS_SUCCESS);
 			nf_subscribe_nf_type_print_log(ahifPkt, "NF SUBSCRIBE (for patch) RESPONSE IS ...");
 
 			/* CAUTION!!! subscription changed with new ID & validity time */
@@ -361,17 +368,20 @@ void nf_subscribe_patch_handle_resp_proc(AhifHttpCSMsgType *ahifPkt)
 			// TODO!!! TEST this case !!!
 
 			/* CAUTION!!! validity update process already started in nf_subscribe_nf_type_handle_resp_proc() */
-
 			break;
 		case 204:  // no contents (validity accepted)
+			NRF_STAT_INC(&NRF_STAT, NFStatusSubscribePatch, NRFS_SUCCESS);
 			nf_subscribe_patch_modify_validity_with_wish(nf_retr_info);
 			break;
 		case 400: // json object fail
 		case 500: // NRF have problem
+			NRF_STAT_INC(&NRF_STAT, NFStatusSubscribePatch, NRFS_FAIL);
 			nf_subscribe_patch_wait_after(nf_retr_info);
 			break;
 		default:
+			NRF_STAT_INC(&NRF_STAT, NFStatusSubscribePatch, NRFS_FAIL);
 			nf_subscribe_patch_wait_after(nf_retr_info);
+
 			break;
 	}
 }
@@ -405,6 +415,8 @@ void nf_subscribe_patch_subscription(main_ctx_t *MAIN_CTX, nf_retrieve_info_t *n
 	size_t shmqlen = AHIF_APP_MSG_HEAD_LEN + AHIF_VHDR_LEN + ahifPkt->head.queryLen + ahifPkt->head.bodyLen;
 
 	int res = msgsnd(MAIN_CTX->my_qid.httpc_qid, msg, shmqlen, 0);
+
+	NRF_STAT_INC(&NRF_STAT, NFStatusSubscribePatch, NRFS_ATTEMPT);
 
     if (res < 0) {
 		/* CHECK !!! after 1 sec will auto retry */

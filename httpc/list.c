@@ -75,7 +75,14 @@ void save_session_info(httpc_ctx_t *httpc_ctx, int thrd_idx, int sess_idx, int s
 	httpc_ctx->sess_idx = sess_idx;
 	httpc_ctx->session_id = session_id;
 	httpc_ctx->ctx_idx = ctx_idx;
+#if 0
 	sprintf(httpc_ctx->user_ctx.head.destIp, "%s", conn_list->ip);
+#else
+	sprintf(httpc_ctx->user_ctx.head.destType, "%s", conn_list->type);
+	sprintf(httpc_ctx->user_ctx.head.destHost, "%s", conn_list->host);
+	sprintf(httpc_ctx->user_ctx.head.destIp, "%s", conn_list->ip);
+	httpc_ctx->user_ctx.head.destPort = conn_list->port;
+#endif
 #ifdef OAUTH
 	char *token = NULL;
 	if (conn_list->token_id > 0) 

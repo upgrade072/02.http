@@ -139,7 +139,7 @@ void printf_fep_nfs(nfs_avail_shm_t *SHM_NFS_AVAIL, char *printBuff)
 	ft_set_cell_prop(table, 0, FT_ANY_COLUMN, FT_CPROP_ROW_TYPE, FT_ROW_HEADER);
 	ft_set_border_style(table, FT_PLAIN_STYLE);
 
-	ft_write_ln(table, "INDEX", "TYPE", "SERVICE", "ALLOWEDPLMNS\n(MCC+MNC)", "TYPEINFO", "HOSTNAME", "SCHEME", "IPV4", "PORT", "PRIORITY", "AUTO", "LB_ID");
+	ft_write_ln(table, "INDEX", "TYPE", "SERVICE", "ALLOWEDPLMNS\n(MCC+MNC)", "TYPEINFO", "HOSTNAME", "SCHEME", "IPV4", "PORT", "PRIORITY", "LOAD", "AUTO", "LB_ID");
 
 	int POS = SHM_NFS_AVAIL->curr_pos;
 	nf_list_shm_t *nf_avail_shm = &SHM_NFS_AVAIL->nfs_avail_shm[POS];
@@ -159,7 +159,7 @@ void printf_fep_nfs(nfs_avail_shm_t *SHM_NFS_AVAIL, char *printBuff)
 			char typeSpecStr[1024] = {0,};
 			getTypeSpecStr(nf_info, typeSpecStr);
 
-			ft_printf_ln(table, "%d|%s|%s|%s|%s|%s|%s|%s|%d|%d|%s|%d",
+			ft_printf_ln(table, "%d|%s|%s|%s|%s|%s|%s|%s|%d|%d|%d|%s|%d",
 					index++,
 					nf_info->type,
 					strlen(nf_info->serviceName) ? nf_info->serviceName : "ANY",
@@ -170,6 +170,7 @@ void printf_fep_nfs(nfs_avail_shm_t *SHM_NFS_AVAIL, char *printBuff)
 					nf_info->ipv4Address,
 					nf_info->port,
 					nf_info->priority,
+					nf_info->load,
 					nf_info->auto_add == NF_ADD_MML ? "MML" :
 					nf_info->auto_add == NF_ADD_NRF ? "NRF" : "RAW",
 					nf_info->lbId);
@@ -347,11 +348,15 @@ int func_dis_nf_mml(IxpcQMsgType *rxIxpcMsg)
 {
 	APPLOG(APPLOG_DEBUG, "%s() called", __func__);
 
-	char *resBuf=respMsg;
+    char *resBuf=malloc(1024 * 1024);
+	resBuf[0] = '\0';
 
 	printf_nf_mml(&MAIN_CTX, resBuf);
 
-	return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
+	int res = send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
+
+	free(resBuf);
+	return res;
 }
 
 int func_add_nf_mml(IxpcQMsgType *rxIxpcMsg)
@@ -360,7 +365,8 @@ int func_add_nf_mml(IxpcQMsgType *rxIxpcMsg)
 
 	MMLReqMsgType   *mmlReq=(MMLReqMsgType*)rxIxpcMsg->body;
 
-	char *resBuf=respMsg;
+    char *resBuf=malloc(1024 * 1024);
+	resBuf[0] = '\0';
 
 	/* mandatory */
 	char CONF_NAME[128] = {0,};
@@ -377,7 +383,10 @@ int func_add_nf_mml(IxpcQMsgType *rxIxpcMsg)
 	if (add_cfg_nf_mml(&MAIN_CTX, CONF_NAME, TARGET_HOST, NF_TYPE, mmlReq, resBuf) < 0)
 		return send_mml_res_failMsg(rxIxpcMsg, resBuf);
 
-	return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
+	int res =  send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
+
+	free(resBuf);
+	return res;
 }
 
 int func_del_nf_mml(IxpcQMsgType *rxIxpcMsg)
@@ -386,7 +395,8 @@ int func_del_nf_mml(IxpcQMsgType *rxIxpcMsg)
 
 	MMLReqMsgType   *mmlReq=(MMLReqMsgType*)rxIxpcMsg->body;
 
-	char *resBuf=respMsg;
+    char *resBuf=malloc(1024 * 1024);
+	resBuf[0] = '\0';
 
 	/* mandatory */
 	int ID = -1;
@@ -397,5 +407,8 @@ int func_del_nf_mml(IxpcQMsgType *rxIxpcMsg)
 	if (del_cfg_nf_mml(&MAIN_CTX, ID, resBuf) < 0)
 		return send_mml_res_failMsg(rxIxpcMsg, resBuf);
 
-	return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
+	int res = send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
+
+	free(resBuf);
+	return res;
 }

@@ -2,6 +2,19 @@
 
 extern main_ctx_t MAIN_CTX;
 
+int cfg_get_nrf_stat_code(main_ctx_t *MAIN_CTX)
+{
+	config_setting_t *setting_nrfm_stat_code = NULL;
+	if ((setting_nrfm_stat_code = config_lookup(&MAIN_CTX->CFG, CF_NRF_STAT_CODE)) == NULL) {
+		fprintf(stderr, "TODO| cant find .cfg(%s)\n", CF_NRF_STAT_CODE);
+		return -1;
+	}
+
+	int nrfm_stat_code = config_setting_get_int(setting_nrfm_stat_code);
+
+	return nrfm_stat_code;
+}
+
 int cfg_get_access_token_shm_key(main_ctx_t *MAIN_CTX)
 {
 	config_setting_t *setting_acc_token_shm_key = NULL;

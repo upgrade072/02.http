@@ -138,7 +138,8 @@ int set_overload_info(main_ctx_t *MAIN_CTX, config_setting_t *elem)
 
 	service_info_t svc_info = {0,};
 
-	svc_info.sys_mp_id = atoi(getenv("SYS_MP_ID"));
+	//svc_info.sys_mp_id = atoi(getenv("SYS_MP_ID"));
+	svc_info.sys_mp_id = get_sys_label_num();
 	sprintf(svc_info.service_name, "%s",  config_setting_get_string(cf_svc_name));
 	sprintf(svc_info.ovld_name, "%s", config_setting_get_string(cf_ovld_name));
 	sprintf(svc_info.proc_name, "%s", config_setting_get_string(cf_proc_name));
@@ -224,8 +225,8 @@ int initialize(main_ctx_t *MAIN_CTX)
 
     /* load fep assoc list */
 	if ((MAIN_CTX->lb_assoc_list = get_associate_node(MAIN_CTX->lb_assoc_list, "LB")) == NULL) {
-        APPLOG(APPLOG_ERR, "{{{INIT}}} fail to get associate_lb, proc down");
-        return -1;
+        APPLOG(APPLOG_ERR, "{{{INIT}}} fail to get associate_lb, but proc continue");
+        //return -1;
     }
 
 	/* attach to overload table */

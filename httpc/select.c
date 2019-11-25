@@ -277,10 +277,25 @@ void traverse_parent_move_index(GNode *start_node)
 
 		if (node_data && child_num) {
 			node_data->select_vector++;
+#if 0
 			if (node_data->select_vector >= g_node_n_nodes(curr_node, G_TRAVERSE_LEAVES)) {
 				node_data->select_vector = 0;
 				node_data->last_selected = (node_data->last_selected + 1) % child_num;
 			}
+#else
+			int leaf_sum = 0;
+			for (int i = 0; i < child_num; i++) {
+				GNode *nth_child = g_node_nth_child(curr_node, i);
+				leaf_sum += g_node_n_nodes(nth_child, G_TRAVERSE_LEAVES);
+				if (node_data->select_vector == leaf_sum) {
+					node_data->last_selected = (node_data->last_selected + 1) % child_num;
+					break;
+				}
+			}
+			if (node_data->select_vector >= g_node_n_nodes(curr_node, G_TRAVERSE_LEAVES)) {
+				node_data->select_vector = 0;
+			}
+#endif
 		}
 		curr_node = curr_node->parent;
 	}
@@ -327,6 +342,7 @@ conn_list_t *search_conn_list(GNode *curr_node, compare_input_t *comm_input, sel
 		} else if (leaf_conn_list->act == 1 && 
 				(leaf_conn_list->conn == CN_CONNECTED && leaf_conn_list->reconn_candidate == 0)) {
 			traverse_parent_move_index(curr_node);
+			//APPLOG(APPLOG_ERR, "{{{TEST}}} ip=(%s) port=(%d) index=(%d)", leaf_conn_list->ip, leaf_conn_list->port, leaf_conn_list->index);
             return leaf_conn_list;
 		} else {
             return NULL;
@@ -352,9 +368,7 @@ conn_list_t *search_conn_list(GNode *curr_node, compare_input_t *comm_input, sel
 
 			if (compare_res == 0) {
 				conn_list_t *res_conn_list = search_conn_list(nth_child, comm_input, root_node);
-				if (res_conn_list != NULL) {
-					return res_conn_list;
-				}
+				return res_conn_list;
 			} else if (compare_res < 0) {
 				high = nth - 1;
 			} else {

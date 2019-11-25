@@ -67,25 +67,26 @@ typedef struct {
 	int occupied;		
 	int lbId;
 
-	/* nrfc */
+	/* [DON'T USE] only for nrfc */
 	int seqNo;
 	int index;
 	int lastIndex;
 
+	/* use for application */
+	int table_index;
+
 	nf_comm_type nfType;	// NF_TYPE_UDM
 	nf_type_info nfTypeInfo;
-
 	int allowdPlmnsNum;	/* if 0, can handle any plmn */
 	nf_comm_plmn allowdPlmns[NF_MAX_ALLOWD_PLMNS];
-
 	char serviceName[32];   // "nudm-ueauth"
-
 	char hostname[52];
 	char type[12];
 	char scheme[12];
 	char ipv4Address[32];
 	int port;
 	int priority;
+	int load;				/* required by hgkim 20191116 */
 
 	int auto_add;
 } nf_service_info;
