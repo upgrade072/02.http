@@ -2,8 +2,9 @@
 
 extern server_conf SERVER_CONF;   /* sysconfig from config.c */
 extern thrd_context THRD_WORKER[MAX_THRD_NUM];
+extern int nrfmQid;
 
-lb_global_t LB_CONF;                /* lb config */
+lb_global_t LB_CONF;            /* lb config */
 lb_ctx_t LB_CTX;                /* lb connection context */
 
 https_ctx_t *get_null_recv_ctx(tcp_ctx_t *tcp_ctx)
@@ -30,6 +31,7 @@ https_ctx_t *get_assembled_ctx(tcp_ctx_t *tcp_ctx, char *ptr)
     char *vheader = ptr + sizeof(AhifHttpCSMsgHeadType);
     int vheaderCnt = head->vheaderCnt;
 
+#if 0
     char *body = ptr + sizeof(AhifHttpCSMsgHeadType) + (sizeof(hdr_relay) * vheaderCnt);
     int bodyLen = head->bodyLen;
 
@@ -39,6 +41,17 @@ https_ctx_t *get_assembled_ctx(tcp_ctx_t *tcp_ctx, char *ptr)
     memcpy(&recv_ctx->user_ctx.head, ptr, sizeof(AhifHttpCSMsgHeadType));
     memcpy(&recv_ctx->user_ctx.vheader, vheader, (sizeof(hdr_relay) * vheaderCnt));
     memcpy(&recv_ctx->user_ctx.body, body, bodyLen);
+#else
+    char *data = ptr + sizeof(AhifHttpCSMsgHeadType) + (sizeof(hdr_relay) * vheaderCnt);
+    int dataLen = head->queryLen + head->bodyLen;
+
+    if((recv_ctx = get_null_recv_ctx(tcp_ctx)) == NULL)
+        return NULL;
+
+    memcpy(&recv_ctx->user_ctx.head, ptr, sizeof(AhifHttpCSMsgHeadType));
+    memcpy(&recv_ctx->user_ctx.vheader, vheader, (sizeof(hdr_relay) * vheaderCnt));
+    memcpy(&recv_ctx->user_ctx.data, data, dataLen);
+#endif
 
     return recv_ctx;
 }
@@ -67,14 +80,19 @@ void set_iovec(tcp_ctx_t *dest_tcp_ctx, https_ctx_t *https_ctx, const char *dest
         push_req->iov[item_cnt].iov_len = user_ctx->head.vheaderCnt * sizeof(hdr_relay);
         item_cnt++;
         total_bytes += user_ctx->head.vheaderCnt * sizeof(hdr_relay);
-    } else {
 	}
     // body
-    if (user_ctx->head.bodyLen) {
+    if (user_ctx->head.queryLen || user_ctx->head.bodyLen) {
+#if 0
         push_req->iov[item_cnt].iov_base = user_ctx->body;
         push_req->iov[item_cnt].iov_len = user_ctx->head.bodyLen;
+#else
+		// this request include ahif.data [ query | body ], we must send all
+        push_req->iov[item_cnt].iov_base = user_ctx->data;
+        push_req->iov[item_cnt].iov_len = user_ctx->head.queryLen + user_ctx->head.bodyLen;
+#endif
         item_cnt++;
-        total_bytes += user_ctx->head.bodyLen;
+        total_bytes += (user_ctx->head.queryLen + user_ctx->head.bodyLen);
     }
 
     push_req->iov_cnt = item_cnt;
@@ -197,8 +215,8 @@ tcp_ctx_t *get_direct_dest(https_ctx_t *https_ctx)
 
 void gb_clean_ctx(https_ctx_t *https_ctx)
 {
-    memset(https_ctx->user_ctx.vheader, 0x00, sizeof(hdr_relay) * https_ctx->user_ctx.head.vheaderCnt);
     https_ctx->user_ctx.head.vheaderCnt = 0;
+    memset(https_ctx->user_ctx.vheader, 0x00, sizeof(hdr_relay) * MAX_HDR_RELAY_CNT);
 	https_ctx->tcp_wait = 0;
 }
 
@@ -224,9 +242,13 @@ int send_request_to_fep(https_ctx_t *https_ctx)
 {
 	tcp_ctx_t *fep_tcp_ctx = NULL;
 
+	// case 0. if direct relay ctx find direct sock
 	if (https_ctx->is_direct_ctx) {
 		fep_tcp_ctx = get_direct_dest(https_ctx);
-	} else {
+	}
+	// case 0-1. if case 0 fail or ...
+	// case 1. if loadshare ctx find any of sock
+	if (fep_tcp_ctx == NULL) {
 		fep_tcp_ctx = get_loadshare_turn(https_ctx);
 	}
 
@@ -268,9 +290,15 @@ void send_to_worker(tcp_ctx_t *tcp_ctx, https_ctx_t *recv_ctx, int intl_msg_type
 		goto STW_RET;
 	}
 
+	/* set ahifCid for trace */
+	https_ctx->user_ctx.head.ahifCid = recv_ctx->user_ctx.head.ahifCid;
+
 	// check have same fep tag
 	if (recv_ctx->fep_tag != https_ctx->fep_tag) {
-		APPLOG(APPLOG_DETAIL, "%s() fep tag mismatch (ahif recv %d, orig ctx %d)", __func__, recv_ctx->fep_tag, https_ctx->fep_tag);
+		APPLOG(APPLOG_DETAIL, "%s() fep tag mismatch (ahif recv %d, orig ctx relay:%d tcp:%d) [%s]", 
+				__func__, 
+				recv_ctx->fep_tag, https_ctx->relay_fep_tag, https_ctx->fep_tag, 
+				https_ctx->user_ctx.head.rsrcUri);
 	}
 
 	intl_req_t intl_req = {0,};
@@ -377,7 +405,11 @@ void lb_buff_readcb(struct bufferevent *bev, void *arg)
             MAX_RCV_BUFF_LEN - sock_ctx->rcv_len);
 
 	if (rcv_len <= 0) {
+#if 0
 		if (errno != EINTR && errno != EAGAIN) {
+#else
+		if (errno != EINTR) {
+#endif
 			APPLOG(APPLOG_ERR, "%s() fep sock error! %d : %s\n", __func__, errno, strerror(errno));
 			release_conncb(sock_ctx);
 			return;
@@ -582,6 +614,40 @@ void attach_lb_thread(lb_global_t *lb_conf, lb_ctx_t *lb_ctx)
 		}
 	}
 #endif
+}
+
+void send_fep_conn_status(evutil_socket_t fd, short what, void *arg)
+{
+	// caution, it trigger in every tcp rx thread, use mutex_lock
+	  
+	tcp_ctx_t *tcp_ctx = (tcp_ctx_t *)arg;
+
+	if (tcp_ctx->received_fep_status != HTTP_STA_CAUSE_SYS_ACTIVE) 
+		return;
+
+	if (g_node_n_children(tcp_ctx->root_conn) == 0)
+		return;
+
+	GeneralQMsgType msg = {0,};
+	msg.mtype = (long)MSGID_HTTPS_NRFM_FEP_ALIVE_NOTI;
+
+	if (nrfmQid > 0 ) {
+		int res = msgsnd(nrfmQid, &msg, 0, 0);
+		if (res < 0) {
+			APPLOG(APPLOG_DEBUG, "%s() fail to send status noti to NRFM", __func__);
+		}
+	}
+	return;
+}
+
+void nrfm_send_conn_status_callback(tcp_ctx_t *tcp_ctx)
+{
+	// every 300 ms, if fep connected send to NRFM
+
+    struct timeval tm_300ms = {0, 300000}; // 300 ms
+	struct event *ev_fep_conn_status;
+	ev_fep_conn_status = event_new(tcp_ctx->evbase, -1, EV_PERSIST, send_fep_conn_status, tcp_ctx);
+	event_add(ev_fep_conn_status, &tm_300ms);
 }
 
 int create_lb_thread()

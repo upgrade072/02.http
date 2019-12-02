@@ -10,7 +10,7 @@ int logLevel = APPLOG_DEBUG;
 int *lOG_FLAG = &logLevel;
 //#endif
 
-int httpsQid, ixpcQid;
+int httpsQid, ixpcQid, nrfmQid;
 
 int THREAD_NO[MAX_THRD_NUM] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
 int SESSION_ID;
@@ -19,12 +19,16 @@ server_conf SERVER_CONF;
 
 thrd_context THRD_WORKER[MAX_THRD_NUM];
 http2_session_data SESS[MAX_THRD_NUM][MAX_SVR_NUM];
-pthread_mutex_t PUTQUE_WRITE_LOCK = PTHREAD_MUTEX_INITIALIZER;
 https_ctx_t *HttpsCtx[MAX_THRD_NUM];
 allow_list_t ALLOW_LIST[MAX_LIST_NUM];
 http_stat_t HTTP_STAT;
+ovld_state_t OVLD_STATE;
 
 hdr_index_t VHDR_INDEX[2][MAX_HDR_RELAY_CNT];
+
+#ifdef OVLD_API
+extern int lb_api_ovld_is_ctrl(int trid, int proto, char *host, char *err_str);
+#endif
 
 // for lb ctx print
 extern lb_global_t LB_CONF;
@@ -262,9 +266,6 @@ static http2_session_data *create_http2_session_data(app_context *app_ctx,
 				THRD_WORKER[index].evbase, fd,
 				BEV_OPT_CLOSE_ON_FREE | BEV_OPT_DEFER_CALLBACKS);
 	}
-#if 0
-	bufferevent_enable(session_data->bev, EV_READ | EV_WRITE);
-#endif
 
 	session_data->client_addr = strdup(host);
 	session_data->client_port = ntohs(get_in_port(addr));
@@ -419,7 +420,8 @@ static ssize_t ptr_read_callback_ctx(nghttp2_session *session, int32_t stream_id
                 __func__, len, length);
         len = length;
     }
-    memcpy(buf, https_ctx->user_ctx.body, len);
+	// ahif.data [query|body|...] this callback only want body
+    memcpy(buf, https_ctx->user_ctx.data + https_ctx->user_ctx.head.queryLen, len);
     *data_flags |= NGHTTP2_DATA_FLAG_EOF;
     return len;
 }
@@ -433,12 +435,15 @@ static int send_response_by_ctx(nghttp2_session *session, int32_t stream_id,
 	rv = nghttp2_submit_response(session, stream_id, nva, nvlen, &data_prd);
 
 	char log_pfx[1024] = {0,};
-	sprintf(log_pfx, "HTTPS ctx(%d:%d) http sess/stream(%d:%d)",
+	sprintf(log_pfx, "HTTPS ctx(%d:%d) http sess/stream(%d:%d) ahifCid(%d)",
 			https_ctx->user_ctx.head.thrd_index,
 			https_ctx->user_ctx.head.ctx_id,
 			https_ctx->session_id,
-			stream_id);
-	log_pkt_send(log_pfx, nva, nvlen, https_ctx->user_ctx.body, https_ctx->user_ctx.head.bodyLen);
+			stream_id,
+			https_ctx->user_ctx.head.ahifCid);
+	log_pkt_send(log_pfx, nva, nvlen, 
+			https_ctx->user_ctx.data + https_ctx->user_ctx.head.queryLen, 
+			https_ctx->user_ctx.head.bodyLen);
 
 	if (rv != 0) {
 		APPLOG(APPLOG_ERR, "Fatal error: %s", nghttp2_strerror(rv));
@@ -449,16 +454,78 @@ static int send_response_by_ctx(nghttp2_session *session, int32_t stream_id,
 }
 
 /* CAUTION!!! : data_prd only ref pointer(not copyed), must use under static values */
-static const char ERROR_BADREQ[] = "{cause:\"bad request\"}";
-static const char ERROR_INTERNAL[] = "{cause:\"internal error\"}";
-static const char ERROR_AUTHORIZATION[] = "{cause:\"authorization error\"}";
-static int error_reply(nghttp2_session *session, http2_stream_data *stream_data,
-		int error_code, const char *error_body)
+static const char ERROR_NULLBODY[] = "";
+static const char ERROR_HTTP_S_INVLD_API[]              /* 400 bad request */ = "\
+{\
+  \"title\" : \"receive wrong uri\",\
+  \"status\" : 400,\
+  \"detail\" : \"The HTTP request contains an unsupported API name or API version in the URI.\"\
+}";
+static const char ERROR_HTTP_S_INVLD_MSG_FORMAT[]       /* 400 bad request */ = "\
+{\
+  \"title\" : \"fail to decoding\",\
+  \"status\" : 400,\
+  \"detail\" : \"The HTTP request has an invalid format.\"\
+}";
+static const char ERROR_HTTP_S_MANDATORY_IE_INCORRECT[] /* 400 bad reqeust */ = "\
+{\
+  \"title\" : \"oauth fail\",\
+  \"status\" : 400,\
+  \"detail\" : \"A mandatory IE or conditional IE in data structure, but mandatory required, for an HTTP method was received with a semantically incorrect value.\"\
+}";
+static const char ERROR_HTTP_S_INSUFFICIENT_RESOURCES[] /* 500 internal server error */ = "\
+{\
+  \"title\" : \"fail to assign context\",\
+  \"status\" : 500,\
+  \"detail\" : \"The request is rejected due to insufficient resources.\"\
+}"; 
+static const char ERROR_HTTP_S_SYSTEM_FAILURE[]         /* 500 internal server error */ = "\
+{\
+  \"title\" : \"internal tcp error\",\
+  \"status\" : 500,\
+  \"detail\" : \"The request is rejected due to generic error condition in the NF.\"\
+}"; 
+static const char ERROR_HTTP_S_NF_CONGESTION[]          /* 503 service unavailable */ = "\
+{\
+  \"title\" : \"ovld ctrl occured\",\
+  \"status\" : 503,\
+  \"detail\" : \"The NF experiences congestion and performs overload control, which does not allow the request to be processed.\"\
+}";
+static int error_reply(http2_session_data *session_data, nghttp2_session *session, http2_stream_data *stream_data,
+		int error_code, const char *error_body, int stat_enum)
 {
 	char err_code_str[128] = {0,};
 	sprintf(err_code_str, "%d", error_code);
 
+#if 0
 	nghttp2_nv hdrs[] = { MAKE_NV(":status", err_code_str, strlen(err_code_str)) };
+#else
+	nghttp2_nv hdrs[2] = { MAKE_NV(":status", err_code_str, strlen(err_code_str)),
+		MAKE_NV("content-type", "application/json", strlen("application/json")) };
+#endif
+
+#ifdef OVLD_API
+	/* for nssf overload control */
+	// api_ovld_add_fail(session_data->thrd_index, API_PROTO_HTTPS, 0, error_code);
+	api_ovld_add_fail(session_data->thrd_index, API_PROTO_HTTPS, 0);
+#endif
+
+	char log_pfx[1024] = {0,};
+	sprintf(log_pfx, "HTTPS ctx(N/A) http sess/stream(-:%d) [internal error]",
+			stream_data->stream_id);
+	log_pkt_send(log_pfx, hdrs, 2, error_body, strlen(error_body));
+
+	switch (stat_enum) {
+		case HTTP_S_INVLD_API:
+		case HTTP_S_INVLD_MSG_FORMAT:
+		case HTTP_S_MANDATORY_IE_INCORRECT:
+		case HTTP_S_INSUFFICIENT_RESOURCES:
+		case HTTP_S_SYSTEM_FAILURE:
+		case HTTP_S_NF_CONGESTION:
+			http_stat_inc(session_data->thrd_index, session_data->list_index, stat_enum);
+			break;
+	}
+
 	if (send_response(session, stream_data->stream_id, hdrs, ARRLEN(hdrs),
 				(void *)error_body) != 0) {
 		return (-1);
@@ -506,19 +573,17 @@ static int on_header_callback(nghttp2_session *session,
 			log_pkt_head_recv(https_ctx, name, namelen, value, valuelen);
 
 			if (!strcmp(header_name, HDR_PATH)) {
-				divide_string(header_value, '?', 
+				https_ctx->user_ctx.head.queryLen = divide_string(header_value, '?', 
 						https_ctx->user_ctx.head.rsrcUri,
 						sizeof(https_ctx->user_ctx.head.rsrcUri),
-						https_ctx->user_ctx.head.queryParam,
-						sizeof(https_ctx->user_ctx.head.queryParam));
+						https_ctx->user_ctx.data,
+						sizeof(https_ctx->user_ctx.data));
 			} else if (!strcmp(header_name, HDR_SCHEME)) {
 				sprintf(https_ctx->user_ctx.head.scheme, "%s", header_value);
 			} else if (!strcmp(header_name, HDR_AUTHORITY)) {
 				sprintf(https_ctx->user_ctx.head.authority, "%s", header_value);
 			} else if (!strcmp(header_name, HDR_METHOD)) {
 				sprintf(https_ctx->user_ctx.head.httpMethod, "%s", header_value);
-			} else if (!strcmp(header_name, HDR_CONTENT_ENCODING)) {
-				sprintf(https_ctx->user_ctx.head.contentEncoding, "%s", header_value);
 #ifdef OAUTH
 			} else if (!strcmp(header_name, HDR_AUTHORIZATION)) {
 				sprintf(https_ctx->access_token, "%s", header_value); // Bearer token_raw
@@ -547,19 +612,37 @@ static int on_begin_headers_callback(nghttp2_session *session,
 		return 0;
 	}
 
-	/* stat HTTP_RX_REQ */
-	http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_RX_REQ);
-
+	/* get stream data */
 	stream_data = create_http2_stream_data(session_data, frame->hd.stream_id);
 	nghttp2_session_set_stream_user_data(session, frame->hd.stream_id,
 			stream_data);
+
+	/* stat HTTP_RX_REQ */
+	http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_RX_REQ);
+#if 0
+#ifdef OVLD_API
+	/* for nssf overload control */
+	char *error_str = NULL;
+	int ovld_reason_code = lb_api_ovld_is_ctrl(session_data->thrd_index, API_PROTO_HTTPS, 
+			session_data->hostname, error_str); 
+	if (ovld_reason_code == API_ACTION_DROP) {
+		// TODO LIKE PREARRANGE SOMETHING ...
+	} else if (ovld_reason_code > 299) {
+		int res = error_reply(session_data, session, stream_data, ovld_reason_code, 
+				error_str != NULL ? error_str : ERROR_NULLBODY, HTTP_S_NF_CONGESTION);
+
+		return res == 0 ? 0 : NGHTTP2_ERR_CALLBACK_FAILURE;
+	}
+#endif
+#endif
 
 	/* assign context when receive begin-header, remove it when remove_http2_stream_data() called */
 	idx = Get_CtxId(session_data->thrd_index);
 
 	if (idx < 0) {
 		APPLOG(APPLOG_ERR, "%s() Assign Context fail thrd[%d]!", __func__, session_data->thrd_index);
-		if (error_reply(session, stream_data, 500, ERROR_INTERNAL) != 0) {
+		if (error_reply(session_data, session, stream_data, 500, 
+					ERROR_HTTP_S_INSUFFICIENT_RESOURCES, HTTP_S_INSUFFICIENT_RESOURCES) != 0) {
 			return NGHTTP2_ERR_CALLBACK_FAILURE;
 		}
 	} else {
@@ -628,6 +711,35 @@ int check_access_token(char *token)
 }
 #endif
 
+/* HTTPS --> NRFM direct channel */
+int send_request_to_nrfm(https_ctx_t *https_ctx, int ahif_mtype)
+{
+	https_ctx->for_nrfm_ctx = 1; // this ctx relayed to NRFM
+
+	char msgBuff[sizeof(GeneralQMsgType)] = {0,};
+
+	GeneralQMsgType *msg = (GeneralQMsgType *)msgBuff;
+	msg->mtype = (long)MSGID_HTTPS_NRFM_REQUEST;
+
+	AhifHttpCSMsgType *ahifPkt_recv = &https_ctx->user_ctx;
+	AhifHttpCSMsgType *ahifPkt_send = (AhifHttpCSMsgType *)msg->body;
+
+	size_t shmqlen = AHIF_APP_MSG_HEAD_LEN + AHIF_VHDR_LEN + ahifPkt_recv->head.queryLen + ahifPkt_recv->head.bodyLen;
+	memcpy(ahifPkt_send, ahifPkt_recv, shmqlen);
+
+	ahifPkt_send->head.mtype = ahif_mtype;
+
+	int res = -1;
+	if (nrfmQid > 0) {
+		res = msgsnd(nrfmQid, msg, shmqlen, IPC_NOWAIT);
+		if (res < 0) {
+			APPLOG(APPLOG_ERR, "%s(), fail to send resp to NRFM! (res:%d)", __func__, res);
+		}
+	}
+
+	return res;
+}
+
 static int on_request_recv(nghttp2_session *session,
 		http2_session_data *session_data,
 		http2_stream_data *stream_data) {
@@ -645,8 +757,47 @@ static int on_request_recv(nghttp2_session *session,
 
 	log_pkt_end_stream(stream_data->stream_id, https_ctx);
 
+	/* 2019.10.16 peer ovld sts test*/
+	if (ovld_calc_check(session_data)) {
+		/* silence discard stream */
+		nghttp2_session_close_stream(session_data->session, stream_data->stream_id, NGHTTP2_INTERNAL_ERROR);
+		clear_and_free_ctx(https_ctx);
+		Free_CtxId(thrd_idx, ctx_id);
+		http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_PRE_END);
+		return 0;
+	}
+
+#ifdef OVLD_API
+	char *error_str = NULL;
+	//int ovld_reason_code = lb_api_ovld_is_ctrl(session_data->thrd_index, API_PROTO_HTTPS, 
+	//		session_data->hostname, error_str); 
+	int ovld_reason_code = api_ovld_is_ctrl_by_uri(session_data->thrd_index, 
+			API_PROTO_HTTPS, 
+			session_data->hostname, 
+			https_ctx->user_ctx.head.httpMethod,
+			https_ctx->user_ctx.head.rsrcUri,
+			https_ctx->user_ctx.data,
+			error_str); 
+	if (ovld_reason_code == API_ACTION_DROP) {
+		/* silence discard stream */
+		nghttp2_session_close_stream(session_data->session, stream_data->stream_id, NGHTTP2_INTERNAL_ERROR);
+		clear_and_free_ctx(https_ctx);
+		Free_CtxId(thrd_idx, ctx_id);
+		http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_PRE_END);
+		return 0;
+	} else if (ovld_reason_code > 299) {
+		int res = error_reply(session_data, session, stream_data, ovld_reason_code, 
+				error_str != NULL ? error_str : ERROR_NULLBODY, HTTP_S_NF_CONGESTION);
+
+		clear_and_free_ctx(https_ctx);
+		Free_CtxId(thrd_idx, ctx_id);
+		return res == 0;
+	}
+#endif
+
 	if (!https_ctx->user_ctx.head.rsrcUri[0]) {
-		if (error_reply(session, stream_data, 400, ERROR_BADREQ) != 0)
+		if (error_reply(session_data, session, stream_data, 400, 
+					ERROR_HTTP_S_INVLD_API, HTTP_S_INVLD_API) != 0)
 			return NGHTTP2_ERR_CALLBACK_FAILURE;
 		return 0;
 	}
@@ -655,18 +806,21 @@ static int on_request_recv(nghttp2_session *session,
 	/* check OAuth 2.0 access token */
 	if (session_data->auth_act > 0) {
 		if (https_ctx->access_token == NULL) {
-			if (error_reply(session, stream_data, 400, ERROR_AUTHORIZATION) != 0) 
+			if (error_reply(session_data, session, stream_data, 400, 
+						ERROR_HTTP_S_MANDATORY_IE_INCORRECT, HTTP_S_MANDATORY_IE_INCORRECT) != 0) 
 				return NGHTTP2_ERR_CALLBACK_FAILURE;
 			return 0;
 		}
 		int token_len = strlen(https_ctx->access_token);
 		if (token_len <= 7 || strncmp(https_ctx->access_token, "Bearer ", 7)) {
-			if (error_reply(session, stream_data, 400, ERROR_AUTHORIZATION) != 0) 
+			if (error_reply(session_data, session, stream_data, 400, 
+						ERROR_HTTP_S_MANDATORY_IE_INCORRECT, HTTP_S_MANDATORY_IE_INCORRECT) != 0) 
 				return NGHTTP2_ERR_CALLBACK_FAILURE;
 			return 0;
 		}
 		if (check_access_token(https_ctx->access_token + 7) < 0) {
-			if (error_reply(session, stream_data, 400, ERROR_AUTHORIZATION) != 0) 
+			if (error_reply(session_data, session, stream_data, 400, 
+						ERROR_HTTP_S_MANDATORY_IE_INCORRECT, HTTP_S_MANDATORY_IE_INCORRECT) != 0) 
 				return NGHTTP2_ERR_CALLBACK_FAILURE;
 			return 0;
 		}
@@ -677,15 +831,61 @@ static int on_request_recv(nghttp2_session *session,
 	for (rel_path = https_ctx->user_ctx.head.rsrcUri; *rel_path == '/'; ++rel_path)
 		;
 
-	if (send_request_to_fep(https_ctx) < 0) {
-		// all context will release in stream close state
-		if (error_reply(session, stream_data, 500, ERROR_INTERNAL) != 0) {
+	int relay_result = 0;
+
+	if (!strcmp(https_ctx->user_ctx.head.rsrcUri, "/notifyForLb")) {
+		relay_result = send_request_to_nrfm(https_ctx, MTYPE_NRFM_NOTIFY_REQUEST);
+	} else {
+		relay_result = send_request_to_fep(https_ctx);
+	}
+
+	if (relay_result < 0) {
+		/* all context will release in stream close state */
+		if (error_reply(session_data, session, stream_data, 500, 
+					ERROR_HTTP_S_SYSTEM_FAILURE, HTTP_S_SYSTEM_FAILURE) != 0) {
 			APPLOG(APPLOG_ERR, "%s() send error_reply fail!", __func__);
 		} 
 	}
-	memset(https_ctx->user_ctx.head.contentEncoding, 0x00, sizeof(https_ctx->user_ctx.head.contentEncoding));
 
 	return 0;
+}
+
+void ping_latency_alarm(http2_session_data *session_data, struct timeval *send_tm, struct timeval *recv_tm)
+{
+	char alarm_info[1024] = {0,};
+	char alarm_desc[1024] = {0,};
+
+	// don't make alarm event
+	if (SERVER_CONF.ping_event_ms <= 0)
+		return;
+
+	long long tv_send = send_tm->tv_sec * 1000LL + (send_tm->tv_usec / 1000LL);
+	long long tv_recv = recv_tm->tv_sec * 1000LL + (recv_tm->tv_usec / 1000LL);
+	long long ping_latency = tv_recv - tv_send;
+
+	if (ping_latency >= SERVER_CONF.ping_event_ms && session_data->event_occured == 0) {
+		if (SERVER_CONF.ping_event_code > 0) {
+			sprintf(alarm_info, "HTTPS-%s:%d",  session_data->client_addr, session_data->client_port);
+			sprintf(alarm_desc, "%lld-ms", ping_latency);
+			reportAlarm("HTTPS", SERVER_CONF.ping_event_code, SFM_ALM_MAJOR, alarm_info, alarm_desc);
+		}
+		session_data->event_occured = 1;
+		APPLOG(APPLOG_DEBUG, "%s() session (id:%d) alarm status (%s) [%s:%s]",
+				__func__, session_data->session_id,
+				SERVER_CONF.ping_event_code > 0 ? "sended" : "silence discarded",
+				alarm_info, alarm_desc);
+	} else if (ping_latency < SERVER_CONF.ping_event_ms && session_data->event_occured == 1) {
+		if (SERVER_CONF.ping_event_code > 0) {
+			sprintf(alarm_info, "HTTPS-%s:%d",  session_data->client_addr, session_data->client_port);
+			sprintf(alarm_desc, "%lld-ms", ping_latency);
+			reportAlarm("HTTPS", SERVER_CONF.ping_event_code, SFM_ALM_NORMAL, alarm_info, alarm_desc);
+		}
+		session_data->event_occured = 0;
+		APPLOG(APPLOG_DEBUG, "%s() session (id:%d) alarm status (%s) [%s:%s]",
+				__func__, session_data->session_id,
+				SERVER_CONF.ping_event_code > 0 ? "cleared" : "silence discarded",
+				alarm_info, alarm_desc);
+	}
 }
 
 static int on_frame_recv_callback(nghttp2_session *session,
@@ -698,7 +898,10 @@ static int on_frame_recv_callback(nghttp2_session *session,
 			http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_RX_RST);
 			break;
 		case NGHTTP2_PING:
-			clock_gettime(CLOCK_REALTIME, &session_data->ping_rcv_time);
+			if (frame->hd.flags & NGHTTP2_FLAG_ACK) {
+				gettimeofday(&session_data->ping_rcv_time, NULL);
+				ping_latency_alarm(session_data, &session_data->ping_snd_time, &session_data->ping_rcv_time);
+			}
 			break;
 		case NGHTTP2_DATA:
 		case NGHTTP2_HEADERS:
@@ -744,7 +947,7 @@ static int on_data_chunk_recv_callback(nghttp2_session *session, uint8_t flags,
 		}
 
 		/* volatile issue */
-		char *ptr = https_ctx->user_ctx.body;
+		char *ptr = https_ctx->user_ctx.data + https_ctx->user_ctx.head.queryLen; // ahif.data [query|data|...]
 		volatile int curr_len = https_ctx->user_ctx.head.bodyLen;
 		ptr += curr_len;
 		memcpy(ptr, data, len);
@@ -803,7 +1006,12 @@ void initialize_nghttp2_session(http2_session_data *session_data) {
 	nghttp2_session_callbacks_set_on_begin_headers_callback(
 			callbacks, on_begin_headers_callback);
 
+#if 0
 	nghttp2_session_server_new(&session_data->session, callbacks, session_data);
+#else
+	// U+ requirement, dynamic table size 0
+	nghttp2_session_server_new2(&session_data->session, callbacks, session_data, SERVER_CONF.nghttp2_option);
+#endif
 
 	// schlee test code, set session buff 10MB
 	nghttp2_session_set_local_window_size(session_data->session, NGHTTP2_FLAG_NONE, 0, 1 << 30);
@@ -814,10 +1022,6 @@ void initialize_nghttp2_session(http2_session_data *session_data) {
 /* Send HTTP/2 client connection header, which includes 24 bytes
    magic octets and SETTINGS frame */
 static int send_server_connection_header(http2_session_data *session_data) {
-#if 0
-	nghttp2_settings_entry iv[1] = {
-		{NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS, 100}};
-#else
 	/* TODO!!! tuning param */
 	nghttp2_settings_entry iv[5] = {
 		{NGHTTP2_SETTINGS_HEADER_TABLE_SIZE, 65535},
@@ -825,7 +1029,6 @@ static int send_server_connection_header(http2_session_data *session_data) {
 		{NGHTTP2_SETTINGS_MAX_FRAME_SIZE, 65535},
 		{NGHTTP2_SETTINGS_INITIAL_WINDOW_SIZE, 65535},
 		{NGHTTP2_SETTINGS_MAX_HEADER_LIST_SIZE, 65535}};
-#endif
 	int rv;
 
 	rv = nghttp2_submit_settings(session_data->session, NGHTTP2_FLAG_NONE, iv,
@@ -915,7 +1118,7 @@ static void eventcb(struct bufferevent *bev, short events, void *ptr) {
 
 		// schlee, ok let's send ping 
 		session_data->connected = CN_CONNECTED;
-		clock_gettime(CLOCK_REALTIME, &session_data->ping_rcv_time);
+		gettimeofday(&session_data->ping_rcv_time, NULL);
 		return;
 	}
 	if (events & BEV_EVENT_EOF) {
@@ -1061,6 +1264,9 @@ void main_tick_callback(evutil_socket_t fd, short what, void *arg)
 		/* log https status */
 		stat_function(&Ixpc, SERVER_CONF.worker_num, 0, 1, MSGID_HTTPS_STATISTICS_REPORT);
 	}
+
+	/* https peer ovld */
+	ovld_step_forward();
 }
 
 void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
@@ -1113,6 +1319,13 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 
 				/* assign more virtual header */
 				sprintf(result_code, "%d", https_ctx->user_ctx.head.respCode);
+#ifdef OVLD_API
+				/* for nssf overload control */
+				if (https_ctx->user_ctx.head.respCode > 299) {
+					// api_ovld_add_fail(thrd_index, API_PROTO_HTTPS, 0, https_ctx->user_ctx.head.respCode);
+					api_ovld_add_fail(thrd_index, API_PROTO_HTTPS, 0);
+				}
+#endif
 				nghttp2_nv hdrs[MAX_HDR_RELAY_CNT + 2] = { MAKE_NV(":status", result_code, strlen(result_code))};
 				int hdrs_len = 1; /* :status */
 
@@ -1167,6 +1380,7 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 					continue;
 				}
 				/* don't use FLAG_ACK (FLAG_NONE : request, FLAG_ACK : response) */
+				gettimeofday(&session_data->ping_snd_time, NULL);
 				if (nghttp2_submit_ping(session_data->session, NGHTTP2_FLAG_NONE, NULL) != 0) {
 					/* legacy session expired and new one already created case */
 					APPLOG(APPLOG_DEBUG, "%s():%d h2 submit_ping fail", __func__, __LINE__);
@@ -1268,11 +1482,7 @@ void send_ping_callback(evutil_socket_t fd, short what, void *arg)
 			if (session_data->connected != CN_CONNECTED)
 				continue;
 			/* if (5sec:  send - ack > 5 ) delete sess */
-#if 0
-			if (session_data->ping_snd > MAX_PING_WAIT) {
-#else
 			if ((tm_curr.tv_sec - session_data->ping_rcv_time.tv_sec) > SERVER_CONF.ping_timeout) {
-#endif
 				APPLOG(APPLOG_ERR, "%s() session (id: %d) goaway~!", __func__, session_data->session_id);
 				set_intl_req_msg(&intl_req, thrd_idx, 0, sess_idx, session_data->session_id, 0, HTTP_INTL_SESSION_DEL);
                 if (-1 == msgsnd(THRD_WORKER[thrd_idx].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0)) {
@@ -1359,6 +1569,21 @@ void create_https_worker()
 	}
 }
 
+int set_http2_option(server_conf *SERVER_CONF)
+{
+	/* create nghttp2 option */
+	if (nghttp2_option_new(&SERVER_CONF->nghttp2_option) < 0) {
+		APPLOG(APPLOG_ERR, "{{{INIT}}} %s fail to create nghttp2 option!", __func__);
+		return -1;
+	}
+
+	/* set setting_header_table_size */
+	nghttp2_option_set_max_deflate_dynamic_table_size(SERVER_CONF->nghttp2_option, SERVER_CONF->http_opt_header_table_size);
+	APPLOG(APPLOG_ERR, "{{{INIT}}} %s set setting_header_table_size to [%d]", __func__, SERVER_CONF->http_opt_header_table_size);
+
+	return 0;
+}
+
 int initialize()
 {
 	char fname[64] = { 0, }; 
@@ -1429,10 +1654,35 @@ int initialize()
         APPLOG(APPLOG_ERR, "{{{INIT}}} cant find SYSTEM_TYPE in (%s)!", fname);
         return -1;
     }
+
+#if 0
     if (conflib_getNthTokenInFileSection (fname, "GENERAL", "SERVER_ID", 1, mySvrId) < 0) {
         APPLOG(APPLOG_ERR, "{{{INIT}}} cant find SERVER_ID in (%s)!", fname);
         return -1;
     }
+#else
+	if (!strlen(SERVER_CONF.uuid_file)) {
+		APPLOG(APPLOG_ERR, "{{{INIT}}} SERVER_CONF.uuid file is NULL!\n");
+		return -1;
+	} else {
+		json_t *json = NULL;
+		json_error_t error = {0,};
+		json_t *uuid = NULL; 
+		json = json_load_file((SERVER_CONF.uuid_file), 0, &error);
+		if (!json) {
+			APPLOG(APPLOG_ERR, "{{{INIT}}} fail to json-read from (%s)!", SERVER_CONF.uuid_file);
+			return -1;
+		} else if ((uuid = json_object_get(json, "VNF_INSTANCE_ID")) == NULL) {
+			APPLOG(APPLOG_ERR, "{{{INIT}}} fail to (%s) doesn't include key (%s)!", SERVER_CONF.uuid_file, "VNF_INSTANCE_ID");
+			return -1;
+		} else {
+			sprintf(mySvrId, "%s", json_string_value(uuid));
+			/* success */
+			APPLOG(APPLOG_ERR, "{{{INIT}}} mySvr UUID is (%s) check from (%s)", mySvrId, SERVER_CONF.uuid_file);
+		}
+	}
+#endif
+
 #endif
 
 	/* create recv-mq */
@@ -1445,12 +1695,14 @@ int initialize()
         APPLOG(APPLOG_ERR, "{{{INIT}}} [%s] msgget fail; key=0x%x,err=%d(%s)!", __func__, key, errno, strerror(errno));
         return (-1);
     }
+#if 0
 	/* flushing & remake */
 	msgctl(httpsQid, IPC_RMID, NULL);
     if ((httpsQid = msgget(key,IPC_CREAT|0666)) < 0) {
         APPLOG(APPLOG_ERR, "{{{INIT}}} [%s] msgget fail; key=0x%x,err=%d(%s)!", __func__, key, errno, strerror(errno));
         return (-1);
     }
+#endif
 
     /* create send-(ixpc) mq */
     if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", "IXPC", 3, tmp) < 0)
@@ -1460,6 +1712,16 @@ int initialize()
         APPLOG(APPLOG_ERR, "{{{INIT}}} [%s] msgget fail; key=0x%x,err=%d(%s)!", __func__, key, errno, strerror(errno));
         return -1;
     }
+
+    /* create send-(nrfm) mq */
+    if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", "NRFM", 3, tmp) >= 0) {
+		key = strtol(tmp,0,0);
+		if ((nrfmQid = msgget(key,IPC_CREAT|0666)) < 0) {
+			APPLOG(APPLOG_ERR, "{{{INIT}}} [%s] msgget fail; key=0x%x,err=%d(%s)! NRFM QID will 0", __func__, key, errno, strerror(errno));
+		}
+	} else {
+		APPLOG(APPLOG_ERR, "{{{INIT}}} can't find NRFM info in sysconfig APPLITION!, NRFM QID will 0");
+	}
 #endif
 
 	/* alloc context memory */
@@ -1489,13 +1751,37 @@ int initialize()
     else
         print_relay_vhdr(VHDR_INDEX[1], VH_END);
 
+	/*  http/2 option load */
+	if (set_http2_option(&SERVER_CONF) < 0) {
+		APPLOG(APPLOG_ERR, "{{{INIT}}} set http/2 option fail!");
+		return -1;
+	}
+
 	/* process start run */
 #ifndef TEST
     if (keepalivelib_init (myProcName) < 0)
         return (-1);
 #endif
 
+	/* check cert once */
+	check_cert(SERVER_CONF.cert_file);
+
+#ifdef OVLD_API
+	/* for nssf overload control */
+	// if (api_ovld_init(myProcName, API_PROTO_HTTPS, SERVER_CONF.worker_num) < 0) {
+	if (api_ovld_init(myProcName) < 0) {
+		APPLOG(APPLOG_ERR, "{{{INIT}}} ovldctrl init fail!");
+	} else {
+		APPLOG(APPLOG_ERR, "{{{INIT}}} ovldctrl init success!");
+	}
+#endif
+
 	return 0;
+}
+
+void check_cert_cb(evutil_socket_t fd, short what, void *arg)
+{
+	check_cert(SERVER_CONF.cert_file);
 }
 
 static void main_loop(const char *key_file, const char *cert_file) {
@@ -1555,7 +1841,7 @@ static void main_loop(const char *key_file, const char *cert_file) {
 	event_add(ev_tick, &tic_sec);
 
 	/* check context timeout */
-    struct timeval tm_interval = {0, TM_INTERVAL};
+    struct timeval tm_interval = {0, TM_INTERVAL * 5};
     struct event *ev_timeout;
     ev_timeout = event_new(evbase, -1, EV_PERSIST, chk_tmout_callback, NULL);
     event_add(ev_timeout, &tm_interval);
@@ -1574,10 +1860,11 @@ static void main_loop(const char *key_file, const char *cert_file) {
 
 #ifndef TEST
 	/* system message handle */
-    struct timeval tm_milisec = {0, 100000}; // 100 ms
-    struct event *ev_main;
-    ev_main = event_new(evbase, -1, EV_PERSIST, message_handle, NULL);
-    event_add(ev_main, &tm_milisec);
+    //struct timeval tm_milisec = {0, 100000}; // 100 ms
+    struct timeval tm_milisec = {0, 1000}; // 1 ms
+    struct event *ev_msg_handle;
+    ev_msg_handle = event_new(evbase, -1, EV_PERSIST, message_handle, NULL);
+    event_add(ev_msg_handle, &tm_milisec);
 #endif
 
     /* LB stat print */
@@ -1585,13 +1872,34 @@ static void main_loop(const char *key_file, const char *cert_file) {
     struct event *ev_lbctx_print;
     ev_lbctx_print = event_new(evbase, -1, EV_PERSIST, fep_stat_print, NULL);
     event_add(ev_lbctx_print, &lbctx_print_interval);
+
+	/* check cert expire */
+	struct timeval check_cert_interval = { 60 * 60 * 12, 0}; // every 12 hour
+	struct event *ev_cert_check;
+	ev_cert_check = event_new(evbase, -1, EV_PERSIST, check_cert_cb, NULL); 
+	event_add(ev_cert_check, &check_cert_interval);
+
 	/* start loop */
 	event_base_loop(evbase, EVLOOP_NO_EXIT_ON_EMPTY);
+
 
 	/* never reach here */
 	event_base_free(evbase);
 	SSL_CTX_free(ssl_ctx);
 }
+
+#if 0
+// nghttp2 --enable-debug 와 함께 사용
+- 성능 저하 발생함
+- library 전체 로그 출력/저장으로 분석 어려움 
+void test_debug_func(const char *fmt, va_list args)
+{
+	logPrint(ELI, FL, fmt, args);
+	fprintf(stderr, fmt, args);
+}
+...
+nghttp2_set_debug_vprintf_callback(test_debug_func);
+#endif
 
 int main(int argc, char **argv) {
 	struct sigaction act;

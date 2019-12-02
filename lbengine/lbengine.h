@@ -190,6 +190,7 @@ typedef struct lb_ctx {
 /* ------------------------- from another.c ------------------ */
 void    lb_buff_readcb(struct bufferevent *bev, void *arg);
 void    iovec_push_req(tcp_ctx_t *dest_tcp_ctx, iovec_item_t *push_req);
+void	nrfm_send_conn_status_callback(tcp_ctx_t *tcp_ctx);
 /***************************************************************/
 
 
@@ -232,6 +233,7 @@ void    create_heartbeat_msg(sock_ctx_t *sock_ctx);
 sock_ctx_t      *assign_sock_ctx(tcp_ctx_t *tcp_ctx, evutil_socket_t fd, struct sockaddr *sa);
 void    sock_hb_send_cb(evutil_socket_t fd, short what, void *arg);
 int     sock_add_heartbeatcb(tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx);
+void	release_pair_tcp_sock(evutil_socket_t fd, short what, void *arg);
 void    release_conn_by_hb(lb_ctx_t *lb_ctx, tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx);
 void    sock_hb_chk_cb(evutil_socket_t fd, short what, void *arg);
 int     sock_chk_heartbeatcb(tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx);

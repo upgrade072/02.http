@@ -5,9 +5,6 @@ extern httpc_ctx_t *HttpcCtx[MAX_THRD_NUM];
 extern conn_list_t CONN_LIST[MAX_SVR_NUM];
 extern thrd_context_t THRD_WORKER[MAX_THRD_NUM];
 extern http2_session_data_t SESS[MAX_THRD_NUM][MAX_SVR_NUM];
-#ifdef OAUTH 
-extern acc_token_list_t ACC_TOKEN_LIST[MAX_ACC_TOKEN_NUM];
-#endif
 
 httpc_ctx_t *get_context(int thrd_idx, int ctx_idx, int used)
 {
@@ -26,10 +23,9 @@ void clear_send_ctx(httpc_ctx_t *httpc_ctx)
 {
 	httpc_ctx->inflight_ref_cnt = 0;
 	httpc_ctx->user_ctx.head.bodyLen = 0;
-	memset(httpc_ctx->user_ctx.head.contentEncoding, 0x00, sizeof(httpc_ctx->user_ctx.head.contentEncoding));
-
-	memset(httpc_ctx->user_ctx.vheader, 0x00, sizeof(hdr_relay) * httpc_ctx->user_ctx.head.vheaderCnt);
+	httpc_ctx->user_ctx.head.queryLen = 0;
 	httpc_ctx->user_ctx.head.vheaderCnt = 0;
+	memset(httpc_ctx->user_ctx.vheader, 0x00, sizeof(hdr_relay) * MAX_HDR_RELAY_CNT);
 }
 
 void clear_and_free_ctx(httpc_ctx_t *httpc_ctx)
@@ -37,7 +33,10 @@ void clear_and_free_ctx(httpc_ctx_t *httpc_ctx)
 	httpc_ctx->tcp_wait = 0;
 	httpc_ctx->inflight_ref_cnt = 0;
 	httpc_ctx->user_ctx.head.bodyLen = 0;
-	memset(httpc_ctx->user_ctx.head.contentEncoding, 0x00, sizeof(httpc_ctx->user_ctx.head.contentEncoding));
+	httpc_ctx->user_ctx.head.queryLen = 0;
+	memset(httpc_ctx->user_ctx.vheader, 0x00, sizeof(hdr_relay) * MAX_HDR_RELAY_CNT);
+	httpc_ctx->user_ctx.head.vheaderCnt = 0;
+	httpc_ctx->for_nrfm_ctx = 0;
 	httpc_ctx->occupied = 0;
 }
 
@@ -76,11 +75,18 @@ void save_session_info(httpc_ctx_t *httpc_ctx, int thrd_idx, int sess_idx, int s
 	httpc_ctx->sess_idx = sess_idx;
 	httpc_ctx->session_id = session_id;
 	httpc_ctx->ctx_idx = ctx_idx;
+#if 0
 	sprintf(httpc_ctx->user_ctx.head.destIp, "%s", conn_list->ip);
+#else
+	sprintf(httpc_ctx->user_ctx.head.destType, "%s", conn_list->type);
+	sprintf(httpc_ctx->user_ctx.head.destHost, "%s", conn_list->host);
+	sprintf(httpc_ctx->user_ctx.head.destIp, "%s", conn_list->ip);
+	httpc_ctx->user_ctx.head.destPort = conn_list->port;
+#endif
 #ifdef OAUTH
 	char *token = NULL;
 	if (conn_list->token_id > 0) 
-		token = get_access_token(conn_list->token_id);
+		token = get_access_token(CLIENT_CONF.ACC_TOKEN_LIST, conn_list->token_id);
 
 	sprintf(httpc_ctx->access_token, "%s", token != NULL ? token : "");
 #endif
@@ -132,26 +138,29 @@ void print_list(conn_list_status_t conn_status[]) {
 void write_list(conn_list_status_t CONN_STATUS[], char *buff) {
 	int i, j, resLen;
 
-    resLen = sprintf(buff, "\n  ID HOSTNAME   TYPE       IP_ADDR                                         PORT CONN(max/curr)       STATUS\n");
-    resLen += sprintf(buff + resLen, "---------------------------------------------------------------------------------------------------------------\n");
+    resLen = sprintf(buff, "\n  ID HOSTNAME                                 TYPE   SCHEME   IP_ADDR                            PORT CONN(max/curr)    STATUS     TOKEN_ID  (AUTO_ADDED)\n");
+    resLen += sprintf(buff + resLen, "----------------------------------------------------------------------------------------------------------------------------------------------------------\n");
 	for ( i = 0; i < MAX_LIST_NUM; i++) {
 		for ( j = 0; j < MAX_CON_NUM; j++) {
 			if (CONN_STATUS[j].occupied != 1)
 				continue;
 			if (CONN_STATUS[j].list_index != i)
 				continue;
-			resLen += sprintf(buff + resLen, "%4d %-10s %-10s %-46s %5d (%4d  / %4d)       %s\n",
+			resLen += sprintf(buff + resLen, "%4d %-40s %-6s %-6s   %-33s %5d (%4d  / %4d)   %10s     %5d        %s\n",
 					CONN_STATUS[j].list_index,
 					CONN_STATUS[j].host,
 					CONN_STATUS[j].type,
+					CONN_STATUS[j].scheme,
 					CONN_STATUS[j].ip,
 					CONN_STATUS[j].port,
 					CONN_STATUS[j].sess_cnt,
 					CONN_STATUS[j].conn_cnt,
-					(CONN_STATUS[j].conn_cnt > 0) ?  "Connected" : (CONN_STATUS[j].act == 1) ? "Disconnect" : "Deact");
+					(CONN_STATUS[j].conn_cnt > 0) ?  "Connected" : (CONN_STATUS[j].act == 1) ? "Disconnect" : "Deact",
+					CONN_STATUS[j].token_id,
+					(CONN_STATUS[j].nrfm_auto_added > 0) ? "O" : "X");
 		}
 	}
-    resLen += sprintf(buff + resLen, "---------------------------------------------------------------------------------------------------------------\n");
+    resLen += sprintf(buff + resLen, "----------------------------------------------------------------------------------------------------------------------------------------------------------\n");
 }
 
 /* before gather, must be memset! */
@@ -164,6 +173,7 @@ void gather_list(conn_list_status_t CONN_STATUS[]) {
 				CONN_LIST[i].item_index == -1) {
 			CONN_STATUS[index].list_index = CONN_LIST[i].list_index;
 			CONN_STATUS[index].item_index = CONN_LIST[i].item_index;
+			sprintf(CONN_STATUS[index].scheme, "%s", CONN_LIST[i].scheme);
 			sprintf(CONN_STATUS[index].host, "%s", CONN_LIST[i].host);
 			sprintf(CONN_STATUS[index].type, "%s", CONN_LIST[i].type);
 			sprintf(CONN_STATUS[index].ip, "%s", "-");
@@ -172,10 +182,16 @@ void gather_list(conn_list_status_t CONN_STATUS[]) {
 			CONN_STATUS[index].occupied = 1;
 #ifdef OAUTH
 			int token_id = CONN_LIST[i].token_id;
-			char *access_token = get_access_token(token_id);
-			CONN_STATUS[index].token_exist = (access_token == NULL ? 1 : 0);
-			sprintf(CONN_STATUS[index].access_token, "%s", access_token == NULL ? "" : access_token);
+			CONN_STATUS[index].token_id = token_id;
+
+			if (token_id > 0) {
+				char *access_token = get_access_token(CLIENT_CONF.ACC_TOKEN_LIST, CONN_LIST[i].token_id);
+				CONN_STATUS[index].token_acquired = (access_token == NULL) ? 0 : 1;
+			} else {
+				CONN_STATUS[index].token_acquired = 1;
+			}
 #endif
+			CONN_STATUS[index].nrfm_auto_added = CONN_LIST[i].nrfm_auto_added;
 			index++;
 		}
 	}
@@ -189,6 +205,7 @@ void gather_list(conn_list_status_t CONN_STATUS[]) {
 							find = 1;
 							CONN_STATUS[index].list_index = i;
 							CONN_STATUS[index].item_index = j;
+							sprintf(CONN_STATUS[index].scheme, "%s", CONN_LIST[k].scheme);
 							sprintf(CONN_STATUS[index].host, "%s", CONN_LIST[k].host);
 							sprintf(CONN_STATUS[index].type, "%s", CONN_LIST[k].type);
 							sprintf(CONN_STATUS[index].ip, "%s", CONN_LIST[k].ip);
@@ -200,62 +217,23 @@ void gather_list(conn_list_status_t CONN_STATUS[]) {
 						if (CONN_LIST[k].conn == CN_CONNECTED) 
 							CONN_STATUS[index].conn_cnt ++;
 #ifdef OAUTH
-						int token_id = CONN_LIST[i].token_id;
-						char *access_token = get_access_token(token_id);
-						CONN_STATUS[index].token_exist = (access_token == NULL ? 1 : 0);
-						sprintf(CONN_STATUS[index].access_token, "%s", access_token == NULL ? "" : access_token);
+						int token_id = CONN_LIST[k].token_id;
+						CONN_STATUS[index].token_id = token_id;
+
+						if (token_id > 0) {
+							char *access_token = get_access_token(CLIENT_CONF.ACC_TOKEN_LIST, CONN_LIST[k].token_id);
+							CONN_STATUS[index].token_acquired = (access_token == NULL) ? 0 : 1;
+						} else {
+							CONN_STATUS[index].token_acquired = 1;
+						}
 #endif
+						CONN_STATUS[index].nrfm_auto_added = CONN_LIST[k].nrfm_auto_added;
 					}
 				}
 			}
 		}
 	}
 }
-
-#ifdef OAUTH
-acc_token_list_t *get_token_list(int id, int used)
-{
-	if (id < 1 || id >= MAX_ACC_TOKEN_NUM) /* 1 ~ 127 */
-		return NULL;
-	if (used) {
-		if (ACC_TOKEN_LIST[id].occupied != 1)
-			return NULL;
-		else
-			return &ACC_TOKEN_LIST[id];
-	} else {
-		if (ACC_TOKEN_LIST[id].occupied == 1) {
-			return NULL;
-		} else {
-			ACC_TOKEN_LIST[id].occupied = 1;
-			return &ACC_TOKEN_LIST[id];
-		}
-	}
-}
-
-void print_token_list_raw(acc_token_list_t input_token_list[])
-{
-	APPLOG(APPLOG_ERR, "Access Token List Status");
-	APPLOG(APPLOG_ERR, "------------------------");
-	for (int i = 0; i < MAX_ACC_TOKEN_NUM; i++) {
-		acc_token_list_t *token_list = &input_token_list[i];
-		if (token_list->occupied != 1)
-			continue;
-		APPLOG(APPLOG_ERR, "%3d] %3d %-24s %-5s %-5s %-20s %-30s %10s %.19s",
-			i,
-			token_list->token_id,
-			token_list->nrf_addr,
-			(token_list->acc_type == AT_SVC) ? "SVC" : "INST",
-			token_list->nf_type,
-			token_list->nf_instance_id,
-			token_list->scope,
-			(token_list->status == TA_INIT) ? "INIT" :
-			(token_list->status == TA_FAILED) ? "FAILED" :
-			(token_list->status == TA_TRYING) ? "TRYING" : "ACCUIRED",
-			ctime(&token_list->due_date));
-	}
-	APPLOG(APPLOG_ERR, "==============================================================================================");
-}
-#endif
 
 // httpc outbound, log write with in 1step
 void log_pkt_send(char *prefix, nghttp2_nv *hdrs, int hdrs_len, char *body, int body_len)
@@ -319,8 +297,15 @@ void log_pkt_end_stream(int stream_id, httpc_ctx_t *httpc_ctx)
 		}
 	}
 	// print body to log
-	if (httpc_ctx->user_ctx.head.bodyLen > 0)
+	if (httpc_ctx->user_ctx.head.bodyLen > 0) {
+#if 0
 		util_dumphex(httpc_ctx->recv_log_file, httpc_ctx->user_ctx.body, httpc_ctx->user_ctx.head.bodyLen);
+#else
+		util_dumphex(httpc_ctx->recv_log_file, 
+				httpc_ctx->user_ctx.data + httpc_ctx->user_ctx.head.queryLen,
+				httpc_ctx->user_ctx.head.bodyLen);
+#endif
+	}
 
 	// 1) close file
 	fclose(httpc_ctx->recv_log_file);
@@ -339,3 +324,14 @@ void log_pkt_end_stream(int stream_id, httpc_ctx_t *httpc_ctx)
 	httpc_ctx->log_ptr = NULL;
 }
 
+void log_pkt_httpc_error_reply(httpc_ctx_t *httpc_ctx, int resp_code)
+{
+	if (CLIENT_CONF.pkt_log != 1)
+		return;
+
+	APPLOG(APPLOG_ERR, "{{{PKT}}} HTTPC INTERNAL ERROR http sess/stream(N/A:N/A) ahifCid(%d)]\n\
+--------------------------------------------------------------------------------------------------\n\
+:status:%d\n\
+==================================================================================================\n",
+	httpc_ctx->user_ctx.head.ahifCid, resp_code);
+}

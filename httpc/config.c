@@ -9,9 +9,13 @@
 #define CF_TIMEOUT_SEC	    "client_cfg.http_config.timeout_sec"
 #define CF_PING_INTERVAL	"client_cfg.http_config.ping_interval"
 #define CF_PING_TIMEOUT	    "client_cfg.http_config.ping_timeout"
+#define CF_PING_EVENT_MS	"client_cfg.http_config.ping_event_ms"
+#define CF_PING_EVENT_CODE	"client_cfg.http_config.ping_event_code"
 #define CF_PKT_LOG		    "client_cfg.http_config.pkt_log"
 #define CF_LB_CONFIG		"client_cfg.lb_config"
 #define CF_CONNECT_LIST		"connect_list"
+#define CF_HTTP_OPT_HDR_TABLE_SIZE	"client_cfg.http_option.setting_header_table_size"
+#define CF_HTTP_PREPARE_STREAM_ID	"client_cfg.http_option.prepare_close_stream_limit"
 
 extern client_conf_t CLIENT_CONF;
 extern conn_list_t CONN_LIST[MAX_SVR_NUM];
@@ -21,11 +25,6 @@ config_t CFG;
 char CONFIG_PATH[256] = {0,};
 
 index_t INDEX[MAX_LIST_NUM];
-
-#ifdef OAUTH  /* NRF OAuth 2.0 */
-#define CF_ACCTOKEN_LIST	"access_token_info.list"
-extern acc_token_list_t ACC_TOKEN_LIST[MAX_ACC_TOKEN_NUM];
-#endif
 
 int init_cfg()
 {
@@ -189,14 +188,60 @@ int config_load()
         APPLOG(APPLOG_ERR, "{{{CFG}}} ping timeout is [%d]", CLIENT_CONF.ping_timeout);
     }
 
+    /* ping event_ms */
+    int ping_event_ms = 0;
+    if (config_lookup_int(&CFG, CF_PING_EVENT_MS, &ping_event_ms) == CONFIG_FALSE) {
+        APPLOG(APPLOG_ERR, "{{{CFG}}} ping event_ms cfg not exist!");
+        goto CF_LOAD_ERR;
+    } else {
+        if (ping_event_ms <= 0) {
+            APPLOG(APPLOG_ERR, "{{{CFG}}} ping event_ms[%d] is lower than 0 it means no event!", ping_event_ms);
+        }
+        CLIENT_CONF.ping_event_ms = ping_event_ms;
+        APPLOG(APPLOG_ERR, "{{{CFG}}} ping event_ms is [%d]", CLIENT_CONF.ping_event_ms);
+    }
+
+    /* ping event_code */
+    int ping_event_code = 0;
+    if (config_lookup_int(&CFG, CF_PING_EVENT_CODE, &ping_event_code) == CONFIG_FALSE) {
+        APPLOG(APPLOG_ERR, "{{{CFG}}} ping event_code cfg not exist!");
+        goto CF_LOAD_ERR;
+    } else {
+        if (ping_event_code <= 0) {
+            APPLOG(APPLOG_ERR, "{{{CFG}}} ping event_code[%d] is lower than 0 it means no event!", ping_event_code);
+        }
+        CLIENT_CONF.ping_event_code = ping_event_code;
+        APPLOG(APPLOG_ERR, "{{{CFG}}} ping event_code is [%d]", CLIENT_CONF.ping_event_code);
+    }
+
     /* pkt_log enable */
     int pkt_log = 0;
     if (config_lookup_int(&CFG, CF_PKT_LOG, &pkt_log) == CONFIG_FALSE) {
         APPLOG(APPLOG_ERR, "{{{CFG}}} pkt log cfg not exist!");
         goto CF_LOAD_ERR;
     } else {
-        CLIENT_CONF.pkt_log = (pkt_log == 1 ? 1 : 0);
+        CLIENT_CONF.pkt_log = pkt_log;
         APPLOG(APPLOG_ERR, "{{{CFG}}} pkt log is [%s]", CLIENT_CONF.pkt_log == 1 ? "ON" : "OFF");
+    }
+
+	/* http/2 option setting header table size */
+    int setting_header_table_size = 0;
+    if (config_lookup_int(&CFG, CF_HTTP_OPT_HDR_TABLE_SIZE, &setting_header_table_size) == CONFIG_FALSE) {
+        APPLOG(APPLOG_ERR, "{{{CFG}}} setting header table size cfg not exist!");
+        goto CF_LOAD_ERR;
+    } else {
+        CLIENT_CONF.http_opt_header_table_size = setting_header_table_size;
+        APPLOG(APPLOG_ERR, "{{{CFG}}} http/2 opt setting header table size is [%d]", CLIENT_CONF.http_opt_header_table_size);
+    }
+
+	/* http/2 option prepare close stream limit */
+    int prepare_close_stream_limit = 0;
+    if (config_lookup_int(&CFG, CF_HTTP_PREPARE_STREAM_ID, &prepare_close_stream_limit) == CONFIG_FALSE) {
+        APPLOG(APPLOG_ERR, "{{{CFG}}} setting prepare_close_stream_limit cfg not exist!");
+        goto CF_LOAD_ERR;
+    } else {
+        CLIENT_CONF.prepare_close_stream_limit = prepare_close_stream_limit;
+        APPLOG(APPLOG_ERR, "{{{CFG}}} setting prepare_close_stream_limit is [%d]", CLIENT_CONF.prepare_close_stream_limit);
     }
 
 	/* lb config load */
@@ -207,92 +252,6 @@ int config_load()
 		CLIENT_CONF.lb_config = setting;
 		APPLOG(APPLOG_ERR, "{{{CFG}}} lb config loading success");
 	}
-
-#ifdef OAUTH
-	/* access token list loading */
-	if ((setting = config_lookup(&CFG, CF_ACCTOKEN_LIST)) == NULL) {
-		APPLOG(APPLOG_ERR, "{{{CFG}}} access token list not exist!");
-		goto CF_LOAD_ERR;
-	} else {
-		int count = config_setting_length(setting);
-
-		APPLOG(APPLOG_ERR, "{{{CFG}}} access token lists are ... (%d)", count);
-		for (int i = 0; i < count; i++) {
-			config_setting_t *list = config_setting_get_elem(setting, i);
-
-			int id = 0;
-			const char *nrf_addr;
-			const char *acc_type;
-			const char *nf_type;
-			const char *nf_instance_id;
-			const char *scope;
-			struct sockaddr_in sa = {0,};
-			struct sockaddr_in6 sa6 = {0,};
-
-			if (config_setting_lookup_int (list, "id", &id) == CONFIG_FALSE) {
-				APPLOG(APPLOG_ERR, "{{{CFG}}} acc token list, index(%2d) id NULL!", i);
-				continue;
-			} else if (id < 1 || id >= MAX_ACC_TOKEN_NUM) {
-				APPLOG(APPLOG_ERR, "{{{CFG}}} acc token list, index(%2d) id(%d) invalid!", i, id);
-				continue;
-			}
-			if (config_setting_lookup_string (list, "nrf_addr", &nrf_addr) == CONFIG_FALSE) {
-				APPLOG(APPLOG_ERR, "{{{CFG}}} acc token list, index(%2d) nrf_addr NULL!", i);
-				continue;
-			}
-			if (config_setting_lookup_string (list, "acc_type", &acc_type) == CONFIG_FALSE) {
-				APPLOG(APPLOG_ERR, "{{{CFG}}} acc token list, index(%2d) acc_type NULL!", i);
-				continue;
-			} else if (strcmp(acc_type, "SVC") && strcmp(acc_type, "INST")) {
-				APPLOG(APPLOG_ERR, "{{{CFG}}} acc token list, index(%2d) acc_type(%s) invalid!", i, acc_type);
-				continue;
-			}
-			if (config_setting_lookup_string (list, "nf_type", &nf_type) == CONFIG_FALSE) {
-				APPLOG(APPLOG_ERR, "{{{CFG}}} acc token list, index(%2d) nf_type NULL!", i);
-				continue;
-			}
-			if (config_setting_lookup_string (list, "nf_instance_id", &nf_instance_id) == CONFIG_FALSE) {
-				APPLOG(APPLOG_ERR, "{{{CFG}}} acc token list, index(%2d) nf_instance_id NULL!", i);
-				continue;
-			}
-			if (config_setting_lookup_string (list, "scope", &scope) == CONFIG_FALSE) {
-				APPLOG(APPLOG_ERR, "{{{CFG}}} acc token list, index(%2d) scope NULL!", i);
-				continue;
-			}
-
-			char temp_str[INET6_ADDRSTRLEN + 12] = {0,};
-			int port = 0;
-			int inet_type = 0;
-			sprintf(temp_str, nrf_addr);
-
-			if((inet_type = parse_http_addr(temp_str, &sa, &sa6, &port)) < 0) {
-				APPLOG(APPLOG_ERR, "{{{CFG}}} acc token list, index(%2d) nrf_addr(%s) invalid!", i, nrf_addr);
-				continue;
-			}
-			
-			acc_token_list_t *token_list = NULL;
-			if ((token_list = get_token_list(id, 0)) == NULL) {
-				APPLOG(APPLOG_ERR, "{{{CFG}}} acc token list, fail to get empty index!");
-				continue;
-			}
-
-			token_list->token_id = id;
-			sprintf(token_list->nrf_addr, "%s", nrf_addr);
-			token_list->acc_type =!strcmp(acc_type, "SVC") ? AT_SVC : AT_INST;
-			sprintf(token_list->nf_type, "%s", nf_type);
-			sprintf(token_list->nf_instance_id, "%s", nf_instance_id);
-			sprintf(token_list->scope, "%s", scope);
-			token_list->status = TA_INIT;
-			memset(&(token_list->due_date), 0x00, sizeof(time_t));
-			token_list->inet_type = inet_type;
-			memcpy(&(token_list->sa), &sa, sizeof(struct sockaddr_in));
-			memcpy(&(token_list->sa6), &sa6, sizeof(struct sockaddr_in6));
-			token_list->port = port;
-		}
-	}
-	/* check token_list result */
-	print_token_list_raw(ACC_TOKEN_LIST);
-#endif
 
     /* connect list loading */
     if ((setting = config_lookup(&CFG, CF_CONNECT_LIST)) == NULL) {
@@ -491,7 +450,7 @@ CF_ADD_SVR_HOSTNAME_ERR:
     return (-1);
 }
 
-int addcfg_server_ipaddr(int id, char *ipaddr, int port, int conn_cnt)
+int addcfg_server_ipaddr(int id, char *scheme, char *ipaddr, int port, int conn_cnt, int token_id)
 {
     config_setting_t *setting;
 
@@ -548,14 +507,16 @@ int addcfg_server_ipaddr(int id, char *ipaddr, int port, int conn_cnt)
 
 		val = config_setting_add(item, "ip", CONFIG_TYPE_STRING);
 		config_setting_set_string(val, ipaddr);
+		val = config_setting_add(item, "scheme", CONFIG_TYPE_STRING);
+		config_setting_set_string(val, scheme);
 		val = config_setting_add(item, "port", CONFIG_TYPE_INT);
 		config_setting_set_int(val, port);
 		val = config_setting_add(item, "cnt", CONFIG_TYPE_INT);
 		config_setting_set_int(val, conn_cnt);
+		val = config_setting_add(item, "token_id", CONFIG_TYPE_INT);
+		config_setting_set_int(val, token_id);
 		val = config_setting_add(item, "act", CONFIG_TYPE_STRING);
 		config_setting_set_string(val, "DACT");
-		val = config_setting_add(item, "token_id", CONFIG_TYPE_INT);
-		config_setting_set_int(val, 0);
 
 		for (i = 1; i < MAX_SVR_NUM; i++) {
 			if (CONN_LIST[i].used == 0) {
@@ -566,8 +527,10 @@ int addcfg_server_ipaddr(int id, char *ipaddr, int port, int conn_cnt)
 				CONN_LIST[i].conn = 0;
 				sprintf(CONN_LIST[i].host, "%s", group->name);
 				sprintf(CONN_LIST[i].type, "%s", type);
+				sprintf(CONN_LIST[i].scheme, "%s", scheme);
 				sprintf(CONN_LIST[i].ip, "%s", ipaddr);
 				CONN_LIST[i].port = port;
+				CONN_LIST[i].token_id = token_id;
 				CONN_LIST[i].act = 0;
 				if (++cnt == conn_cnt) break;
 			}
@@ -691,7 +654,7 @@ CF_ACT_SERVER_ERR:
     return (-1);
 }
 
-int chgcfg_server_conn_cnt(int id, char *ipaddr, int port, int conn_cnt)
+int chgcfg_server_conn_cnt(int id, char *scheme, char *ipaddr, int port, int conn_cnt, int token_id)
 {
     config_setting_t *setting;
 
@@ -703,8 +666,10 @@ int chgcfg_server_conn_cnt(int id, char *ipaddr, int port, int conn_cnt)
 		const char *type;
         config_setting_t *list;
         config_setting_t *item_cnt;
+        config_setting_t *item_token;
         int list_count, i, list_index, item_index, cnt = 0;
 		int found = 0;
+		const char *cf_scheme;
 		const char *cf_ip;
 		int cf_port;
 		int cf_cnt;
@@ -727,6 +692,9 @@ int chgcfg_server_conn_cnt(int id, char *ipaddr, int port, int conn_cnt)
 		for (i = 0; i < list_count; i++) {
 			config_setting_t *item = config_setting_get_elem(list, i);
 
+			if (config_setting_lookup_string (item, "scheme", &cf_scheme) == CONFIG_FALSE) {
+				continue;
+			}
 			if (config_setting_lookup_string (item, "ip", &cf_ip) == CONFIG_FALSE) {
 				continue;
 			}
@@ -744,6 +712,8 @@ int chgcfg_server_conn_cnt(int id, char *ipaddr, int port, int conn_cnt)
 					goto CF_CHG_SERVER_CONN_ERR;
 				if ((item_cnt = config_setting_get_member(item, "cnt")) == NULL)
 					goto CF_CHG_SERVER_CONN_ERR;
+				if ((item_token = config_setting_get_member(item, "token_id")) == NULL)
+					goto CF_CHG_SERVER_CONN_ERR;
 				found = 1;
 				item_index = get_item(list_index, ipaddr, port);
 				break;
@@ -752,32 +722,38 @@ int chgcfg_server_conn_cnt(int id, char *ipaddr, int port, int conn_cnt)
 		/* not found case */
 		if (!found)
 			goto CF_CHG_SERVER_CONN_ERR;
-		if (cf_cnt == conn_cnt)
-			goto CF_CHG_SERVER_CONN_ERR;
 
-		/* save setting */
+		/* save setting connection count*/
 		config_setting_set_int(item_cnt, conn_cnt);
+		/* save setting token id*/
+		config_setting_set_int(item_token, token_id);
 
 		/* increase case */
 		if (conn_cnt > cf_cnt) {
 			int gap = conn_cnt - cf_cnt;
 			cnt = 0;
 			for (i = 1; i < MAX_SVR_NUM; i++) {
-				if (CONN_LIST[i].used == 1) 
-					continue;
-				CONN_LIST[i].index = i;
-				CONN_LIST[i].list_index = list_index;
-				CONN_LIST[i].item_index = item_index;
-				CONN_LIST[i].used = 1;
-				CONN_LIST[i].conn = 0;
-				sprintf(CONN_LIST[i].host, "%s", group->name);
-				sprintf(CONN_LIST[i].type, "%s", type);
-				sprintf(CONN_LIST[i].ip, "%s", ipaddr);
-				CONN_LIST[i].port = port;
-				CONN_LIST[i].act = 0;
-				if (++cnt == gap) break;
+				if (CONN_LIST[i].used == 1)  {
+					if (CONN_LIST[i].item_index == item_index)  {
+						CONN_LIST[i].token_id = token_id;
+					}
+				} else if (cnt < gap) {
+					CONN_LIST[i].index = i;
+					CONN_LIST[i].list_index = list_index;
+					CONN_LIST[i].item_index = item_index;
+					CONN_LIST[i].used = 1;
+					CONN_LIST[i].conn = 0;
+					sprintf(CONN_LIST[i].host, "%s", group->name);
+					sprintf(CONN_LIST[i].type, "%s", type);
+					sprintf(CONN_LIST[i].scheme, "%s", scheme);
+					sprintf(CONN_LIST[i].ip, "%s", ipaddr);
+					CONN_LIST[i].port = port;
+					CONN_LIST[i].token_id = token_id;
+					CONN_LIST[i].act = 0;
+					++cnt;
+				}
 			}
-		} else {
+		} else if (conn_cnt < cf_cnt) {
 		/* decrease case */
 			int gap = cf_cnt - conn_cnt;
 			cnt = 0;
@@ -786,8 +762,22 @@ int chgcfg_server_conn_cnt(int id, char *ipaddr, int port, int conn_cnt)
 					continue;
 				if (CONN_LIST[i].list_index == list_index
 						&& CONN_LIST[i].item_index == item_index) {
-					memset(&CONN_LIST[i], 0x00, sizeof(conn_list_t));
-					if (++cnt == gap) break;
+					if (cnt < gap) {
+						memset(&CONN_LIST[i], 0x00, sizeof(conn_list_t));
+						cnt++;
+					} else {
+						CONN_LIST[i].token_id = token_id;
+					}
+				}
+			}
+		} else {
+		/* only change token id */
+			for (i = MAX_SVR_NUM; i > 0; i--) {
+				if (CONN_LIST[i].used == 0) 
+					continue;
+				if (CONN_LIST[i].list_index == list_index
+						&& CONN_LIST[i].item_index == item_index) {
+					CONN_LIST[i].token_id = token_id;
 				}
 			}
 		}
@@ -873,7 +863,7 @@ int delcfg_server_ipaddr(int id, char *ipaddr, int port)
 
 		/* if all ipaddr withdraw */
 		list_count = config_setting_length(list); {
-			APPLOG(APPLOG_DEBUG, "%s() check, name (%s) have item (%d)", group->name, list_count);
+			APPLOG(APPLOG_DEBUG, "%s() check, name (%s) have item (%d)", __func__, group->name, list_count);
 		}
 		if (list_count == 0) {
 			for (i = 1; i < MAX_SVR_NUM; i++) {
@@ -948,5 +938,43 @@ int delcfg_server_hostname(int id)
     return (0);
 
 CF_DEL_SVR_HOSTNAME_ERR:
+    return (-1);
+}
+
+int chgcfg_server_ping(int interval, int timeout, int ms)
+{
+    config_setting_t *setting;
+
+	if (interval >= 0) {
+		if ((setting = config_lookup(&CFG, CF_PING_INTERVAL)) == NULL) {
+			APPLOG(APPLOG_ERR, "%s() ping.interval cfg not exist", __func__);
+			goto CF_CHG_PING_INTERVAL_ERR;
+		} else {
+			config_setting_set_int(setting, interval);
+		}
+	}
+	if (timeout >= 0) {
+		if ((setting = config_lookup(&CFG, CF_PING_TIMEOUT)) == NULL) {
+			APPLOG(APPLOG_ERR, "%s() ping.timeout cfg not exist", __func__);
+			goto CF_CHG_PING_INTERVAL_ERR;
+		} else {
+			config_setting_set_int(setting, timeout);
+		}
+	}
+	if (ms >= 0)  {
+		if ((setting = config_lookup(&CFG, CF_PING_EVENT_MS)) == NULL) {
+			APPLOG(APPLOG_ERR, "%s() ping.event_ms cfg not exist", __func__);
+			goto CF_CHG_PING_INTERVAL_ERR;
+		} else {
+			config_setting_set_int(setting, ms);
+		}
+	}
+
+    config_set_tab_width(&CFG, 4);
+    config_write_file(&CFG, CONFIG_PATH);
+
+    return (0);
+
+CF_CHG_PING_INTERVAL_ERR:
     return (-1);
 }

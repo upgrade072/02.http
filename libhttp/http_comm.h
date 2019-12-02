@@ -13,10 +13,11 @@
 
 // if stream id reach to 1073741823, no more assign ascend stream id
 // so prepare reconnect when stream id reach HTTP_PREPARE_STREAM_LIMIT
+#if 0
 #define HTTP_PREPARE_STREAM_LIMIT 1000000000
+#endif
 
 #ifdef LOG_LIB
-//#define APPLOG(level, fmt, ...) logPrint(ELI, FL, fmt "\n", ##__VA_ARGS__)
 int *lOG_FLAG;
 #define APPLOG_NONE   LL0
 #define APPLOG_ERR    LL1
@@ -25,29 +26,10 @@ int *lOG_FLAG;
 #define APPLOG_DEBUG  LL4
 #define APPLOG(level, fmt, ...); {if (level <= *lOG_FLAG) logPrint(ELI, FL, fmt "\n", ##__VA_ARGS__);}
 #elif LOG_APP
-#else
+#elif LOG_PRINT
 #define APPLOG(level, fmt, ...) fprintf(stderr, fmt "\n", ##__VA_ARGS__)
 #endif
 
-/* HTTPCS STACK VALUE ==> move to .cfg */
-#if 0
-#ifndef TEST
-//#define HTTPC_SEMAPHORE_NAME		"httpc_sem_status"
-#define HTTPC_SHM_MEM_KEY			0x00520000
-#define HTTPC_INTL_MSG_KEY_BASE		0x00520100 // ~ 0x00520111
-#define HTTPS_INTL_MSG_KEY_BASE		0x00520200 // ~ 0x00520211
-#else
-//#define HTTPC_SEMAPHORE_NAME		"httpc_sem_status_test"
-#define HTTPC_SHM_MEM_KEY			0x00620000
-#define HTTPC_INTL_MSG_KEY_BASE		0x00620100 // ~ 0x00620111
-#define HTTPS_INTL_MSG_KEY_BASE		0x00620200 // ~ 0x00620211
-#endif
-#endif
-
-#define AHIF_HTTPC_SEND_SIZE(a) AHIF_HTTPCS_MSG_HEAD_LEN + AHIF_VHDR_LEN + a.head.bodyLen
-#define HTTPC_AHIF_SEND_SIZE(a) AHIF_HTTPCS_MSG_HEAD_LEN + AHIF_VHDR_LEN + a.head.bodyLen
-#define HTTPS_AHIF_SEND_SIZE	HTTPC_AHIF_SEND_SIZE
-#define AHIF_HTTPS_SEND_SIZE	AHIF_HTTPC_SEND_SIZE
 
 typedef enum http_encode_scheme {
 	HTTP_EN_RFC3986 = 0,
@@ -64,8 +46,10 @@ typedef enum http_encode_scheme {
 #define HDR_STATUS					":status"
 /* virtual header : non semi-colon start */
 #define HDR_AUTHORIZATION			"authorization"		// authorization: Bearer token_raw
+#define HDR_CONTENT_TYPE			"content-type"		// it used by NRF (http) request lib
+#if 0 // move to vhdr use
 #define HDR_CONTENT_ENCODING		"content-encoding"
-#define HDR_CONTENT_TYPE			"content-type"
+#endif
 
 typedef struct HttpCSAhifTagType {
 	int thrd_index;
@@ -96,14 +80,19 @@ typedef struct HttpCSAhifTagType {
         NGHTTP2_NV_FLAG_NONE                                                   \
   }
 
+#if 0
 #define HTTP_MAX_HOST		128
+#else
+//#define HTTP_MAX_HOST		1024 // U+ & KT requirement
+#define HTTP_MAX_HOST		512 // too many 
+#endif
 #define HTTP_MAX_ADDR		4
 #define HTTP_MAX_CONN		4
 
-#define MAX_SVR_NUM		HTTP_MAX_HOST * HTTP_MAX_ADDR * HTTP_MAX_CONN
-#define MAX_CON_NUM		HTTP_MAX_HOST * HTTP_MAX_ADDR
+#define MAX_SVR_NUM		(HTTP_MAX_HOST * HTTP_MAX_ADDR * HTTP_MAX_CONN)
+#define MAX_CON_NUM		(HTTP_MAX_HOST * HTTP_MAX_ADDR)
 #define MAX_LIST_NUM	HTTP_MAX_HOST
-#define MAX_ITEM_NUM	HTTP_MAX_ADDR + 1
+#define MAX_ITEM_NUM	(HTTP_MAX_ADDR + 1)
 
 typedef struct item_index {
 	int occupied;
@@ -125,14 +114,11 @@ typedef struct index {
 /* for ping recv */
 #define MAX_PING_WAIT 5 // (sec)
 
-/* for OAuth 2.0 */
-#define MAX_ACC_TOKEN_NUM 128
-#define MAX_ACC_TOKEN_LEN 512
-
 /* connection status */
 typedef struct conn_list_status {
 	int list_index;
 	int item_index;
+	char scheme[12];
 	char host[AHIF_MAX_DESTHOST_LEN];
 	char type[AHIF_COMM_NAME_LEN];
 	char ip[INET6_ADDRSTRLEN];
@@ -143,8 +129,9 @@ typedef struct conn_list_status {
 	int occupied;
 
 	/* for OAuth 2.0 */
-	int token_exist;
-	char access_token[MAX_ACC_TOKEN_NUM];
+	int token_id;
+	int token_acquired;
+	int nrfm_auto_added;
 } conn_list_status_t;
 
 /* for statistics */
@@ -161,6 +148,12 @@ typedef enum http_statistic_enum {
 	HTTP_PRE_END,	/* ahif cancel https ctx */
 	HTTP_STRM_N_FOUND,
 	HTTP_DEST_N_AVAIL,
+	HTTP_S_INVLD_API,				/* 400 bad request */
+	HTTP_S_INVLD_MSG_FORMAT,		/* 400 bad request */
+	HTTP_S_MANDATORY_IE_INCORRECT,	/* 400 bad reqeust */
+	HTTP_S_INSUFFICIENT_RESOURCES,	/* 500 internal server error */
+	HTTP_S_SYSTEM_FAILURE,			/* 500 internal server error */
+	HTTP_S_NF_CONGESTION,			/* 503 service unavailable */
 	HTTP_STAT_MAX
 } http_statistic_enum_t;
 typedef struct http_statistic {
@@ -187,6 +180,7 @@ typedef struct shm_http {
 /* ------------------------- libshm.c --------------------------- */
 int     get_http_shm(int httpc_status_shmkey);
 void    set_httpc_status(conn_list_status_t conn_status[]);
+void    print_httpc_status();
 
 /* ------------------------- libvhdr.c --------------------------- */
 int     set_relay_vhdr(hdr_index_t hdr_index[], int array_size);
@@ -198,6 +192,6 @@ hdr_index_t     *search_vhdr(hdr_index_t hdr_index[], int array_size, char *vhdr
 int     parse_ipv4(char *temp_str, struct sockaddr_in *sa, int *port);
 int     parse_ipv6(char *temp_str, struct sockaddr_in6 *sa6, int *port);
 int     parse_http_addr(char *temp_str, struct sockaddr_in *sa, struct sockaddr_in6 *sa6, int *port);
-void	divide_string(char *input, int delim, char *head, ssize_t head_size, char *tail, ssize_t tail_size);
+int		divide_string(char *input, int delim, char *head, ssize_t head_size, char *tail, ssize_t tail_size);
 
 #endif /* __HTTP_COMMON_H__ */

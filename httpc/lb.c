@@ -4,6 +4,7 @@ extern client_conf_t CLIENT_CONF;	/* sysconfig from config.c */
 extern thrd_context_t THRD_WORKER[MAX_THRD_NUM];
 extern int THREAD_NO[MAX_THRD_NUM];
 extern conn_list_t CONN_LIST[MAX_SVR_NUM];
+extern pthread_mutex_t GET_INIT_CTX_LOCK;
 
 lb_global_t LB_CONF;	/* lb config */
 lb_ctx_t LB_CTX;	/* lb connection context */
@@ -31,7 +32,7 @@ httpc_ctx_t *get_assembled_ctx(tcp_ctx_t *tcp_ctx, char *ptr)
 
 	char *vheader = ptr + sizeof(AhifHttpCSMsgHeadType);
 	int vheaderCnt = head->vheaderCnt;
-
+#if 0
 	char *body = ptr + sizeof(AhifHttpCSMsgHeadType) + (sizeof(hdr_relay) * vheaderCnt);
 	int bodyLen = head->bodyLen;
 
@@ -41,6 +42,17 @@ httpc_ctx_t *get_assembled_ctx(tcp_ctx_t *tcp_ctx, char *ptr)
 	memcpy(&recv_ctx->user_ctx.head, ptr, sizeof(AhifHttpCSMsgHeadType));
 	memcpy(&recv_ctx->user_ctx.vheader, vheader, (sizeof(hdr_relay) * vheaderCnt));
 	memcpy(&recv_ctx->user_ctx.body, body, bodyLen);
+#else
+	char *data = ptr + sizeof(AhifHttpCSMsgHeadType) + (sizeof(hdr_relay) * vheaderCnt);
+	int dataLen = head->queryLen + head->bodyLen;
+
+	if((recv_ctx = get_null_recv_ctx(tcp_ctx)) == NULL)
+		return NULL;
+
+	memcpy(&recv_ctx->user_ctx.head, ptr, sizeof(AhifHttpCSMsgHeadType));
+	memcpy(&recv_ctx->user_ctx.vheader, vheader, (sizeof(hdr_relay) * vheaderCnt));
+	memcpy(&recv_ctx->user_ctx.data, data, dataLen);
+#endif
 
 	return recv_ctx;
 }
@@ -54,7 +66,10 @@ void send_to_worker(tcp_ctx_t *tcp_ctx, conn_list_t *httpc_conn, httpc_ctx_t *re
 	int thrd_idx = httpc_conn->thrd_index;
 	int sess_idx = httpc_conn->session_index;
 	int session_id = httpc_conn->session_id;
+
+	pthread_mutex_lock(&GET_INIT_CTX_LOCK);
 	int ctx_idx = Get_CtxId(thrd_idx);
+	pthread_mutex_unlock(&GET_INIT_CTX_LOCK);
 
 	if (ctx_idx < 0) {
 		tcp_ctx->tcp_stat.ctx_assign_fail++;
@@ -76,7 +91,12 @@ void send_to_worker(tcp_ctx_t *tcp_ctx, conn_list_t *httpc_conn, httpc_ctx_t *re
 
 	memcpy(&httpc_ctx->user_ctx.head, &recv_ctx->user_ctx.head, AHIF_HTTPCS_MSG_HEAD_LEN);
 	memcpy(&httpc_ctx->user_ctx.vheader, &recv_ctx->user_ctx.vheader, sizeof(hdr_relay) * recv_ctx->user_ctx.head.vheaderCnt);
+#if 0
 	memcpy(&httpc_ctx->user_ctx.body, &recv_ctx->user_ctx.body, recv_ctx->user_ctx.head.bodyLen);
+#else
+	memcpy(&httpc_ctx->user_ctx.data, &recv_ctx->user_ctx.data, 
+			recv_ctx->user_ctx.head.queryLen + recv_ctx->user_ctx.head.bodyLen);
+#endif
 
 	httpc_ctx->user_ctx.head.mtype = MTYPE_HTTP2_RESPONSE_HTTPC_TO_AHIF;	// in advance set
 
@@ -126,8 +146,14 @@ void set_iovec(tcp_ctx_t *dest_tcp_ctx, httpc_ctx_t *recv_ctx, const char *dest_
 	}
 	// body
 	if (user_ctx->head.bodyLen) {
+#if 0
 		push_req->iov[item_cnt].iov_base = user_ctx->body;
 		push_req->iov[item_cnt].iov_len = user_ctx->head.bodyLen;
+#else
+		// response only have body (not have query)
+		push_req->iov[item_cnt].iov_base = user_ctx->data;
+		push_req->iov[item_cnt].iov_len = user_ctx->head.bodyLen;
+#endif
 		item_cnt++;
 		total_bytes += user_ctx->head.bodyLen;
 	}
@@ -204,10 +230,14 @@ void stp_err_to_fep(tcp_ctx_t *fep_tcp_ctx, httpc_ctx_t *recv_ctx)
 
 	recv_ctx->user_ctx.head.mtype = MTYPE_HTTP2_RESPONSE_HTTPC_TO_AHIF;
 	recv_ctx->user_ctx.head.respCode = HTTP_RESP_CODE_NOT_FOUND;
+	
+	/* for error debuging */
+	log_pkt_httpc_error_reply(recv_ctx, HTTP_RESP_CODE_NOT_FOUND);
 
 	/* response only header */
 	recv_ctx->user_ctx.head.vheaderCnt = 0;
 	recv_ctx->user_ctx.head.bodyLen = 0;
+	recv_ctx->user_ctx.head.queryLen = 0;
 
 	/* response to origin fep */
 	//set_iovec(fep_tcp_ctx, recv_ctx, recv_ctx->user_ctx.head.fep_origin_addr, &recv_ctx->push_req, NULL, NULL);
@@ -281,6 +311,14 @@ void send_to_peerlb(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx)
 	return stp_snd_to_peer(peer_tcp_ctx, recv_ctx); /* send relay to peer */
 }
 
+void desthost_case_sensitive(httpc_ctx_t *recv_ctx)
+{
+	for (int i = 0; i < strlen(recv_ctx->user_ctx.head.destHost); i++) {
+		if (isalnum(recv_ctx->user_ctx.head.destHost[i]) == 0)
+			recv_ctx->user_ctx.head.destHost[i] = '_';
+	}
+}
+
 void send_to_remote(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx)
 {
 	conn_list_t *httpc_conn = 0;
@@ -290,7 +328,20 @@ void send_to_remote(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx)
 	if (recv_ctx->user_ctx.head.hopped_cnt == 0) 
 		sprintf(recv_ctx->user_ctx.head.fep_origin_addr, "%s", sock_ctx->client_ip);
 
+#if 0
+	/* our config lib can't use www.aaa.com, modified name is www_aaa_com */
+	desthost_case_sensitive(recv_ctx);
+#endif
+
 	if ((httpc_conn = find_packet_index(&tcp_ctx->root_select, &recv_ctx->user_ctx.head)) == NULL) {
+		if (CLIENT_CONF.debug_mode == 1) {
+			APPLOG(APPLOG_ERR, "{{{DBG}}} searchDest fail ahifPkt api=[%s] type=(%s) host=(%s) ip=(%s) port=(%d)",
+					recv_ctx->user_ctx.head.rsrcUri,
+					recv_ctx->user_ctx.head.destType,
+					recv_ctx->user_ctx.head.destHost,
+					recv_ctx->user_ctx.head.destIp,
+					recv_ctx->user_ctx.head.destPort);
+		}
 		tcp_ctx->tcp_stat.send_to_peer++;
 		send_to_peerlb(sock_ctx, recv_ctx);
 	} else {
@@ -334,7 +385,7 @@ KEEP_PROCESS:
 
 	if ((recv_ctx = get_assembled_ctx(tcp_ctx, process_ptr)) == NULL) {
 		// TODO!!! it means blocked, all drain ???
-		APPLOG(APPLOG_ERR, "%s() cant process packet, will just dropped, __func__");
+		APPLOG(APPLOG_ERR, "%s() cant process packet, will just dropped", __func__);
 		return packet_process_res(sock_ctx, process_ptr, processed_len);
 	} else {
 		tcp_ctx->tcp_stat.tps ++;
@@ -365,7 +416,11 @@ void lb_buff_readcb(struct bufferevent *bev, void *arg)
 
 	// TODO !!! check strerror() & if critical, call relese_conn()
 	if (rcv_len <= 0) {
+#if 0
 		if (errno != EINTR && errno != EAGAIN) {
+#else
+		if (errno != EINTR) {
+#endif
 			APPLOG(APPLOG_ERR, "%s() fep sock error! %d : %s\n", __func__, errno, strerror(errno));
 			release_conncb(sock_ctx);
 			return;
@@ -643,6 +698,12 @@ void attach_lb_thread(lb_global_t *lb_conf, lb_ctx_t *lb_ctx)
 		}
 	}
 #endif
+}
+
+void nrfm_send_conn_status_callback(tcp_ctx_t *tcp_ctx)
+{
+	// only for HTTPS
+	return;
 }
 
 int create_lb_thread()

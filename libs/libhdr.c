@@ -42,16 +42,22 @@ int assign_more_headers(hdr_index_t HDR_INDEX[], nghttp2_nv *hdrs, int size, int
 {
 	/* if contain Content-Encoding */
 	int hdrs_len = cur_len;
-	AhifHttpCSMsgHeadType *head = &appData->head;
+	//AhifHttpCSMsgHeadType *head = &appData->head;
 	hdr_relay *vheader = appData->vheader;
 
+#if 0 // it move to vhdr
 	if (head->contentEncoding[0]) {
 		nghttp2_nv hd_add[] = { MAKE_NV(HDR_CONTENT_ENCODING, head->contentEncoding, strlen(head->contentEncoding)) };
 		memcpy(&hdrs[hdrs_len], &hd_add, sizeof(nghttp2_nv));
 		hdrs_len ++;
 	}
+#endif
 
+#if 1 // don't change this
 	for (int i = 0; i < MAX_HDR_RELAY_CNT; i++) {
+#else
+	for (int i = 0; i < appData->head.vheaderCnt; i++) {
+#endif
 		if (hdrs_len >= size)
 			return hdrs_len;
 		if (vheader[i].vheader_id > VH_START && vheader[i].vheader_id < VH_END) {

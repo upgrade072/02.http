@@ -9,27 +9,11 @@
 #include <commlib.h>
 #include <nghttp2/nghttp2.h>
 
-#ifdef EPCF
+#ifdef STAT_SFM
 #include <sfm_msgtypes.h>
 #include <stm_msgtypes.h>
 #else
-#include <stm_msgtypes_udmudr.h>
-#endif
-
-#if 0
-#ifdef LOG_LIB
-#include <loglib.h>
-#elif LOG_APP
-#include <appLog.h>
-#elif LOG_PRINT
-#endif
-
-#ifdef LOG_LIB
-#define APPLOG(level, fmt, ...) logPrint(ELI, FL, fmt "\n", ##__VA_ARGS__)
-#elif LOG_APP
-#else
-#define APPLOG(level, fmt, ...) fprintf(stderr, fmt "\n", ##__VA_ARGS__)
-#endif
+#include <stm_msgtypes_ausf.h>
 #endif
 
 
@@ -46,6 +30,7 @@ void    http_report_status(SFM_HttpConnStatusList *http_status, int msgId);
 void    http_stat_inc(int thrd_idx, int host_idx, int stat_idx);
 void 	stat_function(IxpcQMsgType *rxIxpcMsg, int running_thrd_num, int httpc, int https, int msgId);
 void    print_stat(STM_CommonStatMsgType *commStatMsg, STM_CommonStatMsg *commStatItem, char (*str)[128], int size);
+void	reportAlarm(char *ProcName, int code, int level, char *info, char *desc);
 
 /* ------------------------- liblist.c --------------------------- */
 int     new_list(const char *name);

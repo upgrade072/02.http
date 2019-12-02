@@ -82,6 +82,7 @@ int     main(int argc, char **argv);
 
 /* ------------------------- config.c --------------------------- */
 void    print_nf_list(config_setting_t *elem);
+config_setting_t		*search_config(const char *name);
 config_setting_t        *search_nf_by_value(const char *name, char *find_value);
 config_setting_t        *search_nf_by_auth_info(access_token_req_t *auth_req);
 int     get_hash_alg();
@@ -93,3 +94,6 @@ void    print_oauth_request(access_token_req_t *request);
 int     check_scope_mismatch(access_token_req_t *req, config_setting_t *scope);
 int     issue_access_token(access_token_req_t *auth_req, config_setting_t *conf, char *token_buff);
 int		on_request_recv_nrf(nghttp2_session *session, http2_session_data *session_data, http2_stream_data *stream_data);
+
+/* ------------------------- cmd.c --------------------------- */
+int		cmd_run(char *nfName, char *nfInstanceId);

@@ -16,7 +16,7 @@ BUILD_LIBS = $(BUILD_LIBS_PATH)/libjwt.a \
 			 $(BUILD_LIBS_PATH)/libs.a \
 			 $(BUILD_LIBS_PATH)/libhttp.a 
 
-SRCS		= main.c config.c http.c nrf.c test.c
+SRCS		= main.c config.c http.c nrf.c test.c cmd.c
 
 OBJS		= $(SRCS:.c=.o)
 

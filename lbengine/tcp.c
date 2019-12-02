@@ -284,10 +284,16 @@ int sock_add_heartbeatcb(tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx)
     return event_add(sock_ctx->event_send_hb, &tm_interval);
 }
 
+void release_pair_tcp_sock(evutil_socket_t fd, short what, void *arg)
+{
+	sock_ctx_t *sock_ctx = (sock_ctx_t *)arg;
+	release_conncb(sock_ctx);
+}
+
 void release_conn_by_hb(lb_ctx_t *lb_ctx, tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_ctx)
 {
 	if (tcp_ctx->svc_type != TT_PEER_RECV && tcp_ctx->svc_type != TT_RX_ONLY) {
-		APPLOG(APPLOG_ERR, "{{{LB}}} {{{DBG}}} in %s receive unknown svc type!!!");
+		APPLOG(APPLOG_ERR, "{{{LB}}} {{{DBG}}} in %s receive unknown svc type!!!", __func__);
 		return;
 	}
 
@@ -309,9 +315,21 @@ void release_conn_by_hb(lb_ctx_t *lb_ctx, tcp_ctx_t *tcp_ctx, sock_ctx_t *sock_c
 				unsigned int conn_num = g_node_n_children(root);
 				/* release tx-pair-sock */
 				for (int i = 0; i < conn_num; i++) {
+					/* NOTE
+					 * TX THREAD for FEP X (tx_sock) ~~ RX THREAD for FEP X (rx_sock : hb process)
+					 *                                  there is hb no recv, decide to release FEP X
+					 *           unknown what happen
+					 *                      evbase  <-- release_conn(for_fep_X)
+					 *      release_pair_tcp_sock()
+					 *  ->peer goaway release FEP X
+					 *             release_conncb()
+					 */
 					GNode *nth_conn = g_node_nth_child(root, i);
 					sock_ctx_t *peer_sock_ctx = (sock_ctx_t *)nth_conn->data;
-					release_conncb(peer_sock_ctx);
+					struct event_base *peer_evbase = pair_tcp_ctx->evbase;
+					if (event_base_once(peer_evbase, -1, EV_TIMEOUT, release_pair_tcp_sock, peer_sock_ctx, NULL) < 0) {
+						APPLOG(APPLOG_ERR, "%s() fail to add callback to dest evbase!", __func__);
+					}
 				}
 			}
 		}
@@ -505,6 +523,10 @@ void *fep_conn_thread(void *arg)
         APPLOG(APPLOG_ERR, "{{{LB}}} Could not create a listener! (port : %d)", tcp_ctx->listen_port);
         return (void *)NULL;
     }
+
+	/* for relay FEP conn status to ~ HTTPS ~ NRFM */
+	if (tcp_ctx->svc_type == TT_RX_ONLY)
+		nrfm_send_conn_status_callback(tcp_ctx);
 
     /* loop */
     event_base_loop(evbase, EVLOOP_NO_EXIT_ON_EMPTY);

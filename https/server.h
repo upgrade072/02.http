@@ -1,3 +1,6 @@
+#ifndef __HTTPS_H__
+#define __HTTPS_H__
+
 #include <libs.h>
 #include <libconfig.h>
 
@@ -41,11 +44,18 @@
 #include <sys/msg.h>
 #include <pthread.h>
 /* OAuth 2.0 / JWT */
+#include <jansson.h>
 #include <jwt.h>
 /* for lb */
 #include <lbengine.h>
 
+#include <libfort.h>
+
 #include <nghttp2_session.h>
+
+#ifdef OVLD_API /* nssf ovld ctrl */
+#include <api_noverload.h>
+#endif
 
 #define OUTPUT_WOULDBLOCK_THRESHOLD (1 << 16)
 
@@ -66,11 +76,20 @@ typedef struct server_conf {
 	int timeout_sec;
 	int ping_interval;
 	int ping_timeout;
+	int ping_event_ms;
+	int ping_event_code;
+	int cert_event_code;
 	int pkt_log;
+    config_setting_t *lb_config;
 
+	int http_opt_header_table_size;
+	nghttp2_option *nghttp2_option;
+
+	/* for OAUTH 2.0 */
 	char cert_file[128];
 	char key_file[128];
-	char credential[MAX_ACC_TOKEN_LEN];
+	char credential[512];
+	char uuid_file[128];
 
 	/* for direct relay to fep */
 	int	dr_enabled;							// 0 (not) 1 (true)
@@ -78,7 +97,9 @@ typedef struct server_conf {
 	int callback_port_tls[MAX_PORT_NUM];	// for callback uri port
 	int callback_port_tcp[MAX_PORT_NUM];	// for callback uri port
 
-    config_setting_t *lb_config;
+	/* for overload ctrl */
+	int def_ovld_limit;
+	int ovld_event_code;
 } server_conf;
 
 typedef struct conn_client {
@@ -104,7 +125,24 @@ typedef struct allow_list {
 	conn_client_t client[MAX_SVR_NUM];
 
 	int auth_act;
+
+	/* peer overload */
+	int limit_tps;
+	int last_curr_tps;
+	int last_drop_tps;
+	int ovld_alrm_sts;
 } allow_list_t;
+
+#define MAX_OVLD_POS 3
+typedef struct peer_ovld {
+	int curr_tps[MAX_LIST_NUM];
+	int drop_tps[MAX_LIST_NUM];
+} peer_ovld_t;
+
+typedef struct ovld_state {
+	int curr_pos;
+	peer_ovld_t peer_ovld[MAX_OVLD_POS][MAX_THRD_NUM];
+} ovld_state_t;
 
 typedef enum conn_status {
     CN_NOT_CONNECTED = 0,
@@ -160,7 +198,9 @@ typedef struct http2_session_data {
 
 	int connected;
 	int ping_cnt;
-	struct timespec ping_rcv_time;
+	struct timeval ping_snd_time;
+	struct timeval ping_rcv_time;
+	int event_occured;
 
 #ifdef OAUTH
 	int auth_act;
@@ -168,6 +208,7 @@ typedef struct http2_session_data {
 	// for direct relay
 	int is_direct_session;
 	int relay_fep_tag;
+
 } http2_session_data;
 
 typedef struct https_ctx {
@@ -183,7 +224,7 @@ typedef struct https_ctx {
 	int  recv_time_index;
 
 #ifdef OAUTH
-	char access_token[MAX_ACC_TOKEN_LEN];
+	char access_token[512];
 #endif
     iovec_item_t push_req;
 
@@ -200,6 +241,9 @@ typedef struct https_ctx {
 	FILE *recv_log_file;
 	size_t file_size;
 	char *log_ptr;
+
+	/* for NRFM CTX (notify from NRF) */
+	char for_nrfm_ctx;
 } https_ctx_t;
 
 typedef enum intl_req_mtype {
@@ -229,17 +273,18 @@ typedef struct lb_global {
     config_setting_t *cf_fep_tx_listen_port;
 } lb_global_t;
 
+
 /* ------------------------- config.c --------------------------- */
 int     init_cfg();
-int     destroy_cfg();
 int     config_load_just_log();
 int     config_load();
 int     addcfg_client_hostname(char *hostname, char *type);
 int     addcfg_client_ipaddr(int id, char *ipaddr, int max);
 int     actcfg_http_client(int id, int ip_exist, char *ipaddr, int change_to_act);
-int     chgcfg_client_max_cnt(int id, char *ipaddr, int max);
+int     chgcfg_client_max_cnt_with_auth_act_and_limit(int id, char *ipaddr, int max, int auth_act, int limit);
 int     delcfg_client_ipaddr(int id, char *ipaddr);
 int     delcfg_client_hostname(int id);
+int     chgcfg_client_ping(int interval, int timeout, int ms);
 
 /* ------------------------- list.c --------------------------- */
 https_ctx_t     *get_context(int thrd_idx, int ctx_idx, int used);
@@ -289,6 +334,8 @@ int     func_chg_http_client_act(IxpcQMsgType *rxIxpcMsg, int change_to_act);
 int     func_chg_http_client(IxpcQMsgType *rxIxpcMsg);
 int     func_del_http_cli_ip(IxpcQMsgType *rxIxpcMsg);
 int     func_del_http_client(IxpcQMsgType *rxIxpcMsg);
+int     func_dis_http_cli_ping(IxpcQMsgType *rxIxpcMsg);
+int     func_chg_http_cli_ping(IxpcQMsgType *rxIxpcMsg);
 
 /* ------------------------- lb.c --------------------------- */
 https_ctx_t     *get_null_recv_ctx(tcp_ctx_t *tcp_ctx);
@@ -312,3 +359,13 @@ void    *fep_stat_thread(void *arg);
 void    load_lb_config(server_conf *svr_conf, lb_global_t *lb_conf);
 void    attach_lb_thread(lb_global_t *lb_conf, lb_ctx_t *lb_ctx);
 int     create_lb_thread();
+
+/* ------------------------- cert.c --------------------------- */
+X509    *load_cert(const char *file);
+void    check_cert(const char *cert_file);
+
+/* ------------------------- ovld.c --------------------------- */
+int     ovld_calc_check(http2_session_data *session_data);
+void    ovld_step_forward();
+
+#endif /* __HTTPS_H__ */

@@ -4,7 +4,7 @@
 shm_http_t *SHM_HTTP_PTR;
 int main()
 {
-	if (get_http_shm() < 0) {
+	if (get_http_shm(0x520000) < 0) {
 		fprintf(stderr, "shmget fail\n");
 		return 0;
 	}

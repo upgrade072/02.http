@@ -9,10 +9,10 @@
 
 #include <libs.h>
 
-extern char mySysName[COMM_MAX_NAME_LEN];
-extern char myProcName[COMM_MAX_NAME_LEN];
-extern int ixpcQid;
-extern char respBuff[MAX_MML_RESULT_LEN];
+char mySysName[COMM_MAX_NAME_LEN];
+char myProcName[COMM_MAX_NAME_LEN];
+int ixpcQid;
+char respBuff[MAX_MML_RESULT_LEN];
 
 int get_mml_para_int (MMLReqMsgType *msg, char *paraName)
 {           
@@ -70,14 +70,11 @@ int send_mml_res_failMsg(IxpcQMsgType *rxIxpcMsg, char *rltMsg)
 
 int send_mml_res_succMsg(IxpcQMsgType *rxIxpcMsg, char *rltMsg, char contFlag, unsigned short extendTime, char seqNo)
 {
-	int		len=0;
-	char	*txBuff=respBuff;
+	sprintf(rltMsg + strlen(rltMsg), "\n  RESULT = SUCCESS\n  SYSTEM = %s\n\n", mySysName);
 
-	len  = sprintf(txBuff, "\n  RESULT = SUCCESS\n  SYSTEM = %s\n\n", mySysName);
-	len += sprintf(&txBuff[len], "%s\n", rltMsg);
-
-	return send_response_mml(rxIxpcMsg, txBuff, RES_SUCCESS, contFlag, extendTime, seqNo);
+	return send_response_mml(rxIxpcMsg, rltMsg, RES_SUCCESS, contFlag, extendTime, seqNo);
 }
+
 
 int send_response_mml(IxpcQMsgType *rxIxpcMsg, char *resbuf, char resCode, char contFlag, unsigned short extendTime, char seqNo)
 {
@@ -93,11 +90,6 @@ int send_response_mml(IxpcQMsgType *rxIxpcMsg, char *resbuf, char resCode, char 
     mmlReqMsg	= (MMLReqMsgType *)rxIxpcMsg->body;
     txResMsg	= (MMLResMsgType *)txIxpcMsg->body;
 
-#if 0
-    sprintf(trcBuf, "[%s] MMC_Name[%s] MMC_Para[%s]\n", __func__
-				  , mmlReqMsg->head.cmdName, mmlReqMsg->head.para[0].paraStr);
-    trclib_writeLog(FL, trcBuf);
-#endif
     txGenQ.mtype = MTYPE_MMC_RESPONSE;
 
     txIxpcMsg->head.msgId = rxIxpcMsg->head.msgId;
@@ -106,38 +98,47 @@ int send_response_mml(IxpcQMsgType *rxIxpcMsg, char *resbuf, char resCode, char 
     strcpy (txIxpcMsg->head.dstSysName, rxIxpcMsg->head.srcSysName);
     strcpy (txIxpcMsg->head.dstAppName, rxIxpcMsg->head.srcAppName);
 
-    /* Make response structure */
-	txIxpcMsg->head.segFlag = contFlag;
-	if( contFlag==FLAG_CONTINUE ) {
-		txIxpcMsg->head.seqNo = seqNo;
-	}
-	else {
-		/* 마지막 seg이면 seqno을 붙이고 reset */
-		if( seqNo != 0 ) 
-			txIxpcMsg->head.seqNo = seqNo+1;
-		else			
-			txIxpcMsg->head.seqNo = 0;
-	}
+	int remain_len = strlen(resbuf);
+	int seq_no = 0;
 
-    txResMsg->head.mmcdJobNo 	= mmlReqMsg->head.mmcdJobNo;
-    txResMsg->head.extendTime 	= extendTime;
-    txResMsg->head.resCode 		= resCode;
-    txResMsg->head.contFlag 	= contFlag;
-    strcpy(txResMsg->head.cmdName, mmlReqMsg->head.cmdName);
-    strcpy(txResMsg->body, resbuf);
+	/* split res buff */
+	while (remain_len > 0) {
+		txResMsg->head.mmcdJobNo 	= mmlReqMsg->head.mmcdJobNo;
+		txResMsg->head.extendTime 	= extendTime;
+		txResMsg->head.resCode 		= resCode;
+		strcpy(txResMsg->head.cmdName, mmlReqMsg->head.cmdName);
 
-    txIxpcMsg->head.bodyLen = sizeof(txResMsg->head) + strlen(txResMsg->body);
-    txLen = sizeof(long) + sizeof(txIxpcMsg->head) + txIxpcMsg->head.bodyLen;
-
-    if( msgsnd(ixpcQid, (void *)&txGenQ, txLen, IPC_NOWAIT )<0 ) {
+		int send_limit_len = (MAX_MML_RESULT_LEN - 128); // maybe omp process use this buff
+		int process_len = ((remain_len >= send_limit_len) ? send_limit_len : remain_len);
+		memcpy(txResMsg->body, resbuf, process_len);
 #if 0
-        sprintf(trcBuf, "[%s] msgsnd error(%s), txIxpcCmdName(%s), txIxpcLen(%d)\n"
-					  , __func__, strerror(errno), txResMsg->head.cmdName, txIxpcMsg->head.bodyLen );
-        trclib_writeLogErr(FL,trcBuf);
+		txResMsg->body[process_len + 1] = '\0';
+#else
+		txResMsg->body[process_len] = '\n';
+		txResMsg->body[process_len + 1] = '\0';
 #endif
-        return -1;
-    } 
-	APPLOG(APPLOG_DETAIL, "sndMsg Success sendLen(%d)", txLen);
-	APPLOG(APPLOG_DETAIL, "(%s)", txResMsg->body);
+
+		resbuf += process_len;
+		remain_len -= process_len;
+		if (remain_len > 0) {
+			txResMsg->head.contFlag = 1;
+			txIxpcMsg->head.seqNo = seq_no++;
+			txIxpcMsg->head.segFlag = FLAG_CONTINUE;
+		} else {
+			txResMsg->head.contFlag = 0;
+			txIxpcMsg->head.seqNo = 0;
+			txIxpcMsg->head.segFlag = FLAG_COMPLETE;
+		}
+
+		txIxpcMsg->head.bodyLen = sizeof(txResMsg->head) + strlen(txResMsg->body);
+		txLen = sizeof(long) + sizeof(txIxpcMsg->head) + txIxpcMsg->head.bodyLen;
+
+		if( msgsnd(ixpcQid, (void *)&txGenQ, txLen, IPC_NOWAIT )<0 ) {
+			return -1;
+		} 
+		APPLOG(APPLOG_DETAIL, "sndMsg Success sendLen(%d)", txLen);
+		APPLOG(APPLOG_DETAIL, "(%s)", txResMsg->body);
+	}
+
     return 0;
 }

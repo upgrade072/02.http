@@ -28,6 +28,24 @@ void print_nf_list(config_setting_t *elem)
 		fprintf(stderr, "  nf credential : %s\n", credential);
 }
 
+config_setting_t *search_config(const char *name)
+{
+	config_setting_t *setting = config_lookup(&CFG, "nf_list");
+	if (setting == NULL) {
+		fprintf(stderr, "err] config nf_list is NULL\n");
+		return NULL;
+	}
+
+	int count = config_setting_length(setting);
+	for (int i = 0; i < count; i++) {
+		config_setting_t *elem = config_setting_get_elem(setting, i);
+		if (!strcmp(name, elem->name)) {
+			return elem;
+		}
+	}
+	return NULL;
+}
+
 config_setting_t *search_nf_by_value(const char *name, char *find_value)
 {
 	config_setting_t *setting = config_lookup(&CFG, "nf_list");

@@ -24,6 +24,7 @@ void clear_new_ctx(https_ctx_t *https_ctx)
 {
 	https_ctx->inflight_ref_cnt = 0;
     memset(&https_ctx->user_ctx.head, 0x00, AHIF_HTTPCS_MSG_HEAD_LEN);
+	memset(https_ctx->user_ctx.vheader, 0x00, sizeof(hdr_relay) * MAX_HDR_RELAY_CNT);
 }
 
 void assign_new_ctx_info(https_ctx_t *https_ctx, http2_session_data *session_data, http2_stream_data *stream_data)
@@ -39,23 +40,30 @@ void assign_new_ctx_info(https_ctx_t *https_ctx, http2_session_data *session_dat
 	if (session_data->is_direct_session) {
 		https_ctx->is_direct_ctx = 1;
 		https_ctx->relay_fep_tag = session_data->relay_fep_tag;
+	} else {
+		https_ctx->is_direct_ctx = 0;
+		https_ctx->relay_fep_tag = 0;
 	}
 }
 
 void assign_rcv_ctx_info(https_ctx_t *https_ctx, AhifHttpCSMsgType *ResMsg)
 {
-	sprintf(https_ctx->user_ctx.head.contentEncoding, "%s", ResMsg->head.contentEncoding);
 	https_ctx->user_ctx.head.respCode = ResMsg->head.respCode;
 	https_ctx->user_ctx.head.vheaderCnt = ResMsg->head.vheaderCnt;
 	memcpy(&https_ctx->user_ctx.vheader, ResMsg->vheader, sizeof(hdr_relay) * ResMsg->head.vheaderCnt);
+	https_ctx->user_ctx.head.queryLen = ResMsg->head.queryLen;
 	https_ctx->user_ctx.head.bodyLen = ResMsg->head.bodyLen;
-	memcpy(&https_ctx->user_ctx.body, ResMsg->body, ResMsg->head.bodyLen);
+	memcpy(&https_ctx->user_ctx.data, ResMsg->data, 
+			ResMsg->head.queryLen + ResMsg->head.bodyLen);
 }
 
 void clear_and_free_ctx(https_ctx_t *https_ctx)
 {
 	https_ctx->inflight_ref_cnt = 0;
 	https_ctx->user_ctx.head.bodyLen = 0;
+	https_ctx->user_ctx.head.queryLen = 0;
+	https_ctx->user_ctx.head.vheaderCnt = 0;
+	memset(https_ctx->user_ctx.vheader, 0x00, sizeof(hdr_relay) * MAX_HDR_RELAY_CNT);
 	https_ctx->occupied = 0;
 }
           
@@ -155,7 +163,7 @@ void print_list()
 {
     int i, j;
 
-    APPLOG(APPLOG_ERR, "  ID   HOSTNAME   TYPE       IP_ADDR                                            CONN(max/curr)   ACT STATUS");
+    APPLOG(APPLOG_ERR, "  ID   HOSTNAME   TYPE       IP_ADDR                                    CONN(max/curr)         OAUTH    STATUS");
 	APPLOG(APPLOG_ERR, "------------------------------------------------------------------------------------------------------------------");
     for ( i = 0; i < MAX_LIST_NUM; i++) {
         for ( j = 0; j < MAX_LIST_NUM; j++) {
@@ -163,14 +171,14 @@ void print_list()
                 continue;
             if (ALLOW_LIST[j].list_index != i)
                 continue;
-            APPLOG(APPLOG_ERR, "%4d   %-10s %-7s %-46s       (%4d  / %4d)  %4d %s",
+            APPLOG(APPLOG_ERR, "%4d   %-10s %-7s %-46s(%4d  / %4d)          %4s    %s",
                     ALLOW_LIST[j].list_index,
                     ALLOW_LIST[j].host,
                     ALLOW_LIST[j].type,
                     ALLOW_LIST[j].ip,
                     ALLOW_LIST[j].max,
                     ALLOW_LIST[j].curr,
-                    ALLOW_LIST[j].act,
+                    (ALLOW_LIST[j].auth_act > 0) ?  "ACT" : "DACT",
                     (ALLOW_LIST[j].curr > 0) ?  "Connected" : (ALLOW_LIST[j].act == 1) ? "Disconnect" : "Deact");
         }
     }
@@ -178,27 +186,42 @@ void print_list()
 }
 
 void write_list(char *buff) {
-    int i, j, resLen;
+	ft_table_t *table = ft_create_table();
+	ft_set_border_style(table, FT_PLAIN_STYLE);
 
-    resLen = sprintf(buff, "\n  ID   HOSTNAME   TYPE       IP_ADDR                                            CONN(max/curr)       STATUS\n");
-	resLen += sprintf(buff + resLen, "------------------------------------------------------------------------------------------------------------------\n");
-    for ( i = 0; i < MAX_LIST_NUM; i++) {
-        for ( j = 0; j < MAX_LIST_NUM; j++) {
-            if (ALLOW_LIST[j].used != 1)
+	/* head */
+	ft_set_cell_prop(table, 0, FT_ANY_COLUMN, FT_CPROP_ROW_TYPE, FT_ROW_HEADER);
+
+	/* TPS, CONN, OAUTH right align */
+	ft_set_cell_prop(table, FT_ANY_ROW, 4, FT_CPROP_TEXT_ALIGN, FT_ALIGNED_RIGHT);
+	ft_set_cell_prop(table, FT_ANY_ROW, 5, FT_CPROP_TEXT_ALIGN, FT_ALIGNED_RIGHT);
+	ft_set_cell_prop(table, FT_ANY_ROW, 6, FT_CPROP_TEXT_ALIGN, FT_ALIGNED_RIGHT);
+	ft_set_cell_prop(table, FT_ANY_ROW, 7, FT_CPROP_TEXT_ALIGN, FT_ALIGNED_CENTER);
+
+	ft_write_ln(table, "ID", "HOSTNAME", "TYPE", "IPADDR", "TPS(limit/curr/drop)", "CONN(max/curr)", "OAUTH", "STATUS");
+	for (int i = 0; i < MAX_LIST_NUM; i++) {
+		for (int k = 0; k < MAX_LIST_NUM; k++) {
+            if (ALLOW_LIST[k].used != 1)
                 continue;
-            if (ALLOW_LIST[j].list_index != i)
+            if (ALLOW_LIST[k].list_index != i)
                 continue;
-            resLen += sprintf(buff + resLen, "%4d   %-10s %-7s %-46s       (%4d  / %4d)        %s\n",
-                    ALLOW_LIST[j].list_index,
-                    ALLOW_LIST[j].host,
-                    ALLOW_LIST[j].type,
-                    ALLOW_LIST[j].ip,
-                    ALLOW_LIST[j].max,
-                    ALLOW_LIST[j].curr,
-                    (ALLOW_LIST[j].curr > 0) ?  "Connected" : (ALLOW_LIST[j].act == 1) ? "Disconnect" : "Deact");
-        }
-    }
-	resLen += sprintf(buff + resLen, "------------------------------------------------------------------------------------------------------------------\n");
+			ft_printf_ln(table, "%d|%s|%s|%s|%d/%d/%d|%d/%d|%s|%s",
+                    ALLOW_LIST[k].list_index,
+                    ALLOW_LIST[k].host,
+                    ALLOW_LIST[k].type,
+                    ALLOW_LIST[k].ip,
+                    ALLOW_LIST[k].limit_tps,
+                    ALLOW_LIST[k].last_curr_tps,
+                    ALLOW_LIST[k].last_drop_tps,
+                    ALLOW_LIST[k].max,
+                    ALLOW_LIST[k].curr,
+                    (ALLOW_LIST[k].auth_act > 0) ?  "ACT" : "DACT",
+                    (ALLOW_LIST[k].curr > 0) ?  "Connected" : (ALLOW_LIST[k].act == 1) ? "Disconnect" : "Deact");
+		}
+	}
+	ft_add_separator(table);
+	sprintf(buff, "%s", ft_to_string(table));
+	ft_destroy_table(table);
 }
 
 
@@ -261,8 +284,16 @@ void log_pkt_end_stream(int stream_id, https_ctx_t *https_ctx)
 			return;
 		}
     }
-	if (https_ctx->user_ctx.head.bodyLen > 0)
+	if (https_ctx->user_ctx.head.bodyLen > 0) {
+#if 0
 		util_dumphex(https_ctx->recv_log_file, https_ctx->user_ctx.body, https_ctx->user_ctx.head.bodyLen);
+#else
+		// dump only body
+		util_dumphex(https_ctx->recv_log_file, 
+				https_ctx->user_ctx.data + https_ctx->user_ctx.head.queryLen,
+				https_ctx->user_ctx.head.bodyLen);
+#endif
+	}
 
     // 1) close file
     fclose(https_ctx->recv_log_file);
