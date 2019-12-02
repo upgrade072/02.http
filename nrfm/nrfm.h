@@ -43,12 +43,16 @@
 #define JSON_C_PRETTY_NOSLASH	(JSON_C_TO_STRING_PRETTY|JSON_C_TO_STRING_NOSLASHESCAPE)
 
 /* for .cfg */
+#define CF_MP_SYS_TYPE		"nrfm_cfg.sys_config.mp_sys_type"
+#define CF_LOGLEVEL			"nrfm_cfg.sys_config.log_level"
 #define CF_SVC_NIC			"nrfm_cfg.sys_config.svc_nic"
 #define CF_NOTIFY_PORT		"nrfm_cfg.sys_config.notify_listen_port"
 #define CF_ACC_TOKEN_SHM	"nrfm_cfg.sys_config.access_token_shm_key"
 #define CF_NRF_STAT_CODE	"nrfm_cfg.sys_config.nrfm_stat_code"
 #define CF_MP_SYS_TYPE		"nrfm_cfg.sys_config.mp_sys_type"
 #define CF_LOGLEVEL			"nrfm_cfg.sys_config.log_level"
+#define CF_OVLD_TPS_ENABLED	"nrfm_cfg.sys_config.ovld_tps_enabled"
+#define CF_OVLD_NOTIFY_CODE	"nrfm_cfg.sys_config.ovld_notify_code"
 //#define CF_UUID_FILE		"nrfm_cfg.sys_config.uuid_file"
 #define CF_RECOVERY_TIME	"nrfm_cfg.sys_info.recovery_time"
 #define CF_SUBSCRIBE_FORM	"nrfm_cfg.subscription_form"
@@ -157,6 +161,8 @@ typedef struct nrf_token_info {
 
 typedef struct sys_conf {
 	int debug_mode;
+	int ovld_tps_enabled;
+	int ovld_notify_code;
 } sys_conf_t;
 
 typedef struct main_ctx {
@@ -213,6 +219,7 @@ void    log_all_cfg_subscribe_list(main_ctx_t *MAIN_CTX);
 int     load_access_token_cfg(main_ctx_t *MAIN_CTX);
 int     load_cfg_retrieve_list(main_ctx_t *MAIN_CTX);
 int     load_cfg_subscribe_list(main_ctx_t *MAIN_CTX);
+int     load_cfg_overload_info(main_ctx_t *MAIN_CTX);
 void    log_cfg_retrieve_list(nf_retrieve_info_t *nf_retr_info);
 void    log_cfg_subscribe_list(nf_retrieve_info_t *nf_retr_info);
 void    recurse_json_obj(json_object *input_obj, main_ctx_t *MAIN_CTX, nf_retrieve_info_t *nf_retr_info);
@@ -370,7 +377,7 @@ int     nf_notify_profile_remove(nf_retrieve_item_t *nf_item);
 int     nf_notify_profile_replace(nf_retrieve_item_t *nf_item, json_object *js_nf_profile);
 nf_retrieve_info_t      *nf_notify_search_info_by_uuid(main_ctx_t *MAIN_CTX, const char *nf_uuid);
 nf_retrieve_item_t      *nf_notify_search_item_by_uuid(main_ctx_t *MAIN_CTX, const char *nf_uuid);
-void    nf_notify_send_resp(AhifHttpCSMsgType *ahifPktRecv, int respCode, char *problemDetail);
+int     nf_notify_send_resp(AhifHttpCSMsgType *ahifPktRecv, int respCode, char *problemDetail);
 
 /* ------------------------- regi.c --------------------------- */
 int     nf_regi_check_registered_status(main_ctx_t *MAIN_CTX);

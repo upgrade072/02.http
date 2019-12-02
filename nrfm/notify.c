@@ -145,6 +145,7 @@ NNHCR_RET:
 
 void nf_notify_handle_profile_changed(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item)
 {
+#if 0
 	char key_nfStatus[128] = "nfStatus";
 	json_object *js_nf_status = search_json_object(nf_item->item_nf_profile, key_nfStatus);
 	if (js_nf_status == NULL) {
@@ -162,6 +163,7 @@ void nf_notify_handle_profile_changed(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *
 				__func__, nf_item->nf_uuid, nfStatus);
 		NF_MANAGE_NF_DACT(MAIN_CTX, nf_item);
 	}
+#endif
 }
 
 void nf_notify_handle_request_proc(AhifHttpCSMsgType *ahifPkt)
@@ -172,7 +174,19 @@ void nf_notify_handle_request_proc(AhifHttpCSMsgType *ahifPkt)
 	NRF_STAT_INC(&NRF_STAT, NFStatusNotify, NRFS_ATTEMPT);
 
 	/* send response */
-	nf_notify_send_resp(ahifPkt, respCode, problemDetail);
+	int sndRes = nf_notify_send_resp(ahifPkt, respCode, problemDetail);
+
+	if (MAIN_CTX.sysconfig.ovld_tps_enabled) {
+		struct timeval cur_time = {0,};
+		gettimeofday(&cur_time, NULL);
+
+		// increase tps
+		ovldlib_isOvldCtrl(cur_time.tv_sec, OVLDLIB_MODE_DONT_CTRL, MAIN_CTX.sysconfig.ovld_notify_code, "NOTIFY");
+
+		if (respCode != 204 || sndRes < 0) { // increase fail cnt
+			ovldlib_increaseFailCnt(MAIN_CTX.sysconfig.ovld_notify_code);
+		}
+	}
 
 	return;
 }
@@ -325,7 +339,7 @@ int nf_notify_profile_replace(nf_retrieve_item_t *nf_item, json_object *js_nf_pr
 	}
 	
 	if (nf_item->item_nf_profile) {
-		APPLOG(APPLOG_ERR, "{{{DBG}}} %s release older nf profile!", __func__);
+		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s release older nf profile!", __func__);
 		json_object_put(nf_item->item_nf_profile);
 		nf_item->item_nf_profile = NULL;
 	}
@@ -371,7 +385,7 @@ nf_retrieve_item_t *nf_notify_search_item_by_uuid(main_ctx_t *MAIN_CTX, const ch
 	return NULL;
 }
 
-void nf_notify_send_resp(AhifHttpCSMsgType *ahifPktRecv, int respCode, char *problemDetail)
+int nf_notify_send_resp(AhifHttpCSMsgType *ahifPktRecv, int respCode, char *problemDetail)
 {
     APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s called, ahifPktCid(%d)", __func__, ahifPktRecv->head.ahifCid);
 
@@ -419,5 +433,7 @@ void nf_notify_send_resp(AhifHttpCSMsgType *ahifPktRecv, int respCode, char *pro
 		APPLOG(APPLOG_ERR, "{{{DBG}}} %s called, res (%d:fail), will discard, httpsQid(%d) err(%s)",
 				__func__, res, MAIN_CTX.my_qid.https_qid, strerror(errno));
 	}
+
+	return res;
 }
 

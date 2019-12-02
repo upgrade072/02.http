@@ -285,6 +285,23 @@ int initialize(main_ctx_t *MAIN_CTX)
 		log_all_cfg_subscribe_list(MAIN_CTX);
 	}
 
+	/* load overload info */
+	if (load_cfg_overload_info(MAIN_CTX) <= 0) {
+		APPLOG(APPLOG_ERR, "{{{INIT}}} there is on overload info!");
+	} else {
+		APPLOG(APPLOG_ERR, "{{{INIT}}} ovld_tps_enabled [%d] ovld_notify_code [%d]", 
+				MAIN_CTX->sysconfig.ovld_tps_enabled, MAIN_CTX->sysconfig.ovld_notify_code);
+	}
+
+	/* if overload set = 1, enable it */
+	if (MAIN_CTX->sysconfig.ovld_tps_enabled > 0) {
+		if (ovldlib_init(MAIN_CTX->my_info.myProcName) < 0) {
+			APPLOG(APPLOG_ERR, "{{{INIT}}} fail to init ovldlib proc=(%s) enabled=(%d) code=(%d)",
+					MAIN_CTX->my_info.myProcName, MAIN_CTX->sysconfig.ovld_tps_enabled, MAIN_CTX->sysconfig.ovld_notify_code);
+			return -1;
+		}
+	}
+
 	return 0;
 }
 
@@ -426,7 +443,8 @@ void start_loop(main_ctx_t *MAIN_CTX)
 	event_add(ev_collect_hc_status, &tic_sec);
 
 	/* message handle */
-	struct timeval tm_milisec = {0, 100000}; // 100ms
+	//struct timeval tm_milisec = {0, 100000}; // 100ms
+	struct timeval tm_milisec = {0, 1000}; // 1ms
 	struct event *ev_msgq = event_new(MAIN_CTX->EVBASE, -1, EV_PERSIST, message_handle, NULL);
 	event_add(ev_msgq, &tm_milisec);
 

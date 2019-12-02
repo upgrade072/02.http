@@ -126,8 +126,13 @@ void clear_fep_nfs(evutil_socket_t fd, short what, void *arg)
 
 	long long elapse_milisec = elapse.tv_sec * 1000LL + (elapse.tv_usec / 1000LL);
 
+#if 0
 	/* 2 sec diff */
 	if (elapse_milisec >= 2000) {
+#else
+	/* 10 sec diff */
+	if (elapse_milisec >= 10000) {
+#endif
 		MAIN_CTX.last_pub_time = now;
 		MAIN_CTX.SHM_NFS_AVAIL->curr_pos = (MAIN_CTX.SHM_NFS_AVAIL->curr_pos + 1) % MAX_NFS_SHM_POS;
 		int next_pos = (MAIN_CTX.SHM_NFS_AVAIL->curr_pos + 1) % MAX_NFS_SHM_POS;

@@ -115,7 +115,8 @@ void message_handle(evutil_socket_t fd, short what, void *arg)
 				continue;
             /* NRF request from NRFM */
             case MSGID_NRFM_HTTPS_RESPONSE:
-                APPLOG(APPLOG_ERR, "%s() receive NRFM Response (mtype:%ld)", __func__, (long)msg->mtype);
+				// never do this 20191125
+                //APPLOG(APPLOG_ERR, "%s() receive NRFM Response (mtype:%ld)", __func__, (long)msg->mtype);
                 handle_nrfm_response(msg);
                 continue;
             default:

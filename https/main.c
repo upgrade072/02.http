@@ -731,7 +731,7 @@ int send_request_to_nrfm(https_ctx_t *https_ctx, int ahif_mtype)
 
 	int res = -1;
 	if (nrfmQid > 0) {
-		res = msgsnd(nrfmQid, msg, shmqlen, 0);
+		res = msgsnd(nrfmQid, msg, shmqlen, IPC_NOWAIT);
 		if (res < 0) {
 			APPLOG(APPLOG_ERR, "%s(), fail to send resp to NRFM! (res:%d)", __func__, res);
 		}
@@ -1860,7 +1860,8 @@ static void main_loop(const char *key_file, const char *cert_file) {
 
 #ifndef TEST
 	/* system message handle */
-    struct timeval tm_milisec = {0, 100000}; // 100 ms
+    //struct timeval tm_milisec = {0, 100000}; // 100 ms
+    struct timeval tm_milisec = {0, 1000}; // 1 ms
     struct event *ev_msg_handle;
     ev_msg_handle = event_new(evbase, -1, EV_PERSIST, message_handle, NULL);
     event_add(ev_msg_handle, &tm_milisec);

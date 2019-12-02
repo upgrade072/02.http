@@ -432,6 +432,27 @@ int load_cfg_subscribe_list(main_ctx_t *MAIN_CTX)
 	return nf_type_num;
 }
 
+int load_cfg_overload_info(main_ctx_t *MAIN_CTX)
+{
+	config_setting_t *setting = NULL;
+
+	if ((setting = config_lookup(&MAIN_CTX->CFG, CF_OVLD_TPS_ENABLED)) == NULL) {
+		APPLOG(APPLOG_ERR, "fail to find ovld_tps_enabled!");
+		return 0;
+	} else {
+		MAIN_CTX->sysconfig.ovld_tps_enabled = config_setting_get_int(setting);
+	}
+
+	if ((setting = config_lookup(&MAIN_CTX->CFG, CF_OVLD_NOTIFY_CODE)) == NULL) {
+		APPLOG(APPLOG_ERR, "fail to find ovld_notify_code!");
+		return 0;
+	} else {
+		MAIN_CTX->sysconfig.ovld_notify_code = config_setting_get_int(setting);
+	}
+
+	return 1;
+}
+
 void log_cfg_retrieve_list(nf_retrieve_info_t *nf_retr_info)
 {
 	APPLOG(APPLOG_ERR, "{{{DBG}}} retrieve list include nf_type[%s] limit[%d]",
