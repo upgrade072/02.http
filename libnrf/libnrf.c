@@ -49,43 +49,61 @@ GSList *get_associate_node(GSList *node_assoc_list, const char *type_str)
 	return new_assoc;
 }
 
-int get_sys_label_num()
+int get_my_info(svr_info_t *my_info, const char *my_proc_name)
 {
     char fname[1024] = {0,};
-	char label[1024] = {0,};
 
-    sprintf(fname, "%s/%s", getenv(IV_HOME), SYSCONF_FILE);
-    conflib_getNthTokenInFileSection (fname, "GENERAL", "SYSTEM_LABEL", 1, label);
-
-	char buff[1024] = {0,};
-	int pos = 0;
-	for (int i = 0; i < strlen(label); i++) {
-		if (isdigit(label[i])) 
-			buff[pos++] = label[i];
-	}
-	buff[pos] = '\0';
-
-	return atoi(buff);
-}
-
-void get_my_info(svr_info_t *my_info, const char *my_proc_name)
-{
-    char fname[1024] = {0,};
+    /* MY SYS NAME, MY PROC NAME */
 
     sprintf(my_info->mySysName, "%s", getenv(MY_SYS_NAME));
     sprintf(my_info->myProcName, "%s", my_proc_name);
 
-    sprintf(fname, "%s/%s", getenv(IV_HOME), SYSCONF_FILE);
-    conflib_getNthTokenInFileSection (fname, "GENERAL", "SYSTEM_TYPE", 1, my_info->mySysType);
-    conflib_getNthTokenInFileSection (fname, "GENERAL", "SERVER_ID", 1, my_info->mySvrId);
+    /* MY LABEL NUM (FEPA =A=> 1, LB01 =1=> 1) */
 
-    fprintf(stderr, "TEST| %s %s %s %s\n",
+    char temp_buff[1024] = { 0, };
+    sprintf(temp_buff, getenv(MY_SYS_NAME));
+
+    char *res = strlwr(temp_buff, strlen(temp_buff));
+    char last_char = res[strlen(res) - 1];
+
+	my_info->myLabelNum = isdigit(last_char) == 0 ? (last_char - 'a' + 1 ) : (last_char - '1' + 1);
+
+    /* MY SYS TYPE */
+
+    sprintf(fname, "%s/%s", getenv(IV_HOME), ASSOCONF_FILE);
+
+    char syscmd[1024] = {0,}; // system()
+    char res_str[1024] = {0,}; // --> result
+
+    sprintf(syscmd, "grep %s %s | awk '{print $3}'", getenv(MY_SYS_NAME), fname);
+
+    FILE *ptr_syscmd = popen(syscmd, "r");
+    if (ptr_syscmd == NULL) {
+        fprintf(stderr, "{{{DBG}}} %s() fail to run syscmd [%s]\n", __func__, syscmd);
+        return (-1);
+    }
+
+    char *result = fgets(res_str, 1024, ptr_syscmd);
+    if (result == NULL || strlen(res_str) == 0) {
+        fprintf(stderr, "{{{DBG}}} %s() fail to find [MY_SYS_NAME:%s] from file [%s]\n", 
+                __func__, getenv(MY_SYS_NAME), fname);
+        pclose(ptr_syscmd);
+        return (-1);
+    }
+    res_str[strlen(res_str) -1] = '\0'; // remove newline
+    pclose(ptr_syscmd);
+
+    sprintf(my_info->mySysType, res_str);
+
+    /* TEST LOG */
+
+    fprintf(stderr, "TEST| %s %s %s %d\n",
             my_info->mySysName,
             my_info->myProcName,
             my_info->mySysType,
-            my_info->mySvrId);
+            my_info->myLabelNum);
 
-	my_info->myLabelNum = get_sys_label_num();
+    return 0;
 }
 
 void node_assoc_release(assoc_t *node_elem)
@@ -565,14 +583,89 @@ int nf_get_allowd_plmns(json_object *nf_profile, nf_comm_plmn *allowdPlmns)
 /*
  * statistics
  */
-void NRF_STAT_INC(nrf_stat_t *NRF_STAT, int operation, int category)
+GNode *NRF_STAT_ADD_CHILD(GNode *ROOT_STAT, char *hostname)
 {
+    nrf_stat_t *stat_newhost = malloc(sizeof(nrf_stat_t));
+    memset(stat_newhost, 0x00, sizeof(nrf_stat_t));
+    sprintf(stat_newhost->hostname, hostname);
+
+    GNode *new_node =  g_node_new(stat_newhost);
+
+    g_node_append(ROOT_STAT, new_node);
+
+    return new_node;
+}
+
+GNode *NRF_STAT_ADD_CHILD_POS(GNode *ROOT_NODE, GNode *SIBLING, char *hostname, int pre_or_append)
+{
+    nrf_stat_t *stat_newhost = malloc(sizeof(nrf_stat_t));
+    memset(stat_newhost, 0x00, sizeof(nrf_stat_t));
+    sprintf(stat_newhost->hostname, hostname);
+
+    GNode *new_node =  g_node_new(stat_newhost);
+
+    if (pre_or_append < 0)
+        g_node_insert_before(ROOT_NODE, SIBLING, new_node);
+    else if (pre_or_append > 0)
+        g_node_insert_after(ROOT_NODE, SIBLING, new_node);
+
+    return new_node;
+}
+
+GNode *NRF_STAT_FIND_CHILD(GNode *ROOT_STAT, char *hostname, int *compare_res)
+{
+    unsigned int child_num = g_node_n_children(ROOT_STAT);
+    int low = 0;
+    int high = (child_num - 1);
+    int nth = 0;
+    *compare_res = 0;
+
+    while (low <= high) {
+        nth = (low + high) / 2;
+        GNode *nth_child = g_node_nth_child(ROOT_STAT, nth);
+        nrf_stat_t *stat_host = (nrf_stat_t *)nth_child->data;
+
+        *compare_res = strcmp(hostname, stat_host->hostname);
+
+        if (*compare_res == 0) {
+            return nth_child;
+        } else if (*compare_res > 0) {
+            high = nth - 1;
+        } else {
+            low = nth + 1;
+        }
+    }
+
+    return NULL;
+}
+
+void NRF_STAT_INC(GNode *ROOT_STAT, char *hostname, int operation, int category)
+{
+    if (hostname == NULL)
+        return;
 	if (operation < 0 || operation >= NRFS_OP_MAX)
 		return;
 	if (category < 0 || category >= NRFS_CATE_MAX)
 		return;
 
-	NRF_STAT->stat_count[operation][category]++;
+    if (g_node_n_children(ROOT_STAT) == 0) { // if no child, create one
+        GNode *new_node = NRF_STAT_ADD_CHILD(ROOT_STAT, hostname);
+        nrf_stat_t *new_stat_host = (nrf_stat_t *)new_node->data;
+        new_stat_host->stat_count[operation][category]++;
+        return;
+    } else {
+        int res = 0;
+        GNode *search_node = NRF_STAT_FIND_CHILD(ROOT_STAT, hostname, &res); // bsearch host
+
+        if (res == 0) { /* find */
+            nrf_stat_t *target_stat_host = (nrf_stat_t *)search_node->data;
+            target_stat_host->stat_count[operation][category]++; // searched
+        } else { // insert before or after by res
+            GNode *new_node = NRF_STAT_ADD_CHILD_POS(ROOT_STAT, search_node, hostname, res);
+            nrf_stat_t *new_stat_host = (nrf_stat_t *)new_node->data;
+            new_stat_host->stat_count[operation][category]++;
+        }
+    }
 
 	return;
 }
@@ -597,9 +690,35 @@ char *nrf_stat_cate_str[] = {
     "NRFS_CATE_MAX"
 };
 
-void nrf_stat_function(int ixpcQid, IxpcQMsgType *rxIxpcMsg, int event_code, nrf_stat_t *NRF_STAT)
+void stat_cnvt_5geir_nrfm(STM_CommonStatMsg *commStatItem, STM_NrfmStatistics_s *nrfm_stat)
+{
+    for (int k = 0; k < NRFS_CATE_MAX; k++) {
+        switch(k) {
+            case NRFS_ATTEMPT:
+                nrfm_stat->nrfs_attempt = commStatItem->ldata[k];
+                break;
+            case NRFS_SUCCESS:
+                nrfm_stat->nrfs_success = commStatItem->ldata[k];
+                break;
+            case NRFS_FAIL:
+                nrfm_stat->nrfs_fail = commStatItem->ldata[k];
+                break;
+            case NRFS_TIMEOUT:
+                nrfm_stat->nrfs_timeout = commStatItem->ldata[k];
+                break;
+            default:
+                break;
+        }
+    }
+}
+
+void nrf_stat_function(int ixpcQid, IxpcQMsgType *rxIxpcMsg, int event_code, GNode *ROOT_STAT)
 {
 	int len = sizeof(int), txLen = 0;
+#ifdef STAT_LEGACY
+    STM_NrfmStatisticMsgType stm_nrfm = {0,};
+    int stm_nrfm_row = 0;
+#endif
 
     APPLOG(APPLOG_ERR, "%s() recv MTYPE_STATISTICS_REQUEST from OMP", __func__);
 
@@ -620,30 +739,59 @@ void nrf_stat_function(int ixpcQid, IxpcQMsgType *rxIxpcMsg, int event_code, nrf
     strcpy(sxIxpcMsg->head.dstSysName, rxIxpcMsg->head.srcSysName);
     strcpy(sxIxpcMsg->head.dstAppName, rxIxpcMsg->head.srcAppName);
 
-	commStatMsg->num = NRFS_OP_MAX;
-	for (int i = 0; i < NRFS_OP_MAX; i++) {
-		commStatItem = &commStatMsg->info[i];
-		len += sizeof (STM_CommonStatMsg);
+    int host_num = g_node_n_children(ROOT_STAT);
+    APPLOG(APPLOG_ERR, "{{{DBG}}} in (%s) host_num is [%d]", __func__, host_num);
 
-		snprintf(commStatItem->strkey1, sizeof(commStatItem->strkey1), "%s", nrf_stat_op_str[i]);
+    for (int nth = 0; nth < host_num; nth++) {
+        GNode *select_node = g_node_nth_child(ROOT_STAT, nth);
+        nrf_stat_t *NRF_STAT = (nrf_stat_t *)select_node->data;
 
-		APPLOG(APPLOG_ERR, "[STAT OP : %s]", commStatItem->strkey1);
-		for (int k = 0; k < NRFS_CATE_MAX; k++) {
-			commStatItem->ldata[k] = NRF_STAT->stat_count[i][k];
-			APPLOG(APPLOG_ERR, "--cate %s, VAL %d", nrf_stat_cate_str[k], commStatItem->ldata[k]);
-		}
-	}
+        for (int i = 0; i < NRFS_OP_MAX; i++) {
+            commStatItem = &commStatMsg->info[i];
+            len += sizeof (STM_CommonStatMsg);
+
+            snprintf(commStatItem->strkey1, sizeof(commStatItem->strkey1), "%s", NRF_STAT->hostname);
+            snprintf(commStatItem->strkey2, sizeof(commStatItem->strkey2), "%s", nrf_stat_op_str[i]);
+
+            APPLOG(APPLOG_ERR, "[STAT OP : %s, %s]", commStatItem->strkey1, commStatItem->strkey2);
+            for (int k = 0; k < NRFS_CATE_MAX; k++) {
+                commStatItem->ldata[k] = NRF_STAT->stat_count[i][k];
+                APPLOG(APPLOG_ERR, "--cate %s, VAL %d", nrf_stat_cate_str[k], commStatItem->ldata[k]);
+            }
+#ifdef STAT_LEGACY
+            int curr_row = stm_nrfm_row++;
+            stm_nrfm.num = curr_row;
+            STM_NrfmStatistics_s *curr_nrfm_stat = &stm_nrfm.nrfmSTAT[curr_row];
+
+            sprintf(curr_nrfm_stat->hostname, NRF_STAT->hostname);
+            sprintf(curr_nrfm_stat->operation, nrf_stat_op_str[i]);
+            stat_cnvt_5geir_nrfm(commStatItem, curr_nrfm_stat);
+            len = sizeof(int) + (sizeof(STM_NrfmStatistics_s) * curr_row);
+#endif
+        }
+    }
+
+    /* remove nodes data */
+    for (int nth = host_num - 1; nth >= 0; nth--) {
+        GNode *select_node = g_node_nth_child(ROOT_STAT, nth);
+        nrf_stat_t *NRF_STAT = (nrf_stat_t *)select_node->data;
+        if (NRF_STAT != NULL) {
+            free(NRF_STAT);
+        }
+        g_node_destroy(select_node);
+    }
 
     sxIxpcMsg->head.segFlag = 0;
     sxIxpcMsg->head.seqNo++;
     sxIxpcMsg->head.bodyLen = len;
+#ifdef STAT_LEGACY
+    memcpy(sxIxpcMsg->body, &stm_nrfm, len);
+#endif
     txLen = sizeof(sxIxpcMsg->head) + sxIxpcMsg->head.bodyLen;
 
     if (msgsnd(ixpcQid, (void*)&sxGenQMsg, txLen, IPC_NOWAIT) < 0) {
         APPLOG(APPLOG_ERR, "DBG] nrfm status send fail IXPC qid[%d] err[%s]\n", ixpcQid, strerror(errno));
     }
-
-	memset(NRF_STAT, 0x00, sizeof(nrf_stat_t));
 
 	return;
 }

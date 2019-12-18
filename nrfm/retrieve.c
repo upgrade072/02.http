@@ -1,7 +1,6 @@
 #include <nrfm.h>
 
 extern main_ctx_t MAIN_CTX;
-extern nrf_stat_t NRF_STAT;
 
 void nf_retrieve_addnew_and_get_profile(main_ctx_t *MAIN_CTX, nf_retrieve_info_t *nf_retr_info, nf_retrieve_item_t *nf_add_item)
 {
@@ -82,8 +81,12 @@ void nf_retrieve_instance_create_pkt(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ah
 
 	sprintf(head->rsrcUri, "/nnrf-nfm/v1/nf-instances/%s", nf_item->nf_uuid);
 
+#if 0
 	/* destType */
 	sprintf(head->destType, "%s", "NRF");
+#else
+    nf_regi_restore_httpc_info(MAIN_CTX, head);
+#endif
 
     /* vheader */
     head->vheaderCnt = 2;
@@ -116,19 +119,19 @@ void nf_retrieve_instance_handle_resp_proc(AhifHttpCSMsgType *ahifPkt)
 
     switch (head->respCode) {
         case 200: // with nfProfile
-			NRF_STAT_INC(&NRF_STAT, NFProfileRetrieval, NRFS_SUCCESS);
+			NRF_STAT_INC(MAIN_CTX.NRF_STAT, head->destHost, NFProfileRetrieval, NRFS_SUCCESS);
 
 			nf_retrieve_save_recv_nf_profile(nf_item, ahifPkt);
             break;
 
 		case 403: // you don't have right to query that nf-type
 		case 500: // NRF have problem
-			NRF_STAT_INC(&NRF_STAT, NFProfileRetrieval, NRFS_FAIL);
+			NRF_STAT_INC(MAIN_CTX.NRF_STAT, head->destHost, NFProfileRetrieval, NRFS_FAIL);
 			nf_retrieve_item_retry_while_after(nf_item);
 			break;
 
         default:
-			NRF_STAT_INC(&NRF_STAT, NFProfileRetrieval, NRFS_FAIL);
+			NRF_STAT_INC(MAIN_CTX.NRF_STAT, head->destHost, NFProfileRetrieval, NRFS_FAIL);
 			nf_retrieve_item_retry_while_after(nf_item);
             break;
     }
@@ -149,9 +152,9 @@ void nf_retrieve_instances_list(nf_retrieve_info_t *nf_retr_info, main_ctx_t *MA
 
     size_t shmqlen = AHIF_APP_MSG_HEAD_LEN + AHIF_VHDR_LEN + ahifPkt->head.queryLen + ahifPkt->head.bodyLen;
 
-    int res = msgsnd(MAIN_CTX->my_qid.httpc_qid, msg, shmqlen, 0);
+    int res = msgsnd(MAIN_CTX->my_qid.httpc_qid, msg, shmqlen, IPC_NOWAIT);
 
-	NRF_STAT_INC(&NRF_STAT, NFListRetrieval, NRFS_ATTEMPT);
+	NRF_STAT_INC(MAIN_CTX->NRF_STAT, ahifPkt->head.destHost, NFListRetrieval, NRFS_ATTEMPT);
 
     if (res < 0) {
         APPLOG(APPLOG_ERR, "{{{DBG}}} %s called, res (%d:fail), will retry {httpc_qid:%d}",
@@ -251,8 +254,12 @@ void nf_retrieve_list_create_pkt(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ahifPk
 
 	sprintf(head->rsrcUri, "/nnrf-nfm/v1/nf-instances?nf-type%%3D%s%%26limit%%3D%d", nf_retr_info->nf_type, nf_retr_info->limit);
 
+#if 0
 	/* destType */
 	sprintf(head->destType, "%s", "NRF");
+#else
+    nf_regi_restore_httpc_info(MAIN_CTX, head);
+#endif
 
     /* vheader */
     head->vheaderCnt = 2;
@@ -287,7 +294,7 @@ void nf_retrieve_list_handle_resp_proc(AhifHttpCSMsgType *ahifPkt)
 
     switch (head->respCode) {
         case 200: // with nfProfile
-			NRF_STAT_INC(&NRF_STAT, NFListRetrieval, NRFS_SUCCESS);
+			NRF_STAT_INC(MAIN_CTX.NRF_STAT, head->destHost, NFListRetrieval, NRFS_SUCCESS);
 
 			nf_retrieve_item_num = nf_retrieve_save_response(nf_retr_info, ahifPkt);
 
@@ -303,12 +310,12 @@ void nf_retrieve_list_handle_resp_proc(AhifHttpCSMsgType *ahifPkt)
 		case 400: // request query param is wrong
 		case 403: // you don't have right to query that nf-type
 		case 500: // NRF have problem
-			NRF_STAT_INC(&NRF_STAT, NFListRetrieval, NRFS_FAIL);
+			NRF_STAT_INC(MAIN_CTX.NRF_STAT, head->destHost, NFListRetrieval, NRFS_FAIL);
 			nf_retrieve_list_retry_while_after(nf_retr_info);
 			break;
 
         default:
-			NRF_STAT_INC(&NRF_STAT, NFListRetrieval, NRFS_FAIL);
+			NRF_STAT_INC(MAIN_CTX.NRF_STAT, head->destHost, NFListRetrieval, NRFS_FAIL);
 			nf_retrieve_list_retry_while_after(nf_retr_info);
             break;
     }
@@ -495,9 +502,9 @@ void nf_retrieve_single_instance(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_it
 
     size_t shmqlen = AHIF_APP_MSG_HEAD_LEN + AHIF_VHDR_LEN + ahifPkt->head.queryLen + ahifPkt->head.bodyLen;
 
-    int res = msgsnd(MAIN_CTX->my_qid.httpc_qid, msg, shmqlen, 0);
+    int res = msgsnd(MAIN_CTX->my_qid.httpc_qid, msg, shmqlen, IPC_NOWAIT);
 
-	NRF_STAT_INC(&NRF_STAT, NFProfileRetrieval, NRFS_ATTEMPT);
+	NRF_STAT_INC(MAIN_CTX->NRF_STAT, ahifPkt->head.destHost, NFProfileRetrieval, NRFS_ATTEMPT);
 
     if (res < 0) {
         APPLOG(APPLOG_ERR, "{{{DBG}}} %s called, res (%d:fail), will retry {httpc_qid:%d}",

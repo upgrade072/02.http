@@ -1,35 +1,5 @@
 #include "server.h"
 
-#define CF_SERVER_CONF      "server.cfg"
-#define CF_LOG_LEVEL	    "server_cfg.sys_config.log_level"
-#define CF_DEBUG_MODE	    "server_cfg.sys_config.debug_mode"
-#define CF_WORKER_SHMKEY    "server_cfg.sys_config.worker_shmkey_base"
-#define CF_TLS_LISTEN_PORT  "server_cfg.http_config.listen_port_tls"
-#define CF_TCP_LISTEN_PORT  "server_cfg.http_config.listen_port_tcp"
-#define CF_MAX_WORKER_NUM   "server_cfg.http_config.worker_num"
-#define CF_TIMEOUT_SEC      "server_cfg.http_config.timeout_sec"
-#define CF_PING_INTERVAL    "server_cfg.http_config.ping_interval"
-#define CF_PING_TIMEOUT     "server_cfg.http_config.ping_timeout"
-#define CF_PING_EVENT_MS    "server_cfg.http_config.ping_event_ms"
-#define CF_PING_EVENT_CODE  "server_cfg.http_config.ping_event_code"
-#define CF_CERT_EVENT_CODE  "server_cfg.http_config.cert_event_code"
-#define CF_DEF_OVLD_LIMIT   "server_cfg.http_config.def_ovld_limit"
-#define CF_OVLD_EVENT_CODE  "server_cfg.http_config.ovld_event_code"
-#define CF_HTTP_OPT_HDR_TABLE_SIZE	"server_cfg.http_option.setting_header_table_size"
-
-#define CF_PKT_LOG		    "server_cfg.http_config.pkt_log"
-#define CF_CERT_FILE        "server_cfg.oauth_config.cert_file"
-#define CF_KEY_FILE         "server_cfg.oauth_config.key_file"
-#define CF_CREDENTIAL       "server_cfg.oauth_config.credential"
-#define CF_UUID_FILE        "server_cfg.oauth_config.uuid_file"
-#define CF_LB_CONFIG        "server_cfg.lb_config"
-#define CF_DRELAY_CONFIG	"server_cfg.direct_relay"
-#define CF_DRELAY_ENABLE	"server_cfg.direct_relay.enable"
-#define CF_CALLBACK_IP		"server_cfg.direct_relay.callback_ip"
-#define CF_CALLBACK_TLS_PORT	"server_cfg.direct_relay.callback_port_tls"
-#define CF_CALLBACK_TCP_PORT	"server_cfg.direct_relay.callback_port_tcp"
-#define CF_ALLOW_LIST		"allow_list"
-
 extern server_conf SERVER_CONF;
 extern allow_list_t  ALLOW_LIST[MAX_LIST_NUM];
 extern thrd_context THRD_WORKER[MAX_THRD_NUM];
@@ -44,16 +14,12 @@ int init_cfg()
     config_init(&CFG);
     
     /* config path */
-#ifndef TEST 
     char *env;
     if ((env = getenv(IV_HOME)) == NULL) {
         sprintf(CONFIG_PATH, "./%s",  CF_SERVER_CONF);
     } else {
         sprintf(CONFIG_PATH, "%s/data/%s", env, CF_SERVER_CONF);
     }
-#else
-    sprintf(CONFIG_PATH, "./%s", CF_SERVER_CONF);
-#endif
     
     /* read config file */
     if (!config_read_file(&CFG, CONFIG_PATH)) {
@@ -358,6 +324,30 @@ int config_load()
         APPLOG(APPLOG_ERR, "{{{CFG}}} ovld_event_code is [%d]", SERVER_CONF.ovld_event_code);
     }
 
+	/* allow any client */
+	int allow_any_client = 0;
+	if (config_lookup_int(&CFG, CF_ALLOW_ANY_CLIENT, &allow_any_client) == CONFIG_FALSE) {
+		APPLOG(APPLOG_ERR, "{{{CFG}}} allow_any_client cfg not exist!");
+		goto CF_LOAD_ERR;
+	} else {
+        if (allow_any_client <= 0) {
+            APPLOG(APPLOG_ERR, "{{{CFG}}} allow_any_client[%d] is lower than 0 it means no event!", allow_any_client);
+        }
+        SERVER_CONF.allow_any_client = allow_any_client;
+        APPLOG(APPLOG_ERR, "{{{CFG}}} allow_any_client is [%d]", SERVER_CONF.allow_any_client);
+    }
+
+	/* any client default max */
+	int any_client_default_max = 0;
+    if (config_lookup_int(&CFG, CF_ANY_CLIENT_DEFAULT_MAX, &any_client_default_max) == CONFIG_FALSE ||
+            any_client_default_max < 0) {
+		APPLOG(APPLOG_ERR, "{{{CFG}}} any_client_default_max cfg not exist! or wrong value[%d]", any_client_default_max);
+		goto CF_LOAD_ERR;
+	} else {
+        SERVER_CONF.any_client_default_max = any_client_default_max;
+        APPLOG(APPLOG_ERR, "{{{CFG}}} any_client_default_max is [%d]", SERVER_CONF.any_client_default_max);
+    }
+
     /* pkt_log enable */
     int pkt_log = 0;
     if (config_lookup_int(&CFG, CF_PKT_LOG, &pkt_log) == CONFIG_FALSE) {
@@ -383,11 +373,7 @@ int config_load()
 		APPLOG(APPLOG_ERR, "{{{CFG}}} cert file cfg not exist!");
         goto CF_LOAD_ERR;
     } else {
-#ifndef TEST
 		sprintf(SERVER_CONF.cert_file, "%s/data/%s", getenv(IV_HOME), str);
-#else
-		sprintf(SERVER_CONF.cert_file, "%s", str);
-#endif
 		if (access(SERVER_CONF.cert_file, F_OK) < 0) {
 			APPLOG(APPLOG_ERR, "{{{CFG}}} cert file[%s] is not exist!", SERVER_CONF.cert_file);
 			goto CF_LOAD_ERR;
@@ -400,11 +386,7 @@ int config_load()
 		APPLOG(APPLOG_ERR, "{{{CFG}}} key file cfg not exist!");
         goto CF_LOAD_ERR;
     } else {
-#ifndef TEST
 		sprintf(SERVER_CONF.key_file, "%s/data/%s", getenv(IV_HOME), str);
-#else
-		sprintf(SERVER_CONF.key_file, "%s", str);
-#endif
 		if (access(SERVER_CONF.key_file, F_OK) < 0) {
 			APPLOG(APPLOG_ERR, "{{{CFG}}} key file[%s] is not exist!", SERVER_CONF.key_file);
 			goto CF_LOAD_ERR;
@@ -421,7 +403,6 @@ int config_load()
         APPLOG(APPLOG_ERR, "{{{CFG}}} lb config loading success");
     }
 
-#ifdef OAUTH
 	/* oauth 2.0 secret key */
 	if (config_lookup_string(&CFG, CF_CREDENTIAL, &str) == CONFIG_FALSE) {
 		APPLOG(APPLOG_ERR, "{{{CFG}}} oauth2.0 credential not exist!");
@@ -431,6 +412,7 @@ int config_load()
 		APPLOG(APPLOG_ERR, "{{{CFG}}} oauth2.0 credential is [%s]", SERVER_CONF.credential);
 	}
 
+#if 0
 	/* oauth 2.0 for my UUID */
 	if (config_lookup_string(&CFG, CF_UUID_FILE, &str) == CONFIG_FALSE) {
 		APPLOG(APPLOG_ERR, "{{{CFG}}} oauth2.0 uuidfile not exist!");
@@ -502,11 +484,10 @@ int config_load()
 					continue;
 				if (config_setting_lookup_string (item, "act", &act) == CONFIG_FALSE)
 					continue;
-#ifdef OAUTH
+
 				int auth_act = 0;
 				if (config_setting_lookup_int (item, "auth_act", &auth_act) == CONFIG_FALSE)
 					continue;
-#endif
 
 				int ovld_limit = 0;
 				if (config_setting_lookup_int (item, "ovld_limit", &ovld_limit) == CONFIG_FALSE)
@@ -543,9 +524,7 @@ int config_load()
 					ALLOW_LIST[index].act = 0;
 				}
                 ALLOW_LIST[index].max = max;
-#ifdef OAUTH
                 ALLOW_LIST[index].auth_act = auth_act;
-#endif
 				ALLOW_LIST[index].limit_tps = ovld_limit;
                 ALLOW_LIST[index].curr = 0;
 			}
@@ -621,7 +600,7 @@ CF_ADD_CLI_HOSTNAME_ERR:
     return (-1);
 }
 
-int addcfg_client_ipaddr(int id, char *ipaddr, int max)
+int addcfg_client_ipaddr(int id, char *ipaddr, int max, int auth_act)
 {
     config_setting_t *setting;
 
@@ -660,14 +639,14 @@ int addcfg_client_ipaddr(int id, char *ipaddr, int max)
 		/* first insert, delete null row */
 		if (!list_count) {
 			for (i = 1; i < MAX_LIST_NUM; i++) {
-				if (ALLOW_LIST[i].used == 1 && ALLOW_LIST[i].list_index == list_index) {
+				if (ALLOW_LIST[i].used == 1 && ALLOW_LIST[i].list_index == list_index && ALLOW_LIST[i].auto_added == 0) {
 					memset(&ALLOW_LIST[i], 0x00, sizeof(allow_list_t));
 				}
 			}
 		/* not first insert, check duplicate row */ 
 		} else {
 			for (i = 1; i < MAX_LIST_NUM; i++) {
-				if (ALLOW_LIST[i].used == 1 && ALLOW_LIST[i].list_index == list_index) {
+				if (ALLOW_LIST[i].used == 1 && ALLOW_LIST[i].list_index == list_index && ALLOW_LIST[i].auto_added == 0) {
 					if (!strcmp(ALLOW_LIST[i].ip, ipaddr))
 						goto CF_ADD_CLI_IPADDR_ERR;
 				}
@@ -684,7 +663,7 @@ int addcfg_client_ipaddr(int id, char *ipaddr, int max)
 		val = config_setting_add(item, "act", CONFIG_TYPE_STRING);
 		config_setting_set_string(val, "DACT");
 		val = config_setting_add(item, "auth_act", CONFIG_TYPE_INT);
-		config_setting_set_int(val, 0);
+		config_setting_set_int(val, auth_act);
 		val = config_setting_add(item, "ovld_limit", CONFIG_TYPE_INT);
 		config_setting_set_int(val, SERVER_CONF.def_ovld_limit);
 
@@ -700,6 +679,7 @@ int addcfg_client_ipaddr(int id, char *ipaddr, int max)
 				ALLOW_LIST[i].act = 0;
 				ALLOW_LIST[i].max = max;
 				ALLOW_LIST[i].curr = 0;
+				ALLOW_LIST[i].auth_act = auth_act;
 				break;
 			}
 		}
@@ -724,7 +704,7 @@ int actcfg_http_client(int id, int ip_exist, char *ipaddr, int change_to_act)
     } else {
         config_setting_t *group;
         config_setting_t *list;
-        int list_count, list_index, item_index, i, j;
+        int list_count, list_index, item_index, i;
 		int found = 0;
 
 		/* if id param receive, but not exist */
@@ -783,10 +763,10 @@ int actcfg_http_client(int id, int ip_exist, char *ipaddr, int change_to_act)
 			if (ALLOW_LIST[i].used == 0) 
 				continue;
 			if (ip_exist > 0)  {
-				if (ALLOW_LIST[i].list_index != list_index || ALLOW_LIST[i].item_index != item_index)
+				if (ALLOW_LIST[i].list_index != list_index || ALLOW_LIST[i].item_index != item_index || ALLOW_LIST[i].auto_added == 1)
 					continue;
 			} else {
-				if (ALLOW_LIST[i].list_index != list_index)
+				if (ALLOW_LIST[i].list_index != list_index || ALLOW_LIST[i].auto_added == 1)
 					continue;
 			}
 			/* act */
@@ -794,24 +774,7 @@ int actcfg_http_client(int id, int ip_exist, char *ipaddr, int change_to_act)
 				ALLOW_LIST[i].act = 1;
 			} else {
 				ALLOW_LIST[i].act = 0;
-				intl_req_t intl_req;
-				int thrd_idx;
-				for (j = 0; j < MAX_LIST_NUM; j++) {
-					if (ALLOW_LIST[i].client[j].occupied != 1)
-						continue;
-					APPLOG(APPLOG_DEBUG, "%s() delete thrd %d sess %d",
-							__func__,
-							ALLOW_LIST[i].client[j].thrd_idx, 
-							ALLOW_LIST[i].client[j].sess_idx);
-					thrd_idx = ALLOW_LIST[i].client[j].thrd_idx;
-					set_intl_req_msg(&intl_req, ALLOW_LIST[i].client[j].thrd_idx, 0,
-							ALLOW_LIST[i].client[j].sess_idx, ALLOW_LIST[i].client[j].session_id, 0, HTTP_INTL_SESSION_DEL);
-					if (-1 == msgsnd(THRD_WORKER[thrd_idx].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0)) {
-						APPLOG(APPLOG_ERR, "%s() msg snd fail!!! (msgq_idx %ld thrd_idx %d session_idx %d)",
-								__func__, intl_req.msgq_index, intl_req.tag.thrd_index, intl_req.tag.session_index);
-						continue;
-					}
-				}
+                disconnect_all_client_in_allow_list(&ALLOW_LIST[i]);
 			}
 		}
 	}
@@ -907,7 +870,7 @@ int chgcfg_client_max_cnt_with_auth_act_and_limit(int id, char *ipaddr, int max,
 			if (ALLOW_LIST[i].used == 0) 
 				continue;
 			if (ALLOW_LIST[i].list_index == list_index
-					&& ALLOW_LIST[i].item_index == item_index) {
+					&& ALLOW_LIST[i].item_index == item_index && ALLOW_LIST[i].auto_added == 0) {
 				ALLOW_LIST[i].max = max;
 				ALLOW_LIST[i].auth_act = auth_act;
 				ALLOW_LIST[i].limit_tps = limit;
@@ -984,7 +947,7 @@ int delcfg_client_ipaddr(int id, char *ipaddr)
 			if (ALLOW_LIST[i].used == 0) 
 				continue;
 			if (ALLOW_LIST[i].list_index == list_index
-					&& ALLOW_LIST[i].item_index == item_index) {
+					&& ALLOW_LIST[i].item_index == item_index && ALLOW_LIST[i].auto_added == 0) {
 				memset(&ALLOW_LIST[i], 0x00, sizeof(allow_list_t));
 			}
 		}
@@ -1006,6 +969,7 @@ int delcfg_client_ipaddr(int id, char *ipaddr)
 					ALLOW_LIST[i].act = 0;
 					ALLOW_LIST[i].max = 0;
 					ALLOW_LIST[i].curr = 0;
+                    ALLOW_LIST[i].auto_added = 0;
 					break;
 				}
 			}
@@ -1056,7 +1020,7 @@ int delcfg_client_hostname(int id)
         for (i = 0; i < MAX_LIST_NUM; i++) {
             if (ALLOW_LIST[i].used == 0)
                 continue;
-            if (ALLOW_LIST[i].list_index == list_index) {
+            if (ALLOW_LIST[i].list_index == list_index && ALLOW_LIST[i].auto_added == 0) {
                 memset(&ALLOW_LIST[i], 0x00, sizeof(allow_list_t));
             }
         }

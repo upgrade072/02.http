@@ -19,7 +19,6 @@ void isifc_create_pkt_for_status(IsifMsgType *txIsifMsg, service_info_t *fep_svc
 
     /* Set Source Info */
 	/* schlee, only use for set (a:b:c = 1 set) */
-    //txIsifMsg->head.srcSysSetID = atoi(my_info->mySvrId);
     sprintf(txIsifMsg->head.srcSysType, "%s", my_info->mySysType);
     sprintf(txIsifMsg->head.srcSysName, "%s", my_info->mySysName);
     sprintf(txIsifMsg->head.srcAppName, "%s", my_info->myProcName);

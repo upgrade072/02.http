@@ -1,7 +1,6 @@
 #include <nrfm.h>
 
 extern main_ctx_t MAIN_CTX;
-extern nrf_stat_t NRF_STAT;
 
 void nf_token_acquire_token(main_ctx_t *MAIN_CTX, acc_token_info_t *token_info)
 {
@@ -18,9 +17,9 @@ void nf_token_acquire_token(main_ctx_t *MAIN_CTX, acc_token_info_t *token_info)
 
     size_t shmqlen = AHIF_APP_MSG_HEAD_LEN + AHIF_VHDR_LEN + ahifPkt->head.queryLen + ahifPkt->head.bodyLen;
 
-    int res = msgsnd(MAIN_CTX->my_qid.httpc_qid, msg, shmqlen, 0);
+    int res = msgsnd(MAIN_CTX->my_qid.httpc_qid, msg, shmqlen, IPC_NOWAIT);
 
-	NRF_STAT_INC(&NRF_STAT, AccessToken, NRFS_ATTEMPT);
+	NRF_STAT_INC(MAIN_CTX->NRF_STAT, ahifPkt->head.destHost, AccessToken, NRFS_ATTEMPT);
 
     if (res < 0) {
         /* CHECK !!! after 1 sec will auto retry */
@@ -57,12 +56,12 @@ void nf_token_acquire_handlde_resp_proc(AhifHttpCSMsgType *ahifPkt)
 
 	switch (head->respCode) {
 		case 200:
-			NRF_STAT_INC(&NRF_STAT, AccessToken, NRFS_SUCCESS);
+			NRF_STAT_INC(MAIN_CTX.NRF_STAT, head->destHost, AccessToken, NRFS_SUCCESS);
 			nf_token_update_shm_process(&MAIN_CTX, token_request, ahifPkt);
 			break;
 
 		default:
-			NRF_STAT_INC(&NRF_STAT, AccessToken, NRFS_FAIL);
+			NRF_STAT_INC(MAIN_CTX.NRF_STAT, head->destHost, AccessToken, NRFS_FAIL);
 			nf_token_handle_resp_nok(&MAIN_CTX, token_request);
 			break;
 	}
@@ -158,16 +157,20 @@ int nf_token_check_expires_in(long double timeval)
 {
 	time_t expire_time = timeval;
 	time_t current_time = time(NULL);
+    char expire_str[1024] = {0,};
+    char current_str[1024] = {0,};
+    sprintf(expire_str, "%.24s", ctime(&expire_time));
+    sprintf(current_str, "%.24s", ctime(&current_time));
 
 	if (expire_time <= current_time) {
-		APPLOG(APPLOG_ERR, "{{{DBG}}} %s expires_in:%.19s invalid (curr_tm:%.19s)",  
-				__func__,  ctime(&expire_time), ctime(&current_time));
+		APPLOG(APPLOG_ERR, "{{{DBG}}} %s expires_in:%.24s invalid (curr_tm:%.24s)",  
+				__func__,  expire_str, current_str);
 		return -1;
 	} else {
-		APPLOG(APPLOG_ERR, "{{{DBG}}} %s expires_in:(%ld:%.19s) valid curr_tm:(%ld:%.19s)",  
-				__func__,  expire_time, ctime(&expire_time), current_time, ctime(&current_time));
+		APPLOG(APPLOG_ERR, "{{{DBG}}} %s expires_in:(%ld:%.24s) valid curr_tm:(%ld:%.24s)",  
+				__func__,  expire_time, expire_str, current_time, current_str);
+        return 0;
 	}
-	return 0;
 }
 
 token_ctx_list_t *nf_token_create_ctx(main_ctx_t *MAIN_CTX, acc_token_info_t *token_info)
@@ -222,8 +225,12 @@ void nf_token_create_pkt(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ahifPkt, acc_t
 
 	sprintf(head->rsrcUri, "/nnrf-nfm/v1/oauth2/token");
 
+#if 0
 	/* destType */
 	sprintf(head->destType, "%s", "NRF");
+#else
+    nf_regi_restore_httpc_info(MAIN_CTX, head);
+#endif
 
 	/* vheader */
 	head->vheaderCnt = 1;

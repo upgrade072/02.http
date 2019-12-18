@@ -1,22 +1,5 @@
 #include "client.h"
 
-#define CF_CLIENT_CONF		"client.cfg"
-#define CF_LOG_LEVEL		"client_cfg.sys_config.log_level"
-#define CF_DEBUG_MODE		"client_cfg.sys_config.debug_mode"
-#define CF_WORKER_SHMKEY	"client_cfg.sys_config.worker_shmkey_base"
-#define CF_HTTPC_SHMKEY  	"client_cfg.sys_config.httpc_status_shmkey"
-#define CF_MAX_WORKER_NUM	"client_cfg.http_config.worker_num"
-#define CF_TIMEOUT_SEC	    "client_cfg.http_config.timeout_sec"
-#define CF_PING_INTERVAL	"client_cfg.http_config.ping_interval"
-#define CF_PING_TIMEOUT	    "client_cfg.http_config.ping_timeout"
-#define CF_PING_EVENT_MS	"client_cfg.http_config.ping_event_ms"
-#define CF_PING_EVENT_CODE	"client_cfg.http_config.ping_event_code"
-#define CF_PKT_LOG		    "client_cfg.http_config.pkt_log"
-#define CF_LB_CONFIG		"client_cfg.lb_config"
-#define CF_CONNECT_LIST		"connect_list"
-#define CF_HTTP_OPT_HDR_TABLE_SIZE	"client_cfg.http_option.setting_header_table_size"
-#define CF_HTTP_PREPARE_STREAM_ID	"client_cfg.http_option.prepare_close_stream_limit"
-
 extern client_conf_t CLIENT_CONF;
 extern conn_list_t CONN_LIST[MAX_SVR_NUM];
 thrd_context_t THRD_WORKER[MAX_THRD_NUM];
@@ -33,16 +16,12 @@ int init_cfg()
     config_init(&CFG);
 
     /* config path */
-#ifndef TEST
 	char *env = NULL;
     if ((env = getenv(IV_HOME)) == NULL) {
         sprintf(CONFIG_PATH, "./%s",  CF_CLIENT_CONF);
     } else {
         sprintf(CONFIG_PATH, "%s/data/%s", env, CF_CLIENT_CONF);
     }
-#else
-	sprintf(CONFIG_PATH, "./%s", CF_CLIENT_CONF);
-#endif
 
     /* read config file */
     if (!config_read_file(&CFG, CONFIG_PATH)) {
@@ -134,16 +113,6 @@ int config_load()
     } else {
         CLIENT_CONF.worker_shmkey = worker_shmkey;
         APPLOG(APPLOG_ERR, "{{{CFG}}} worker shmkey is [0x%x]", CLIENT_CONF.worker_shmkey);
-    }
-
-    /* httpc status shmkey */
-    int httpc_status_shmkey;
-    if (config_lookup_int(&CFG, CF_HTTPC_SHMKEY, &httpc_status_shmkey) == CONFIG_FALSE) {
-        APPLOG(APPLOG_ERR, "{{{CFG}}} httpc status shmkey cfg not exist!");
-        goto CF_LOAD_ERR;
-    } else {
-        CLIENT_CONF.httpc_status_shmkey = httpc_status_shmkey;
-        APPLOG(APPLOG_ERR, "{{{CFG}}} httpc status shmkey is [0x%x]", CLIENT_CONF.httpc_status_shmkey);
     }
 
     /* timeout sec */
@@ -322,11 +291,12 @@ int config_load()
 					continue;
 				if (config_setting_lookup_string (item, "act", &act) == CONFIG_FALSE)
 					continue;
-#ifdef OAUTH
+
+                /* oauth 2.0 */
 				int token_id = 0;
 				if (config_setting_lookup_int (item, "token_id", &token_id) == CONFIG_FALSE)
 					continue;
-#endif
+
 				if (inet_pton(AF_INET, ip, &(sa.sin_addr)))  {
 				} else if (inet_pton(AF_INET6, ip, &(sa6.sin6_addr))) {
 				} else {
@@ -337,11 +307,7 @@ int config_load()
 				if (cnt <= 0 || cnt > HTTP_MAX_CONN) continue;
 				if (!strcmp(act, "ACT") &&!strcmp(act, "DACT")) continue;
 
-#ifdef OAUTH
 				APPLOG(APPLOG_ERR, "%3d) %-46s %-6d (x %-3d) %-5s %-5s %-5s %-5d", j, ip, port, cnt, act, scheme, type, token_id);
-#else
-				APPLOG(APPLOG_ERR, "%3d) %-46s %-6d (x %-3d) %-5s %-5s %-5s", j, ip, port, cnt, act, scheme, type);
-#endif
 
 				item_index = new_item(list_index, ip, port);
 
@@ -367,11 +333,7 @@ int config_load()
 					} else {
 						CONN_LIST[index].act = 0;
 					}
-#ifdef OAUTH
-						CONN_LIST[index].token_id = token_id;
-#else
-						CONN_LIST[index].token_id = 0;
-#endif
+                    CONN_LIST[index].token_id = token_id;
 				}
 			}
 		}
@@ -636,7 +598,7 @@ int actcfg_http_server(int id, int ip_exist, char *ipaddr, int port, int change_
 				set_intl_req_msg(&intl_req, CONN_LIST[i].thrd_index, 0, 
 						CONN_LIST[i].session_index, CONN_LIST[i].session_id, 0,  HTTP_INTL_SESSION_DEL);
 
-				if (-1 == msgsnd(THRD_WORKER[thrd_idx].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0)) {
+				if (-1 == msgsnd(THRD_WORKER[thrd_idx].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), IPC_NOWAIT)) {
 					APPLOG(APPLOG_ERR, "%s() msgsnd fail!!! (msgq_idx %ld thrd_idx %d session_idx %d)",
 							__func__, intl_req.msgq_index, intl_req.tag.thrd_index, intl_req.tag.session_index);
 					continue;

@@ -186,6 +186,75 @@ tcp_ctx_t *get_loadshare_turn(https_ctx_t *https_ctx)
 	return NULL;
 }
 
+tcp_ctx_t *thread_conn_status(GNode *root_node, int pos)
+{
+    GNode *nth_thread = g_node_nth_child(root_node, pos);
+    if (nth_thread != NULL) {
+        tcp_ctx_t *tcp_ctx = (tcp_ctx_t *)nth_thread->data;
+        if (tcp_ctx != NULL && tcp_ctx->received_fep_status == HTTP_STA_CAUSE_SYS_ACTIVE) {
+            unsigned int sock_num = g_node_n_children(tcp_ctx->root_conn);
+            if (sock_num > 0) {
+                return tcp_ctx;
+            }
+        }
+    }
+    return NULL;
+}
+
+tcp_ctx_t *get_weight_balance_turn(https_ctx_t *https_ctx)
+{
+    // fep tx threads
+	GNode *root_node = LB_CTX.fep_tx_thrd;
+	unsigned int fep_num = g_node_n_children(root_node);
+	tcp_ctx_t *root_data = (tcp_ctx_t *)root_node->data;
+
+	if (fep_num == 0 || root_data == NULL) {
+        APPLOG(APPLOG_ERR, "%s():%d check some critical error!", __func__, __LINE__);
+	   	return NULL;
+	}
+
+    load_weight_t *weight = &THRD_WORKER[ https_ctx->thrd_idx % MAX_THRD_NUM].weight;
+
+    if (fep_num != SERVER_CONF.size) {
+        APPLOG(APPLOG_ERR, "%s():%d check some critical error!", __func__, __LINE__);
+        return NULL;
+    }
+    
+    int try_num = 0;
+    tcp_ctx_t *fep_tcp_ctx = NULL;
+ONE_MORE_TRY:
+    if (try_num++ > fep_num) {
+        return NULL;
+    }
+    if ((fep_tcp_ctx = thread_conn_status(root_node, weight->pointer)) == NULL) {
+        int find = 0;
+        weight->counter = 0;
+        for (int i = 0; i < SERVER_CONF.size; i++) {
+            int try_conn_pos = (weight->pointer + i) % fep_num;
+            if ((fep_tcp_ctx = thread_conn_status(root_node, try_conn_pos)) != NULL) {
+                weight->pointer = try_conn_pos;
+                find = 1;
+                break;
+            }
+            if (find == 0) {
+                APPLOG(APPLOG_DETAIL, "%s() giveup can't find any fep conn", __func__);
+                return NULL;
+            }
+        }
+    }
+    if (weight->counter < SERVER_CONF.weight[weight->pointer]) {
+        weight->counter++;
+        https_ctx->fep_tag = fep_tcp_ctx->fep_tag;
+        return fep_tcp_ctx;
+    } else {
+        weight->pointer = (weight->pointer + 1) % fep_num;
+        weight->counter = 0;
+        goto ONE_MORE_TRY;
+    }
+
+    return NULL;
+}
+
 tcp_ctx_t *get_direct_dest(https_ctx_t *https_ctx)
 {
 	GNode *root_node = LB_CTX.fep_tx_thrd;
@@ -242,23 +311,28 @@ int send_request_to_fep(https_ctx_t *https_ctx)
 {
 	tcp_ctx_t *fep_tcp_ctx = NULL;
 
-	// case 0. if direct relay ctx find direct sock
+    // 1) check avail with direct relay
 	if (https_ctx->is_direct_ctx) {
 		fep_tcp_ctx = get_direct_dest(https_ctx);
 	}
-	// case 0-1. if case 0 fail or ...
-	// case 1. if loadshare ctx find any of sock
+
+    // 2) check avail with weight balance
 	if (fep_tcp_ctx == NULL) {
-		fep_tcp_ctx = get_loadshare_turn(https_ctx);
+        fep_tcp_ctx = get_weight_balance_turn(https_ctx);
 	}
 
+    // 3) check avail with loadbalance
+    if (fep_tcp_ctx == NULL) {
+        fep_tcp_ctx = get_loadshare_turn(https_ctx);
+    }
+
+    // 3) check relay to fep or not
 	if (fep_tcp_ctx == NULL) {
-		// TODO !!! count this and log stat
 		return -1; // http error response
-	} else {
-		set_callback_tag(https_ctx, fep_tcp_ctx);
-		fep_tcp_ctx->tcp_stat.tps ++;
-	}
+    }
+
+    set_callback_tag(https_ctx, fep_tcp_ctx);
+    fep_tcp_ctx->tcp_stat.tps ++;
 
 	// this (worker) ctx will push to tcp queue, don't timeout this
 	https_ctx->tcp_wait = 1;
@@ -309,7 +383,7 @@ void send_to_worker(tcp_ctx_t *tcp_ctx, https_ctx_t *recv_ctx, int intl_msg_type
 	if (intl_msg_type == HTTP_INTL_SND_REQ)
 		assign_rcv_ctx_info(https_ctx, &recv_ctx->user_ctx);
 
-	if (msgsnd(THRD_WORKER[thrd_index].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0) == -1) {
+	if (msgsnd(THRD_WORKER[thrd_index].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), IPC_NOWAIT) == -1) {
 		APPLOG(APPLOG_ERR, "%s() internal msgsnd to worker [%d] failed!!!", __func__, thrd_index);
 		clear_and_free_ctx(https_ctx);
 		Free_CtxId(thrd_index, ctx_id);
@@ -504,6 +578,16 @@ void *fep_stat_thread(void *arg)
 }
 #endif
 
+void load_weight_balance_info(lb_global_t *lb_conf, server_conf *svr_conf)
+{
+    svr_conf->size = lb_conf->total_fep_num;
+
+    for (int i = 0; i < lb_conf->total_fep_num; i++) {
+        config_setting_t *item = config_setting_get_elem(lb_conf->cf_fep_weight_balance, i);
+        svr_conf->weight[i] = config_setting_get_int(item);
+    }
+}
+
 void load_lb_config(server_conf *svr_conf, lb_global_t *lb_conf)
 {
     config_setting_t *lb_config = svr_conf->lb_config;
@@ -520,21 +604,34 @@ void load_lb_config(server_conf *svr_conf, lb_global_t *lb_conf)
         APPLOG(APPLOG_ERR, "{{{CFG}}} fail to get lb_config.fep_tx_listen_port!");
         exit(0);
     }
+    setting = lb_conf->cf_fep_weight_balance = config_setting_get_member(lb_config, "fep_weight_balance");
+    if (setting == NULL) {
+        APPLOG(APPLOG_ERR, "{{{CFG}}} fail to get lb_config.fep_weight_balance!");
+        exit(0);
+    }
+
     /* check port num pair match, a == b == c == d */
-    if (config_setting_length(lb_conf->cf_fep_rx_listen_port) ==
-        config_setting_length(lb_conf->cf_fep_tx_listen_port)) {
+    if ((config_setting_length(lb_conf->cf_fep_rx_listen_port) ==
+        config_setting_length(lb_conf->cf_fep_tx_listen_port)) &&
+        (config_setting_length(lb_conf->cf_fep_tx_listen_port) ==
+        config_setting_length(lb_conf->cf_fep_weight_balance))) {
         printf_config_list_int("fep_rx_listen_port", lb_conf->cf_fep_rx_listen_port);
         printf_config_list_int("fep_tx_listen_port", lb_conf->cf_fep_tx_listen_port);
+        printf_config_list_int("fep_weight_balance", lb_conf->cf_fep_tx_listen_port);
     } else {
         APPLOG(APPLOG_ERR, "{{{CFG}}} fep tx|rx port num not match!");
         exit(0);
     }
+
     /* check fep num */
     lb_conf->total_fep_num = config_setting_length(lb_conf->cf_fep_rx_listen_port);
     if (lb_conf->total_fep_num >= MAX_THRD_NUM) {
         APPLOG(APPLOG_ERR, "{{{CFG}}} total_fep_num(%d) exceed max_thrd_num(%d)!",
                 lb_conf->total_fep_num, MAX_THRD_NUM);
     }
+
+    /* implant weight balance info */
+    load_weight_balance_info(lb_conf, svr_conf);
 
     /* get context num for fep */
     if (config_setting_lookup_int(lb_config, "context_num", &lb_conf->context_num) == CONFIG_FALSE) {
@@ -632,7 +729,7 @@ void send_fep_conn_status(evutil_socket_t fd, short what, void *arg)
 	msg.mtype = (long)MSGID_HTTPS_NRFM_FEP_ALIVE_NOTI;
 
 	if (nrfmQid > 0 ) {
-		int res = msgsnd(nrfmQid, &msg, 0, 0);
+		int res = msgsnd(nrfmQid, &msg, 0, IPC_NOWAIT);
 		if (res < 0) {
 			APPLOG(APPLOG_DEBUG, "%s() fail to send status noti to NRFM", __func__);
 		}

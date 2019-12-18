@@ -1,6 +1,9 @@
 
 #include <restsvr.h>
 
+/* my proc name : restsvr1.cfg restsvr2.cfg */
+extern char *__progname;
+
 /* log */
 int logLevel = APPLOG_DEBUG;
 int *lOG_FLAG = &logLevel;
@@ -1195,7 +1198,11 @@ static void run()
 
 int init_cfg(config_t *CFG) 
 {   
+#if 0
     sprintf(CONF_PATH,"%s/data/restsvr.cfg", getenv("IV_HOME"));
+#else
+    sprintf(CONF_PATH,"%s/data/%s.cfg", getenv("IV_HOME"), __progname);
+#endif
     if (!config_read_file(CFG, CONF_PATH)) {
         APPLOG(APPLOG_ERR, "config read fail! (%s|%d - %s)",
                 config_error_file(CFG),
@@ -1245,12 +1252,16 @@ void directory_watch_action(const char *file_name)
 
 void initialize()
 {
-	keepalivelib_init("RESTSVR");
+    char myProcName[1024] = {0,};
+    sprintf(myProcName, __progname);
+    strupr(myProcName, strlen(myProcName));
+
+	keepalivelib_init(myProcName);
 
 #ifdef LOG_APP
     char log_path[1024] = {0,};
     sprintf(log_path, "%s/log", getenv(IV_HOME));
-    LogInit("RESTSVR", log_path);
+    LogInit(myProcName, log_path);
 #endif
 }
 

@@ -36,6 +36,9 @@
 
 /* for .cfg */
 #define CF_LOGLEVEL         "nrfc_cfg.sys_config.log_level"
+#define CF_SYS_DBG_MODE     "nrfc_cfg.sys_config.debug_mode"
+#define CF_ISIFCS_MODE      "nrfc_cfg.sys_config.isifcs_mode"
+#define CF_NFS_SHM_CREATE   "nrfc_cfg.sys_config.nfs_shm_create"
 #define CF_OVLDINFO         "nrfc_cfg.service_profile"
 
 typedef struct qid_info {
@@ -51,6 +54,8 @@ typedef struct fep_nfs_info {
 
 typedef struct sys_conf {
 	int debug_mode;
+    int isifcs_mode;
+    int nfs_shm_create;
 } sys_conf_t;
 
 typedef struct mml_conf {
@@ -124,7 +129,6 @@ void    start_loop(main_ctx_t *MAIN_CTX);
 void    shmq_recv_handle(evutil_socket_t fd, short what, void *arg);
 void    directory_watch_action(const char *file_name);
 void    start_watching_dir(struct event_base *evbase);
-
 
 /* ------------------------- command.c --------------------------- */
 void    init_cmd(main_ctx_t *MAIN_CTX);

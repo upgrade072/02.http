@@ -332,8 +332,20 @@ void send_to_remote(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx)
 	/* our config lib can't use www.aaa.com, modified name is www_aaa_com */
 	desthost_case_sensitive(recv_ctx);
 #endif
+    if (CLIENT_CONF.debug_mode == 1) {
+        APPLOG(APPLOG_ERR, "{{{DBG}}} searchDest try ahifPkt api=[%s] type=(%s) host=(%s) ip=(%s) port=(%d)",
+                recv_ctx->user_ctx.head.rsrcUri,
+                recv_ctx->user_ctx.head.destType,
+                recv_ctx->user_ctx.head.destHost,
+                recv_ctx->user_ctx.head.destIp,
+                recv_ctx->user_ctx.head.destPort);
+    }
 
 	if ((httpc_conn = find_packet_index(&tcp_ctx->root_select, &recv_ctx->user_ctx.head)) == NULL) {
+
+        /* something wrong */
+        trig_refresh_select_node(&CLIENT_CONF);
+
 		if (CLIENT_CONF.debug_mode == 1) {
 			APPLOG(APPLOG_ERR, "{{{DBG}}} searchDest fail ahifPkt api=[%s] type=(%s) host=(%s) ip=(%s) port=(%d)",
 					recv_ctx->user_ctx.head.rsrcUri,
@@ -715,7 +727,9 @@ int create_lb_thread()
 	// wait for thread created ((we use thread[evbase]))
 	sleep(1);
 
+#if 0 // not by timer-audit refresh, just when mismatch refresh 
 	init_refresh_select_node(&LB_CTX);
+#endif
 
 	return 0;
 }

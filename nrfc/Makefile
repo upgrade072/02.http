@@ -9,7 +9,8 @@ BUILD_LIBS = $(BUILD_LIBS_PATH)/libnrf.a \
 			 $(BUILD_LIBS_PATH)/libglib-2.0.a \
 			 $(BUILD_LIBS_PATH)/libconfig.a \
 			 $(BUILD_LIBS_PATH)/libjson-c.a \
-			 $(BUILD_LIBS_PATH)/libs.a
+			 $(BUILD_LIBS_PATH)/libs.a \
+			 $(BUILD_LIBS_PATH)/libhttp.a
 
 SRCS		= main.c config.c isif.c status.c command.c mml.c
 

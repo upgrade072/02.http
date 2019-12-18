@@ -34,11 +34,18 @@ int init_cfg(config_t *CFG)
     return 0;
 }       
 
-#define CF_SYS_DBG_MODE		"nrfc_cfg.sys_config.debug_mode"
 int save_sysconfig(config_t *CFG, main_ctx_t *MAIN_CTX)
 {
 	if (config_lookup_int(CFG, CF_SYS_DBG_MODE, &MAIN_CTX->sysconfig.debug_mode) == CONFIG_FALSE) {
 		APPLOG(APPLOG_ERR, "DBG| (%s) .cfg [%s] not exist!", __func__, CF_SYS_DBG_MODE);
+		return -1;
+	}
+    if (config_lookup_int(CFG, CF_ISIFCS_MODE, &MAIN_CTX->sysconfig.isifcs_mode) == CONFIG_FALSE) {
+		APPLOG(APPLOG_ERR, "DBG| (%s) .cfg [%s] not exist!", __func__, CF_ISIFCS_MODE);
+		return -1;
+	}
+    if (config_lookup_int(CFG, CF_NFS_SHM_CREATE, &MAIN_CTX->sysconfig.nfs_shm_create) == CONFIG_FALSE) {
+		APPLOG(APPLOG_ERR, "DBG| (%s) .cfg [%s] not exist!", __func__, CF_NFS_SHM_CREATE);
 		return -1;
 	}
 

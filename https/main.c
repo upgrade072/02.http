@@ -2,8 +2,6 @@
 
 char mySysName[COMM_MAX_NAME_LEN];
 char myProcName[COMM_MAX_NAME_LEN];
-char mySysType[COMM_MAX_VALUE_LEN];
-char mySvrId[COMM_MAX_VALUE_LEN];
 
 //#ifdef LOG_APP
 int logLevel = APPLOG_DEBUG;
@@ -21,8 +19,10 @@ thrd_context THRD_WORKER[MAX_THRD_NUM];
 http2_session_data SESS[MAX_THRD_NUM][MAX_SVR_NUM];
 https_ctx_t *HttpsCtx[MAX_THRD_NUM];
 allow_list_t ALLOW_LIST[MAX_LIST_NUM];
+allow_list_t *ALLOW_LIST_SHM;
 http_stat_t HTTP_STAT;
 ovld_state_t OVLD_STATE;
+extern lb_global_t LB_CONF; 
 
 hdr_index_t VHDR_INDEX[2][MAX_HDR_RELAY_CNT];
 
@@ -202,7 +202,7 @@ static http2_session_data *create_http2_session_data(app_context *app_ctx,
 		return NULL;
     }
 
-	if ((allowlist_index = check_allow(host)) < 0) {
+	if ((allowlist_index = check_allow(host, SERVER_CONF.allow_any_client)) < 0) {
         APPLOG(APPLOG_DETAIL, "%s():%d (conn from: %s) allow list fail to find (or connection full)", __func__, __LINE__, host);
 		return NULL;
     }
@@ -235,9 +235,7 @@ static http2_session_data *create_http2_session_data(app_context *app_ctx,
 	sprintf(session_data->hostname, "%s", ALLOW_LIST[allowlist_index].host);
 	sprintf(session_data->type, "%s", ALLOW_LIST[allowlist_index].type);
 	session_data->list_index = ALLOW_LIST[allowlist_index].list_index;
-#ifdef OAUTH
 	session_data->auth_act = ALLOW_LIST[allowlist_index].auth_act;
-#endif
 
 	/* use when session DACT */
 	add_to_allowlist(allowlist_index, index, sess_idx, session_data->session_id);
@@ -299,7 +297,11 @@ static void delete_http2_session_data(http2_session_data *session_data) {
 	APPLOG(APPLOG_DETAIL, "%s() peer %s disconnected", __func__, session_data->client_addr);
 	THRD_WORKER[session_data->thrd_index].client_num --;
 	ALLOW_LIST[session_data->allowlist_index].curr --;
+    ALLOW_LIST[session_data->allowlist_index].tombstone_date = time(NULL);
+#if 0
+    // this code might be useless 2019.12.09
 	del_from_allowlist(session_data->allowlist_index, session_data->thrd_index, session_data->session_index);
+#endif
 
 	if (!strcmp(session_data->scheme, "https")) {
 		SSL *ssl = bufferevent_openssl_get_ssl(session_data->bev);
@@ -584,10 +586,8 @@ static int on_header_callback(nghttp2_session *session,
 				sprintf(https_ctx->user_ctx.head.authority, "%s", header_value);
 			} else if (!strcmp(header_name, HDR_METHOD)) {
 				sprintf(https_ctx->user_ctx.head.httpMethod, "%s", header_value);
-#ifdef OAUTH
 			} else if (!strcmp(header_name, HDR_AUTHORIZATION)) {
 				sprintf(https_ctx->access_token, "%s", header_value); // Bearer token_raw
-#endif
 			} else {
 				/* vHeader relay */
 				if (set_defined_header(VHDR_INDEX[1], header_name, header_value, &https_ctx->user_ctx) != -1) {
@@ -668,8 +668,18 @@ static int on_begin_headers_callback(nghttp2_session *session,
 	return 0;
 }
 
-#ifdef OAUTH
-int check_access_token(char *token)
+int check_token_uuid(const char *audience)
+{
+    for (int i = 0; i < SERVER_CONF.uuid_list.peer_nfs_num; i++) {
+        if (!strcmp(audience, SERVER_CONF.uuid_list.uuid[i]))
+            return (1);
+    }
+
+    return (-1);
+}
+
+/* oauth 2.0 */
+int check_access_token(char *token, char *oauth_scope)
 {
 	jwt_t *jwt = NULL;
 	int ret = 0;
@@ -680,28 +690,34 @@ int check_access_token(char *token)
 	ret = jwt_decode(&jwt, token, (const unsigned char *)key, key_len);
 
 	if (ret != 0 || jwt == NULL) {
-		APPLOG(APPLOG_ERR, "{{{JWT}}} jwt parse fail!");
+		APPLOG(APPLOG_DETAIL, "{{{JWT}}} jwt parse fail!");
 		return (-1);
 	}
 
 	char *out = jwt_dump_str(jwt, 1);
-	APPLOG(APPLOG_DETAIL, "{{{JWT}}} recv token (pretty)\n%s", out);
+	APPLOG(APPLOG_DEBUG, "{{{JWT}}} recv token (pretty)\n%s", out);
 	free(out);
 
 	long double expiration = jwt_get_grant_int(jwt, "expiration");
 	time_t current = time(NULL);
 	if (expiration == 0 || expiration < current) {
-		APPLOG(APPLOG_ERR, "{{{JWT}}} wrong expiration!");
+		APPLOG(APPLOG_DETAIL, "{{{JWT}}} wrong expiration! [%ld]", expiration);
 		jwt_free(jwt);
 		return (-1);
 	}
 
 	const char *audience = jwt_get_grant(jwt, "audience");
-	if (audience == NULL || strcmp(audience, mySvrId)) {
-		APPLOG(APPLOG_ERR, "{{{JWT}}} wrong audience!");
+	if (audience == NULL || check_token_uuid(audience) < 0) {
+		APPLOG(APPLOG_DETAIL, "{{{JWT}}} wrong audience! [%s]", audience);
 		jwt_free(jwt);
 		return (-1);
 	}
+
+    const char *scope = jwt_get_grant(jwt, "scope");
+    if (scope != NULL) {
+		APPLOG(APPLOG_DEBUG, "{{{JWT}}} {{{TEST}}} recv scope [%s]", scope);
+        sprintf(oauth_scope, "%.255s", scope);
+    }
 
 	// TODO!!! more check, subject / issuer / scope  ...
 
@@ -709,7 +725,6 @@ int check_access_token(char *token)
 
 	return (0); // success
 }
-#endif
 
 /* HTTPS --> NRFM direct channel */
 int send_request_to_nrfm(https_ctx_t *https_ctx, int ahif_mtype)
@@ -802,7 +817,6 @@ static int on_request_recv(nghttp2_session *session,
 		return 0;
 	}
 
-#ifdef OAUTH
 	/* check OAuth 2.0 access token */
 	if (session_data->auth_act > 0) {
 		if (https_ctx->access_token == NULL) {
@@ -818,14 +832,13 @@ static int on_request_recv(nghttp2_session *session,
 				return NGHTTP2_ERR_CALLBACK_FAILURE;
 			return 0;
 		}
-		if (check_access_token(https_ctx->access_token + 7) < 0) {
+		if (check_access_token(https_ctx->access_token + 7, https_ctx->user_ctx.head.oauthScope) < 0) {
 			if (error_reply(session_data, session, stream_data, 400, 
 						ERROR_HTTP_S_MANDATORY_IE_INCORRECT, HTTP_S_MANDATORY_IE_INCORRECT) != 0) 
 				return NGHTTP2_ERR_CALLBACK_FAILURE;
 			return 0;
 		}
 	}
-#endif
 
 	// TODO!!! recheck this logic
 	for (rel_path = https_ctx->user_ctx.head.rsrcUri; *rel_path == '/'; ++rel_path)
@@ -1252,9 +1265,7 @@ void monitor_worker()
 
 void main_tick_callback(evutil_socket_t fd, short what, void *arg)
 {
-#ifndef TEST
 	keepalivelib_increase();
-#endif
 
 	if (SERVER_CONF.debug_mode == 1) {
 		IxpcQMsgType Ixpc = {0,};
@@ -1267,6 +1278,17 @@ void main_tick_callback(evutil_socket_t fd, short what, void *arg)
 
 	/* https peer ovld */
 	ovld_step_forward();
+}
+
+void https_shm_callback(evutil_socket_t fd, short what, void *arg)
+{
+	for (int i = 0; i < MAX_LIST_NUM; i++) {
+		if (ALLOW_LIST[i].used == 0) {
+            ALLOW_LIST_SHM[i].used = 0;
+        } else {
+            memcpy(&ALLOW_LIST_SHM[i], &ALLOW_LIST[i], sizeof(allow_list_t));
+        }
+	}
 }
 
 void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
@@ -1285,7 +1307,7 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 	{
 		memset(&intl_req, 0x00, sizeof(intl_req));
 		/* get first msg (Arg 4) */
-		int res = msgrcv(THRD_WORKER[read_index].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0, IPC_NOWAIT | MSG_NOERROR); 
+		int res = msgrcv(THRD_WORKER[read_index].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0, IPC_NOWAIT|MSG_NOERROR); 
 		if (res < 0) {
 			if (errno != ENOMSG) {
 				APPLOG(APPLOG_ERR,"%s() msgrcv fail; err=%d(%s)", __func__, errno, strerror(errno));
@@ -1455,7 +1477,7 @@ void chk_tmout_callback(evutil_socket_t fd, short what, void *arg)
 					https_ctx->inflight_ref_cnt++;
 				}
 				set_intl_req_msg(&intl_req, index, i, https_ctx->sess_idx, https_ctx->session_id, 0, HTTP_INTL_TIME_OUT);
-                if (-1 == msgsnd(THRD_WORKER[index].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0)) {
+                if (-1 == msgsnd(THRD_WORKER[index].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), IPC_NOWAIT)) {
 					APPLOG(APPLOG_DEBUG, "%s() msgsnd fail!!!", __func__);
                 }
 				/* if tmout sended num exceed 1/10 total ctx, wait to next turn */
@@ -1485,14 +1507,14 @@ void send_ping_callback(evutil_socket_t fd, short what, void *arg)
 			if ((tm_curr.tv_sec - session_data->ping_rcv_time.tv_sec) > SERVER_CONF.ping_timeout) {
 				APPLOG(APPLOG_ERR, "%s() session (id: %d) goaway~!", __func__, session_data->session_id);
 				set_intl_req_msg(&intl_req, thrd_idx, 0, sess_idx, session_data->session_id, 0, HTTP_INTL_SESSION_DEL);
-                if (-1 == msgsnd(THRD_WORKER[thrd_idx].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0)) {
+                if (-1 == msgsnd(THRD_WORKER[thrd_idx].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), IPC_NOWAIT)) {
 					APPLOG(APPLOG_ERR, "%s():%d msgsnd fail", __func__, __LINE__);
                 }
 				continue;
 			} 
 			if (session_data->ping_cnt ++ % SERVER_CONF.ping_interval == 0) {
 				set_intl_req_msg(&intl_req, thrd_idx, 0, sess_idx, session_data->session_id, 0, HTTP_INTL_SEND_PING);
-				if (-1 == msgsnd(THRD_WORKER[thrd_idx].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0)) {
+				if (-1 == msgsnd(THRD_WORKER[thrd_idx].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), IPC_NOWAIT)) {
 					APPLOG(APPLOG_ERR, "%s():%d msgsnd fail", __func__, __LINE__);
 				}
 			}
@@ -1648,19 +1670,8 @@ int initialize()
 		}
 	}
 
-#ifdef OAUTH
-    sprintf(fname,"%s/%s", env, SYSCONF_FILE);
-    if (conflib_getNthTokenInFileSection (fname, "GENERAL", "SYSTEM_TYPE", 1, mySysType) < 0) {
-        APPLOG(APPLOG_ERR, "{{{INIT}}} cant find SYSTEM_TYPE in (%s)!", fname);
-        return -1;
-    }
-
+    /* oauth 2.0 */
 #if 0
-    if (conflib_getNthTokenInFileSection (fname, "GENERAL", "SERVER_ID", 1, mySvrId) < 0) {
-        APPLOG(APPLOG_ERR, "{{{INIT}}} cant find SERVER_ID in (%s)!", fname);
-        return -1;
-    }
-#else
 	if (!strlen(SERVER_CONF.uuid_file)) {
 		APPLOG(APPLOG_ERR, "{{{INIT}}} SERVER_CONF.uuid file is NULL!\n");
 		return -1;
@@ -1676,36 +1687,59 @@ int initialize()
 			APPLOG(APPLOG_ERR, "{{{INIT}}} fail to (%s) doesn't include key (%s)!", SERVER_CONF.uuid_file, "VNF_INSTANCE_ID");
 			return -1;
 		} else {
-			sprintf(mySvrId, "%s", json_string_value(uuid));
+			sprintf(myUUID, "%s", json_string_value(uuid));
 			/* success */
-			APPLOG(APPLOG_ERR, "{{{INIT}}} mySvr UUID is (%s) check from (%s)", mySvrId, SERVER_CONF.uuid_file);
+			APPLOG(APPLOG_ERR, "{{{INIT}}} mySvr UUID is (%s) check from (%s)", myUUID, SERVER_CONF.uuid_file);
 		}
 	}
+#else
+    if (get_uuid_from_associate(&SERVER_CONF.uuid_list) <= 0) {
+        APPLOG(APPLOG_ERR, "{{{INIT}}} fail to get uuids from ~/associate_config");
+        return -1;
+    } else {
+        for (int i = 0; i < SERVER_CONF.uuid_list.peer_nfs_num; i++) {
+            APPLOG(APPLOG_ERR, "{{{INIT}}} find same type uuid [%02d : %s]", i, SERVER_CONF.uuid_list.uuid[i]);
+        }
+    }
 #endif
 
+    /* allow list shm */
+    sprintf(fname,"%s/%s", env, SYSCONF_FILE);
+
+    if (conflib_getNthTokenInFileSection (fname, "SHARED_MEMORY_KEY", "SHM_HTTPS_CONN", 1, tmp) < 0 )
+        return -1;
+    int shm_https_conn_key = strtol(tmp,(char**)0,0);
+
+    int shm_https_conn_id = 0;
+    if ((shm_https_conn_id = (int)shmget (shm_https_conn_key, sizeof(allow_list_t) * MAX_LIST_NUM, 0644|IPC_CREAT)) < 0) {
+        APPLOG(APPLOG_ERR,"[%s] SHM_HTTTPS_CONN shmget fail; err=%d(%s)", __func__, errno, strerror(errno));
+        return -1;
+    }
+    if ((void*)(ALLOW_LIST_SHM = (allow_list_t *)shmat(shm_https_conn_id,0,0)) == (void*)-1) {
+        APPLOG(APPLOG_ERR,"[%s] SHM_HTTPS_CONN shmat fail; err=%d(%s)", __func__, errno, strerror(errno));
+        return -1;
+    }
+
+#ifdef SYSCONF_LEGACY
+    int PROC_NAME_LOC = 1; // some old sysconf : eir ...
+#else
+    int PROC_NAME_LOC = 3;
 #endif
 
 	/* create recv-mq */
-#ifndef TEST
     sprintf(fname,"%s/%s", env, SYSCONF_FILE);
-    if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", myProcName, 3, tmp) < 0)
+    if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", myProcName, PROC_NAME_LOC, tmp) < 0)
         return (-1);
     key = strtol(tmp,0,0);
     if ((httpsQid = msgget(key,IPC_CREAT|0666)) < 0) {
         APPLOG(APPLOG_ERR, "{{{INIT}}} [%s] msgget fail; key=0x%x,err=%d(%s)!", __func__, key, errno, strerror(errno));
         return (-1);
+    } else {
+        APPLOG(APPLOG_ERR, "{{{INIT}}} [%s] msgget success; key=0x%x,httpsQid=(%d)!", __func__, key, httpsQid);
     }
-#if 0
-	/* flushing & remake */
-	msgctl(httpsQid, IPC_RMID, NULL);
-    if ((httpsQid = msgget(key,IPC_CREAT|0666)) < 0) {
-        APPLOG(APPLOG_ERR, "{{{INIT}}} [%s] msgget fail; key=0x%x,err=%d(%s)!", __func__, key, errno, strerror(errno));
-        return (-1);
-    }
-#endif
 
     /* create send-(ixpc) mq */
-    if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", "IXPC", 3, tmp) < 0)
+    if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", "IXPC", PROC_NAME_LOC, tmp) < 0)
         return -1;
     key = strtol(tmp,0,0);
     if ((ixpcQid = msgget(key,IPC_CREAT|0666)) < 0) {
@@ -1714,7 +1748,7 @@ int initialize()
     }
 
     /* create send-(nrfm) mq */
-    if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", "NRFM", 3, tmp) >= 0) {
+    if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", "NRFM", PROC_NAME_LOC, tmp) >= 0) {
 		key = strtol(tmp,0,0);
 		if ((nrfmQid = msgget(key,IPC_CREAT|0666)) < 0) {
 			APPLOG(APPLOG_ERR, "{{{INIT}}} [%s] msgget fail; key=0x%x,err=%d(%s)! NRFM QID will 0", __func__, key, errno, strerror(errno));
@@ -1722,7 +1756,6 @@ int initialize()
 	} else {
 		APPLOG(APPLOG_ERR, "{{{INIT}}} can't find NRFM info in sysconfig APPLITION!, NRFM QID will 0");
 	}
-#endif
 
 	/* alloc context memory */
 	for ( i = 0; i < SERVER_CONF.worker_num; i++) {
@@ -1758,10 +1791,8 @@ int initialize()
 	}
 
 	/* process start run */
-#ifndef TEST
     if (keepalivelib_init (myProcName) < 0)
         return (-1);
-#endif
 
 	/* check cert once */
 	check_cert(SERVER_CONF.cert_file);
@@ -1840,6 +1871,11 @@ static void main_loop(const char *key_file, const char *cert_file) {
 	ev_tick = event_new(evbase, -1, EV_PERSIST, main_tick_callback, NULL);
 	event_add(ev_tick, &tic_sec);
 
+    /* publish allow list to shm */
+	struct event *ev_https_shm;
+    ev_https_shm = event_new(evbase, -1, EV_PERSIST, https_shm_callback, NULL);
+	event_add(ev_https_shm, &tic_sec);
+
 	/* check context timeout */
     struct timeval tm_interval = {0, TM_INTERVAL * 5};
     struct event *ev_timeout;
@@ -1858,14 +1894,12 @@ static void main_loop(const char *key_file, const char *cert_file) {
     ev_status = event_new(evbase, -1, EV_PERSIST, send_status_to_omp, NULL);
     event_add(ev_status, &tm_status);
 
-#ifndef TEST
 	/* system message handle */
     //struct timeval tm_milisec = {0, 100000}; // 100 ms
     struct timeval tm_milisec = {0, 1000}; // 1 ms
     struct event *ev_msg_handle;
     ev_msg_handle = event_new(evbase, -1, EV_PERSIST, message_handle, NULL);
     event_add(ev_msg_handle, &tm_milisec);
-#endif
 
     /* LB stat print */
     struct timeval lbctx_print_interval = {1, 0};
@@ -1916,8 +1950,9 @@ int main(int argc, char **argv) {
 	SSL_load_error_strings();
 	SSL_library_init();
 
-	create_https_worker();
+    /* create ahif conn --> https recv */
 	create_lb_thread();
+	create_https_worker();
 
 	sleep(3);
 

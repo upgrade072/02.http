@@ -1,5 +1,6 @@
 #include "server.h"
 
+extern thrd_context THRD_WORKER[MAX_THRD_NUM];
 extern allow_list_t  ALLOW_LIST[MAX_LIST_NUM];
 extern https_ctx_t *HttpsCtx[MAX_THRD_NUM];
 extern http2_session_data SESS[MAX_THRD_NUM][MAX_SVR_NUM];
@@ -105,27 +106,70 @@ void save_session_info(https_ctx_t *https_ctx, int thrd_idx, int sess_idx, int s
 	sprintf(https_ctx->user_ctx.head.destIp, "%s", ipaddr);
 }
 
-// schlee, if ip-match == allow, else, disconnect
-int check_allow(char *ip)
+int accept_with_anyclient(char *ip)
 {
-    int i;
+    // assign new index
+    int list_index = new_list(ip);
+    int item_index = list_index > 0 ? new_item(list_index, ip, 0) : -1;
 
+    if (list_index < 0 || item_index < 0) {
+        APPLOG(APPLOG_ERR, "%s() fail to add list-item index", __func__);
+        if (list_index > 0)
+            del_list(ip);
+        if (item_index > 0)
+            del_item(list_index, ip, 0);
+        return (-1);
+    }
+
+    // find empty slot & new assign
+    for (int i = 1; i < MAX_LIST_NUM; i++) {
+        if (ALLOW_LIST[i].used == 0) {
+            memset(&ALLOW_LIST[i], 0x00, sizeof(allow_list_t));
+            ALLOW_LIST[i].index = i;
+            ALLOW_LIST[i].used = 1;
+            ALLOW_LIST[i].list_index = list_index;
+            ALLOW_LIST[i].item_index = item_index;
+            sprintf(ALLOW_LIST[i].type, "NF_AUTO_ADD");
+            sprintf(ALLOW_LIST[i].host, ip);
+            sprintf(ALLOW_LIST[i].ip, ip);
+            ALLOW_LIST[i].act = 1;
+            ALLOW_LIST[i].max = SERVER_CONF.any_client_default_max;
+            ALLOW_LIST[i].curr++;
+            ALLOW_LIST[i].auth_act = 1;
+            ALLOW_LIST[i].auto_added = 1;
+            return i;
+        }
+    }
+
+    return (-1);
+}
+
+// schlee, if ip-match == allow, else, disconnect
+int check_allow(char *ip, int allow_any_client)
+{
 	/* if ipv4 connected case */
 	if (!strncmp(ip, "::ffff:", strlen("::ffff:")))
 		ip += strlen("::ffff:");
 
-    for (i = 1; i < MAX_LIST_NUM; i++) {
+    int its_blocked_address = 0;
+
+    for (int i = 1; i < MAX_LIST_NUM; i++) {
         if (ALLOW_LIST[i].used != 1)
             continue;
-        if (!strcmp(ip, ALLOW_LIST[i].ip) &&
-                (ALLOW_LIST[i].act == 1) &&
-                (ALLOW_LIST[i].curr < ALLOW_LIST[i].max)) {
-            ALLOW_LIST[i].curr++;
-            /*  return allow list index */
-            return i;
+        if (!strcmp(ip, ALLOW_LIST[i].ip)) {
+            if ((ALLOW_LIST[i].act == 1) && (ALLOW_LIST[i].curr < ALLOW_LIST[i].max)) {
+                ALLOW_LIST[i].curr++;
+                return i;
+            } if (ALLOW_LIST[i].act == 0) {
+                its_blocked_address = 1;
+            }
         }
     }
-    return (-1);
+
+    if (allow_any_client && !its_blocked_address)
+        return accept_with_anyclient(ip);
+    else
+        return (-1);
 }
 
 int add_to_allowlist(int list_idx, int thrd_idx, int sess_idx, int session_id)
@@ -157,6 +201,27 @@ int del_from_allowlist(int list_idx, int thrd_idx, int sess_idx)
 		}
     }
     return found;
+}
+
+void disconnect_all_client_in_allow_list(allow_list_t *allow_list)
+{
+    intl_req_t intl_req = {0,};
+
+    for (int k = 0; k < MAX_SVR_NUM; k++) {
+        if (allow_list->client[k].occupied != 1)
+            continue;
+        conn_client_t *client_conn = &allow_list->client[k];
+        int thrd_idx = client_conn->thrd_idx;
+
+        APPLOG(APPLOG_DEBUG, "%s() delete thrd %d sess %d", __func__, client_conn->thrd_idx, client_conn->sess_idx);
+        set_intl_req_msg(&intl_req, client_conn->thrd_idx, 0, client_conn->sess_idx, client_conn->session_id, 0, HTTP_INTL_SESSION_DEL);
+
+        if (-1 == msgsnd(THRD_WORKER[thrd_idx].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), IPC_NOWAIT)) {
+            APPLOG(APPLOG_ERR, "%s() msg snd fail!!! (msgq_idx %ld thrd_idx %d session_idx %d)",
+                    __func__, intl_req.msgq_index, intl_req.tag.thrd_index, intl_req.tag.session_index);
+        }
+        memset(&intl_req, 0x00, sizeof(intl_req_t));
+    }
 }
 
 void print_list()
@@ -198,14 +263,14 @@ void write_list(char *buff) {
 	ft_set_cell_prop(table, FT_ANY_ROW, 6, FT_CPROP_TEXT_ALIGN, FT_ALIGNED_RIGHT);
 	ft_set_cell_prop(table, FT_ANY_ROW, 7, FT_CPROP_TEXT_ALIGN, FT_ALIGNED_CENTER);
 
-	ft_write_ln(table, "ID", "HOSTNAME", "TYPE", "IPADDR", "TPS(limit/curr/drop)", "CONN(max/curr)", "OAUTH", "STATUS");
-	for (int i = 0; i < MAX_LIST_NUM; i++) {
-		for (int k = 0; k < MAX_LIST_NUM; k++) {
+	ft_write_ln(table, "ID", "HOSTNAME", "TYPE", "IPADDR", "TPS(limit/curr/drop)", "CONN(max/curr)", "OAUTH", "STATUS", "TOMBSTONE_DATE");
+    for (int i = 0; i < MAX_LIST_NUM; i++) {
+        for (int k = 0; k < MAX_LIST_NUM; k++) {
             if (ALLOW_LIST[k].used != 1)
                 continue;
             if (ALLOW_LIST[k].list_index != i)
                 continue;
-			ft_printf_ln(table, "%d|%s|%s|%s|%d/%d/%d|%d/%d|%s|%s",
+            ft_printf_ln(table, "%d|%s|%s|%s|%d/%d/%d|%d/%d|%s|%s|%.24s",
                     ALLOW_LIST[k].list_index,
                     ALLOW_LIST[k].host,
                     ALLOW_LIST[k].type,
@@ -216,9 +281,10 @@ void write_list(char *buff) {
                     ALLOW_LIST[k].max,
                     ALLOW_LIST[k].curr,
                     (ALLOW_LIST[k].auth_act > 0) ?  "ACT" : "DACT",
-                    (ALLOW_LIST[k].curr > 0) ?  "Connected" : (ALLOW_LIST[k].act == 1) ? "Disconnect" : "Deact");
-		}
-	}
+                    (ALLOW_LIST[k].curr > 0) ?  "Connected" : (ALLOW_LIST[k].act == 1) ? "Disconnect" : "Deact",
+                    (ALLOW_LIST[k].auto_added == 1 && ALLOW_LIST[k].curr == 0) ? ctime(&ALLOW_LIST[k].tombstone_date) : ""); 
+        }
+    }
 	ft_add_separator(table);
 	sprintf(buff, "%s", ft_to_string(table));
 	ft_destroy_table(table);
@@ -311,4 +377,56 @@ void log_pkt_end_stream(int stream_id, https_ctx_t *https_ctx)
     // 3) free ptr
     free(https_ctx->log_ptr);
 	https_ctx->log_ptr = NULL;
+}
+
+int get_uuid_from_associate(uuid_list_t *uuid_list)
+{
+    char fname[1024] = {0,};
+    sprintf(fname, "%s/%s", getenv(IV_HOME), ASSOCONF_FILE);
+
+    char syscmd[1024] = {0,}; // --> command
+    char res_str[1024] = {0,}; // --> result
+
+    /* GET MY TYPE */
+    sprintf(syscmd, "grep %s %s | awk '{print $3}'", getenv(MY_SYS_NAME), fname);
+
+    FILE *ptr_syscmd = popen(syscmd, "r");
+    if (ptr_syscmd == NULL) {
+        APPLOG(APPLOG_ERR, "{{{DBG}}} %s() fail to run syscmd [%s]", __func__, syscmd);
+        return (-1);
+    }
+
+    char *result = fgets(res_str, 1024, ptr_syscmd);
+    if (result == NULL || strlen(res_str) == 0) {
+        APPLOG(APPLOG_ERR, "{{{DBG}}} %s() fail to find [MY_SYS_NAME:%s] from file [%s]",
+                __func__, getenv(MY_SYS_NAME), fname);
+        pclose(ptr_syscmd);
+        return (-1);
+    }
+    res_str[strlen(res_str) -1] = '\0'; // remove newline
+    pclose(ptr_syscmd);
+
+    char my_type[1024] = {0,};
+    sprintf(my_type, res_str);
+
+    /* GET PEER UUIDS */
+    sprintf(syscmd, "grep %s %s | awk '{print $11}'", my_type, fname);
+
+    ptr_syscmd = popen(syscmd, "r");
+    if (ptr_syscmd == NULL) {
+        APPLOG(APPLOG_ERR, "{{{DBG}}} %s() fail to run syscmd [%s]", __func__, syscmd);
+        return (-1);
+    }
+
+    int count = 0;
+    while (fgets(res_str, 1024, ptr_syscmd) != NULL) {
+        int current = count++;
+        res_str[strlen(res_str) -1] = '\0';
+
+        uuid_list->peer_nfs_num = count;
+        sprintf(uuid_list->uuid[current], res_str);
+    }
+    pclose(ptr_syscmd);
+
+    return uuid_list->peer_nfs_num;
 }

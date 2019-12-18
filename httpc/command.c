@@ -12,6 +12,8 @@ extern thrd_context_t THRD_WORKER[MAX_THRD_NUM];
 extern int THREAD_NO[MAX_THRD_NUM];
 extern conn_list_t CONN_LIST[MAX_SVR_NUM];
 extern conn_list_status_t CONN_STATUS[MAX_CON_NUM];
+extern config_t CFG;
+extern char CONFIG_PATH[256];
 
 char respMsg[MAX_MML_RESULT_LEN], respBuff[MAX_MML_RESULT_LEN];
 
@@ -24,8 +26,8 @@ typedef enum client_cmd {
 	chg_http_server,
 	del_http_svr_ip,
 	del_http_server,
-	dis_http_svr_ping,
-	chg_http_svr_ping,
+    dis_httpc_config,
+    chg_httpc_config,
 	MAX_CMD_NUM
 } client_cmd_t;
 
@@ -39,8 +41,8 @@ MmcHdlrVector   mmcHdlrVecTbl[MAX_CMD_NUM] =
 	{ "CHG-NF-SERVER",     func_chg_http_server},
 	{ "DEL-NF-SVR-IP",     func_del_http_svr_ip},
 	{ "DEL-NF-SERVER",     func_del_http_server},
-	{ "DIS-NF-SVR-PING",   func_dis_http_svr_ping},
-	{ "CHG-NF-SVR-PING",   func_chg_http_svr_ping}
+	{ "DIS-HTTPC-CONFIG",  func_dis_httpc_config},
+	{ "CHG-HTTPC-CONFIG",  func_chg_httpc_config}
 };
 
 void handle_nrfm_request(GeneralQMsgType *msg)
@@ -90,7 +92,7 @@ void handle_nrfm_request(GeneralQMsgType *msg)
 
 	set_intl_req_msg(&intl_req, thrd_idx, ctx_idx, sess_idx, session_id, 0, HTTP_INTL_SND_REQ);
 
-	if (msgsnd(THRD_WORKER[thrd_idx].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0) == -1) {
+	if (msgsnd(THRD_WORKER[thrd_idx].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), IPC_NOWAIT) == -1) {
 		APPLOG(APPLOG_ERR, "%s() internal msgsnd to worker [%d] failed!!!", __func__, thrd_idx);
 		clear_and_free_ctx(httpc_ctx);
 		Free_CtxId(thrd_idx, ctx_idx);
@@ -106,7 +108,7 @@ HNR_ERROR_REPLY:
 	msg->mtype = (long)MSGID_HTTPC_NRFM_RESPONSE;
 	size_t shmqlen = AHIF_APP_MSG_HEAD_LEN + AHIF_VHDR_LEN + ahifPkt->head.queryLen + ahifPkt->head.bodyLen;
 
-	int res = msgsnd(nrfmQid, msg, shmqlen, 0);
+	int res = msgsnd(nrfmQid, msg, shmqlen, IPC_NOWAIT);
 	if (res < 0) {
 		APPLOG(APPLOG_ERR, "%s(), fail to send resp to NRFM! (res:%d)", __func__, res);
 	}
@@ -162,7 +164,7 @@ void nrfm_mmc_send_resp(nrfm_mml_t *nrfm_cmd_req)
     msg->mtype = (long)MSGID_HTTPC_NRFM_MMC_RESPONSE;
     memcpy(httpc_cmd_res, nrfm_cmd_req, sizeof(nrfm_mml_t));
 
-	int res = msgsnd(nrfmQid, msg, sizeof(nrfm_mml_t), 0);
+	int res = msgsnd(nrfmQid, msg, sizeof(nrfm_mml_t), IPC_NOWAIT);
 	if (res < 0) {
 		APPLOG(APPLOG_ERR, "%s(), fail to send resp to NRFM! (res:%d)", __func__, res);
 	} 
@@ -172,11 +174,7 @@ void nrfm_mmc_add_proc(nrfm_mml_t *nrfm_cmd)
 {
 	int list_index = new_list(nrfm_cmd->host);
 	
-#if 0
-	for (int i = 0; i < nrfm_cmd->info_cnt; i++) {
-#else
 	for (int i = 0; (list_index > 0) && (i < nrfm_cmd->info_cnt); i++) {
-#endif
 		nf_conn_info_t *nf_conn = &nrfm_cmd->nf_conns[i];
 		int item_index = new_item(list_index, nf_conn->ip, nf_conn->port);
 
@@ -201,8 +199,16 @@ void nrfm_mmc_add_proc(nrfm_mml_t *nrfm_cmd)
 				CONN_LIST[k].token_id = nrfm_cmd->token_id;
 				CONN_LIST[k].act = 1;
 				CONN_LIST[k].nrfm_auto_added = 1; /* this list is added by nrfm */
-				APPLOG(APPLOG_ERR, "{{{DBG}}} [%s] [%s][%d] added cnt[%d] CONN_LIST[%d] INDEX[%d:%d]", 
-						nrfm_cmd->host, nf_conn->ip, nf_conn->port, added_cnt, k, list_index, item_index);
+                APPLOG(APPLOG_ERR, "{{{DBG}}} %s() add new connlist by nrfm [scheme:%s type:%s host:%s ip:%s port:%d token_id:%d auto_add:%d]",
+                    __func__, 
+                    CONN_LIST[k].scheme,
+                    CONN_LIST[k].type,
+                    CONN_LIST[k].host,
+                    CONN_LIST[k].ip,
+                    CONN_LIST[k].port,
+                    CONN_LIST[k].token_id,
+                    CONN_LIST[k].nrfm_auto_added);
+
 				if (++added_cnt == nf_conn->cnt) break;
 			}
 		}
@@ -307,7 +313,7 @@ void nrfm_mmc_clear_proc()
 			int thrd_index = session_data->thrd_index;
 			set_intl_req_msg(&intl_req, thrd_index, 0, session_data->session_index,
 					session_data->session_id, 0, HTTP_INTL_SESSION_DEL);
-			if (-1 == msgsnd(THRD_WORKER[thrd_index].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0)) {
+			if (-1 == msgsnd(THRD_WORKER[thrd_index].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), IPC_NOWAIT)) {
 				APPLOG(APPLOG_DEBUG, "%s() msgsnd fail!!!", __func__);
 			}
 		}
@@ -365,7 +371,7 @@ void message_handle(evutil_socket_t fd, short what, void *arg)
 	char msgBuff[1024*64];
 	GeneralQMsgType *msg = (GeneralQMsgType *)msgBuff;
 
-	while (msgrcv(httpcQid, msg, sizeof(GeneralQMsgType), 0, IPC_NOWAIT) >= 0) {
+	while (msgrcv(httpcQid, msg, sizeof(GeneralQMsgType), 0, IPC_NOWAIT|MSG_NOERROR) >= 0) {
 		switch (msg->mtype) {
 			case MTYPE_MMC_REQUEST:
 				mml_function((IxpcQMsgType *)msg->body);
@@ -406,7 +412,7 @@ void mml_function(IxpcQMsgType *rxIxpcMsg)
 	APPLOG(APPLOG_DEBUG, "%s() receive cmdName(%s)", __func__, mmlReq->head.cmdName);
 
 	for (i = 0; i < MAX_CMD_NUM; i++) {
-		if (!strcmp(mmlReq->head.cmdName, mmcHdlrVecTbl[i].cmdName)) {
+		if (!strcasecmp(mmlReq->head.cmdName, mmcHdlrVecTbl[i].cmdName)) {
 			mmcHdlr.func = mmcHdlrVecTbl[i].func;
 			break;
 		}
@@ -778,47 +784,81 @@ int func_del_http_server(IxpcQMsgType *rxIxpcMsg)
 	return res;
 }
 
-int func_dis_http_svr_ping(IxpcQMsgType *rxIxpcMsg)
+int func_dis_httpc_config(IxpcQMsgType *rxIxpcMsg)
 {
-	APPLOG(APPLOG_DEBUG, "%s() called", __func__);
+    APPLOG(APPLOG_DEBUG, "%s() called", __func__);
 
-	char *resBuf=respMsg;
+    char *resBuf=respMsg;
 
-	sprintf(resBuf, "  PING INTERVAL (%d) sec\n", CLIENT_CONF.ping_interval);
-	sprintf(resBuf + strlen(resBuf), "  PING TIMEOUT (%d) sec\n", CLIENT_CONF.ping_timeout);
-	sprintf(resBuf + strlen(resBuf), "  PING ALARM LATENCY (%d) ms", CLIENT_CONF.ping_event_ms);
+    int res = print_single_http_cfg(&CFG, "client_cfg.http_config", "http_config = ", "httpc - http/2 config", resBuf);
 
-	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
-	return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
+    if (res < 0)
+        return send_mml_res_failMsg(rxIxpcMsg, ".CFG LOADING FAIL");
+    else
+        return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
 }
 
-int func_chg_http_svr_ping(IxpcQMsgType *rxIxpcMsg)
+void relaod_http_config(char *conf_name, int conf_val)
 {
-	APPLOG(APPLOG_DEBUG, "%s() called", __func__);
+    if (!strcmp(conf_name, CF_TIMEOUT_SEC))
+        CLIENT_CONF.timeout_sec = conf_val;
+    else if (!strcmp(conf_name, CF_PING_INTERVAL))
+        CLIENT_CONF.ping_interval = conf_val;
+    else if (!strcmp(conf_name, CF_PING_TIMEOUT))
+        CLIENT_CONF.ping_timeout = conf_val;
+    else if (!strcmp(conf_name, CF_PING_EVENT_MS))
+        CLIENT_CONF.ping_event_ms = conf_val;
+}
+
+int func_chg_httpc_config(IxpcQMsgType *rxIxpcMsg)
+{
+    APPLOG(APPLOG_DEBUG, "%s() called", __func__);
 
 	MMLReqMsgType   *mmlReq=(MMLReqMsgType*)rxIxpcMsg->body;
-
 	char *resBuf=respMsg;
 
-	int interval = get_mml_para_int(mmlReq, "INTERVAL");
-	int timeout = get_mml_para_int(mmlReq, "TIMEOUT");
-	int ms = get_mml_para_int(mmlReq, "MS");
+    char apply_config[1024] = {0,};
+    config_setting_t *setting = NULL;
+    char err_reply_text[1024] = {0,};
 
-	int old_interval = CLIENT_CONF.ping_interval;
-	int old_timeout = CLIENT_CONF.ping_timeout;
-	int old_ms = CLIENT_CONF.ping_event_ms;
+    char before_apply[10240] = {0,};
+    print_single_http_cfg(&CFG, "client_cfg.http_config", "http_config = ", "httpc - http/2 config", before_apply);
 
-	if (chgcfg_server_ping(interval, timeout, ms) < 0)
-		return send_mml_res_failMsg(rxIxpcMsg, "PING MS CHANGE FAIL");
+    for(int i=0; i < mmlReq->head.paraCnt; i++ ) {
+#ifdef MMLPARA_TYPESTR
+        sprintf(apply_config, "client_cfg.http_config.%s", 
+                strlwr(mmlReq->head.para[i].typeStr, strlen(mmlReq->head.para[i].typeStr)));
+        int apply_value = atoi(mmlReq->head.para[i].paraStr);
+#else
+        sprintf(apply_config, "client_cfg.http_config.%s", 
+                strlwr(mmlReq->head.para[i].paraName, strlen(mmlReq->head.para[i].paraName)));
+        int apply_value = atoi(mmlReq->head.para[i].paraVal);
+#endif
 
-	if (interval >= 0) CLIENT_CONF.ping_interval = interval;
-	if (timeout >= 0) CLIENT_CONF.ping_timeout = timeout;
-	if (ms >= 0) CLIENT_CONF.ping_event_ms = ms;
+        if ((setting = config_lookup(&CFG, apply_config)) == NULL) {
+            sprintf(err_reply_text, "ERROR> fail to find (%s) in config", apply_config);
+            goto FCHC_RET_ERR;
+        }
 
-	sprintf(resBuf, "  PING INTERVAL (%d) --> (%d) sec\n", old_interval, CLIENT_CONF.ping_interval);
-	sprintf(resBuf + strlen(resBuf), "  PING TIMEOUT (%d) --> (%d) sec\n", old_timeout, CLIENT_CONF.ping_timeout);
-	sprintf(resBuf + strlen(resBuf), "  PING ALARM LATENCY (%d) --> (%d) ms\n", old_ms, CLIENT_CONF.ping_event_ms);
+        /* skip value check because omp already do it */
+        if (config_setting_set_int(setting, apply_value) < 0) {
+            sprintf(err_reply_text, "ERROR> fail to change(%s) to val(%d)", apply_config, apply_value);
+            goto FCHC_RET_ERR;
+        }
 
-	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
-	return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
+        relaod_http_config(apply_config, apply_value);
+    }
+
+    // save to file
+    config_write_file(&CFG, CONFIG_PATH);
+
+    char after_apply[10240] = {0,};
+    print_single_http_cfg(&CFG, "client_cfg.http_config", "http_config = ", "httpc - http/2 config", after_apply);
+
+    print_dual_http_cfg(before_apply, after_apply, resBuf);
+
+    return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
+
+FCHC_RET_ERR:
+    return send_mml_res_failMsg(rxIxpcMsg, err_reply_text);
 }

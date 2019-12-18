@@ -2,7 +2,7 @@
 
 extern main_ctx_t MAIN_CTX;
 
-extern shm_http_t *SHM_HTTP_PTR;
+extern shm_http_t *SHM_HTTPC_PTR;
 
 void NF_MANAGE_NF_ACT(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item)
 {
@@ -29,7 +29,7 @@ void NF_MANAGE_NF_CLEAR(main_ctx_t *MAIN_CTX)
     msg->mtype = (long)MSGID_NRFM_HTTPC_MMC_REQUEST;
     httpc_cmd->command = NRFM_MML_HTTPC_CLEAR;
             
-    int res = msgsnd(MAIN_CTX->my_qid.httpc_qid, msg, sizeof(nrfm_mml_t), 0);
+    int res = msgsnd(MAIN_CTX->my_qid.httpc_qid, msg, sizeof(nrfm_mml_t), IPC_NOWAIT);
             
     if (res < 0) {
         APPLOG(APPLOG_ERR, "{{{DBG}}} %s called, res (%d:fail), will retry {httpc_qid:%d}",
@@ -85,14 +85,14 @@ void nf_manage_collect_avail_each_nf(nf_retrieve_item_t *nf_item, nf_list_pkt_t 
 	nf_comm_plmn allowdPlmns[NF_MAX_ALLOWD_PLMNS] = {0,};
 	int allowdPlmnsNum = nf_get_allowd_plmns(nf_item->item_nf_profile, &allowdPlmns[0]);
 
-	int pos = SHM_HTTP_PTR->current;
+	int pos = SHM_HTTPC_PTR->current;
 	nrfm_mml_t *nf_mml = &nf_item->httpc_cmd;
 
 	for (int i = 0; i < nf_mml->info_cnt; i++) {
 		nf_conn_info_t *nf_conn = &nf_mml->nf_conns[i];
 
 		for (int k = 0; k < MAX_CON_NUM; k++) {
-			conn_list_status_t *conn_raw = &SHM_HTTP_PTR->connlist[pos][k];
+			conn_list_status_t *conn_raw = &SHM_HTTPC_PTR->connlist[pos][k];
 
 			if (conn_raw->nrfm_auto_added <= 0) continue;
 
@@ -158,6 +158,48 @@ void nf_manage_collect_httpc_conn_status_cb(evutil_socket_t fd, short what, void
 	nf_manage_collect_httpc_conn_status(&MAIN_CTX);
 }
 
+void nf_manage_https_conn_status_cb(evutil_socket_t fd, short what, void *arg)
+{
+    int tombstone_expire_min = 0;
+    time_t curr_tm = time(NULL);
+
+    /* if timer(min) == 0, just leave */
+    config_setting_t *setting = config_lookup(&MAIN_CTX.CFG, CF_HTTPS_DISCONN_TM);
+    if ((tombstone_expire_min = config_setting_get_int(setting)) <= 0)  {
+        return;
+    }
+
+    for (int i = 0; i < MAX_LIST_NUM; i++) {
+        allow_list_t *https_conn = &MAIN_CTX.HTTPS_ALLOW_STATUS[i];
+
+        if (https_conn->used == 0 || https_conn->auto_added != 1 || https_conn->curr > 0) 
+            continue;
+
+        if ((curr_tm - https_conn->tombstone_date) >= (tombstone_expire_min * 60)) {
+            APPLOG(APPLOG_ERR, "%s() remove old tombstone https conn [%.24s + %d min] host (%s)",
+                __func__, ctime(&https_conn->tombstone_date), tombstone_expire_min, https_conn->host);
+
+            GeneralQMsgType msg = { .mtype = MSGID_NRFM_HTTPS_REQUEST };
+            nrfm_https_remove_conn_t *remove_direct = (nrfm_https_remove_conn_t *)msg.body;
+            size_t size = sizeof(nrfm_https_remove_conn_t);
+            remove_direct->list_index = https_conn->list_index;
+            remove_direct->item_index = https_conn->item_index;
+            sprintf(remove_direct->host, https_conn->host);
+
+            APPLOG(APPLOG_ERR, "%s() create remove directive pkt [list:%d item:%d host:%s]",
+                    __func__, remove_direct->list_index, remove_direct->item_index, remove_direct->host);
+
+            int res = msgsnd(MAIN_CTX.my_qid.https_qid, &msg, size, 0);
+
+            if (res < 0) {
+                APPLOG(APPLOG_ERR, "{{{DBG}}} %s called, res (%d:fail), will discard, httpsQid(%d) err(%s)",
+                        __func__, res, MAIN_CTX.my_qid.https_qid, strerror(errno));
+            }
+        }
+    }
+
+}
+
 int nf_manage_setting_opr_type(char *type)
 {
 	if (!strcmp(type, "NRF"))
@@ -206,10 +248,10 @@ int nf_manage_setting_opr_type(char *type)
 
 void nf_manage_collect_oper_added_nf(main_ctx_t *MAIN_CTX, nf_list_pkt_t *my_avail_nfs)
 {
-	int pos = SHM_HTTP_PTR->current;
+	int pos = SHM_HTTPC_PTR->current;
 
 	for (int k = 0; k < MAX_CON_NUM; k++) {
-		conn_list_status_t *conn_raw = &SHM_HTTP_PTR->connlist[pos][k];
+		conn_list_status_t *conn_raw = &SHM_HTTPC_PTR->connlist[pos][k];
 
 		if (my_avail_nfs->nf_avail_num >= NF_MAX_AVAIL_LIST)
 			return;
@@ -273,6 +315,7 @@ void nf_manage_create_httpc_cmd_conn_add(main_ctx_t *MAIN_CTX, nf_retrieve_item_
 
 	int array_length = json_object_array_length(js_services);
 	for (int i = 0; i < array_length; i++) {
+#if 0
 		json_object *js_elem = json_object_array_get_idx(js_services, i);
 		char key_service[128] = "serviceName";
 		char key_scheme[128] = "scheme";
@@ -313,8 +356,62 @@ void nf_manage_create_httpc_cmd_conn_add(main_ctx_t *MAIN_CTX, nf_retrieve_item_
 			APPLOG(APPLOG_ERR, "{{{DBG}}} %s httpc conn pkt full num", __func__);
 			break;
 		}
+#else
+        json_object *js_elem = json_object_array_get_idx(js_services, i);
+        char key_service[128] = "serviceName";
+        char key_scheme[128] = "scheme";
+        json_object *js_service = search_json_object(js_elem, key_service);
+        json_object *js_scheme = search_json_object(js_elem, key_scheme);
+
+        if (js_service == NULL || js_scheme == NULL) {
+            APPLOG(APPLOG_ERR, "{{{DBG}}} %s can't find serviceName or scheme in nfServices!", __func__);
+            continue;
+        }
+        const char *service = json_object_get_string(js_service);
+        const char *scheme = json_object_get_string(js_scheme);
+
+        if (strcmp(scheme, "https") && strcmp(scheme, "http")) {
+            APPLOG(APPLOG_ERR, "{{{DBG}}} %s scheme invalid [%s]!", __func__, scheme);
+            continue;
+        }
+
+        char key_ip_end_points[128] = "ipEndPoints";
+        json_object *js_ip_end_points = search_json_object(js_elem, key_ip_end_points);
+        int end_point_count = json_object_array_length(js_ip_end_points);
+
+        for (int k = 0; k < end_point_count; k++) {
+            char key_ip[128] = {0,};
+            char key_port[128] = {0,};
+            sprintf(key_ip, "/ipEndPoints/%d/ipv4Address", k);
+            sprintf(key_port, "/ipEndPoints/%d/port", k);
+            json_object *js_ip = search_json_object(js_elem, key_ip);
+            json_object *js_port = search_json_object(js_elem, key_port);
+
+            const char *ip = json_object_get_string(js_ip);
+            int port = json_object_get_int(js_port);
+
+            struct sockaddr_in sa = {0,};
+            if (inet_pton(AF_INET, ip, &(sa.sin_addr)) == 0) {
+                APPLOG(APPLOG_ERR, "{{{DBG}}} %s ip invalid [%s]!", __func__, ip);
+                continue;
+            }
+            if (port == 0) { /* port can not exist */
+                if (!strcmp(scheme, "https")) 
+                    port = 443;
+                else 
+                    port = 80;
+                APPLOG(APPLOG_ERR, "{{{DBG}}} %s port setted as [%d]", __func__, port);
+            }
+
+            if (nf_manage_fill_nrfm_mml(&httpc_add_cmd, service, scheme, ip, port) >= HTTP_MAX_CONN) {
+                APPLOG(APPLOG_ERR, "{{{DBG}}} %s httpc conn pkt full num", __func__);
+                goto NMCHCCA_END;
+            }
+        }
+#endif
 	}
 
+NMCHCCA_END:
 	httpc_add_cmd.token_id = nf_item->token_id;
 
 	memcpy(&nf_item->httpc_cmd, &httpc_add_cmd, sizeof(nrfm_mml_t));
@@ -522,7 +619,7 @@ void nf_manage_send_httpc_cmd(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item)
 	msg->mtype = (long)MSGID_NRFM_HTTPC_MMC_REQUEST;
 	memcpy(httpc_cmd, &nf_item->httpc_cmd, sizeof(nrfm_mml_t));
 
-    int res = msgsnd(MAIN_CTX->my_qid.httpc_qid, msg, sizeof(nrfm_mml_t), 0);
+    int res = msgsnd(MAIN_CTX->my_qid.httpc_qid, msg, sizeof(nrfm_mml_t), IPC_NOWAIT);
 
     if (res < 0) {
         /* CHECK !!! after 1 sec will auto retry */

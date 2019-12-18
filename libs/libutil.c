@@ -3,6 +3,7 @@
 #include <string.h>
 #include <sys/time.h>
 #include <http_comm.h>
+#include <ctype.h>
 
 void DumpHex(const void* data, size_t size) {
 	char ascii[17];
@@ -156,4 +157,20 @@ char *replaceAll(char *s, const char *olds, const char *news)
 	*sr = '\0';
 
 	return result;
+}
+
+/* cation! we overwrite input as lower case character */
+char *strlwr(char *input, int str_len)
+{
+    for (int i = 0; i < str_len; i++) {
+        input[i] = tolower(input[i]);
+    }
+    return input;
+}
+char *strupr(char *input, int str_len)
+{
+    for (int i = 0; i < str_len; i++) {
+        input[i] = toupper(input[i]);
+    }
+    return input;
 }

@@ -52,6 +52,23 @@
 #define TM_INTERVAL		20000   // every 20 ms check, 
 #define TMOUT_VECTOR    50      // CLIENT_CONF.tmout_sec * TMOUT_VECTOR = N sec
 
+/* CONFIG */
+#define CF_CLIENT_CONF      "client.cfg"
+#define CF_LOG_LEVEL        "client_cfg.sys_config.log_level"
+#define CF_DEBUG_MODE       "client_cfg.sys_config.debug_mode"
+#define CF_WORKER_SHMKEY    "client_cfg.sys_config.worker_shmkey_base"
+#define CF_MAX_WORKER_NUM   "client_cfg.http_config.worker_num"
+#define CF_TIMEOUT_SEC      "client_cfg.http_config.timeout_sec"
+#define CF_PING_INTERVAL    "client_cfg.http_config.ping_interval"
+#define CF_PING_TIMEOUT     "client_cfg.http_config.ping_timeout"
+#define CF_PING_EVENT_MS    "client_cfg.http_config.ping_event_ms"
+#define CF_PING_EVENT_CODE  "client_cfg.http_config.ping_event_code"
+#define CF_PKT_LOG          "client_cfg.http_config.pkt_log"
+#define CF_LB_CONFIG        "client_cfg.lb_config"
+#define CF_CONNECT_LIST     "connect_list"
+#define CF_HTTP_OPT_HDR_TABLE_SIZE  "client_cfg.http_option.setting_header_table_size"
+#define CF_HTTP_PREPARE_STREAM_ID   "client_cfg.http_option.prepare_close_stream_limit"
+
 /* For LOG */
 extern char lOG_PATH[64];
 
@@ -60,7 +77,6 @@ typedef struct client_conf {
 	int log_level;
     int worker_num;
     int worker_shmkey;
-    int httpc_status_shmkey;
     int timeout_sec;
 	int ping_interval;
 	int ping_timeout;
@@ -145,9 +161,8 @@ typedef struct httpc_ctx {
 	int	 recv_time_index;
 	http2_stream_data stream;
 
-#ifdef OAUTH
 	char access_token[MAX_ACC_TOKEN_LEN];
-#endif
+
 	iovec_item_t push_req;
 
 	/* for lb-fep-peer */
@@ -304,6 +319,7 @@ int     initialize();
 int     main(int argc, char **argv);
 
 
+
 /* ------------------------- command.c --------------------------- */
 void    handle_nrfm_request(GeneralQMsgType *msg);
 void    handle_nrfm_mmc(nrfm_mml_t *nrfm_cmd);
@@ -326,10 +342,9 @@ int     func_chg_http_server_act(IxpcQMsgType *rxIxpcMsg, int change_to_act);
 int     func_chg_http_server(IxpcQMsgType *rxIxpcMsg);
 int     func_del_http_svr_ip(IxpcQMsgType *rxIxpcMsg);
 int     func_del_http_server(IxpcQMsgType *rxIxpcMsg);
-int     func_dis_http_svr_ping(IxpcQMsgType *rxIxpcMsg);
-int     func_chg_http_svr_ping(IxpcQMsgType *rxIxpcMsg);
-
-
+int     func_dis_httpc_config(IxpcQMsgType *rxIxpcMsg);
+void    relaod_http_config(char *conf_name, int conf_val);
+int     func_chg_httpc_config(IxpcQMsgType *rxIxpcMsg);
 
 /* ------------------------- lb.c --------------------------- */
 httpc_ctx_t     *get_null_recv_ctx(tcp_ctx_t *tcp_ctx);

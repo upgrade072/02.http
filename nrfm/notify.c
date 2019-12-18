@@ -1,7 +1,6 @@
 #include <nrfm.h>
 
 extern main_ctx_t MAIN_CTX;
-extern nrf_stat_t NRF_STAT;
 
 #define ERROR_NRFM_NOTIFICATION "\
 {\
@@ -171,7 +170,7 @@ void nf_notify_handle_request_proc(AhifHttpCSMsgType *ahifPkt)
 	char *problemDetail = NRFM_NOTI_ERR_MSG_EMPTY;
 	int respCode = nf_notify_handle_check_req(ahifPkt, &problemDetail);
 
-	NRF_STAT_INC(&NRF_STAT, NFStatusNotify, NRFS_ATTEMPT);
+	NRF_STAT_INC(MAIN_CTX.NRF_STAT, ahifPkt->head.destHost, NFStatusNotify, NRFS_ATTEMPT);
 
 	/* send response */
 	int sndRes = nf_notify_send_resp(ahifPkt, respCode, problemDetail);
@@ -180,12 +179,16 @@ void nf_notify_handle_request_proc(AhifHttpCSMsgType *ahifPkt)
 		struct timeval cur_time = {0,};
 		gettimeofday(&cur_time, NULL);
 
-		// increase tps
+#ifdef OVLD_LEGACY
+        // eir
+		ovldlib_isOvldCtrl(cur_time.tv_sec, OVLDLIB_MODE_DONT_CTRL, MAIN_CTX.sysconfig.ovld_notify_code);
+#else
 		ovldlib_isOvldCtrl(cur_time.tv_sec, OVLDLIB_MODE_DONT_CTRL, MAIN_CTX.sysconfig.ovld_notify_code, "NOTIFY");
 
 		if (respCode != 204 || sndRes < 0) { // increase fail cnt
 			ovldlib_increaseFailCnt(MAIN_CTX.sysconfig.ovld_notify_code);
 		}
+#endif
 	}
 
 	return;
@@ -415,10 +418,10 @@ int nf_notify_send_resp(AhifHttpCSMsgType *ahifPktRecv, int respCode, char *prob
 
 	switch(respCode) {
 		case 204: // no contents
-			NRF_STAT_INC(&NRF_STAT, NFStatusNotify, NRFS_SUCCESS);
+			NRF_STAT_INC(MAIN_CTX.NRF_STAT, head->destHost, NFStatusNotify, NRFS_SUCCESS);
 			break;
 		default:
-			NRF_STAT_INC(&NRF_STAT, NFStatusNotify, NRFS_FAIL);
+			NRF_STAT_INC(MAIN_CTX.NRF_STAT, head->destHost, NFStatusNotify, NRFS_FAIL);
 
 			head->bodyLen = sprintf(ahifPkt->data, ERROR_NRFM_NOTIFICATION, respCode, problemDetail);
 			APPLOG(APPLOG_ERR, "{{{TEST}}} AHIF DATA is (%s)", ahifPkt->data);
@@ -427,7 +430,7 @@ int nf_notify_send_resp(AhifHttpCSMsgType *ahifPktRecv, int respCode, char *prob
 
 	size_t shmqlen = AHIF_APP_MSG_HEAD_LEN + AHIF_VHDR_LEN + ahifPkt->head.queryLen + ahifPkt->head.bodyLen;
 
-	int res = msgsnd(MAIN_CTX.my_qid.https_qid, msg, shmqlen, 0);
+	int res = msgsnd(MAIN_CTX.my_qid.https_qid, msg, shmqlen, IPC_NOWAIT);
 
 	if (res < 0) {
 		APPLOG(APPLOG_ERR, "{{{DBG}}} %s called, res (%d:fail), will discard, httpsQid(%d) err(%s)",

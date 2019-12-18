@@ -80,18 +80,13 @@ typedef struct HttpCSAhifTagType {
         NGHTTP2_NV_FLAG_NONE                                                   \
   }
 
-#if 0
-#define HTTP_MAX_HOST		128
-#else
-//#define HTTP_MAX_HOST		1024 // U+ & KT requirement
-#define HTTP_MAX_HOST		512 // too many 
-#endif
-#define HTTP_MAX_ADDR		4
-#define HTTP_MAX_CONN		4
+#define HTTP_MAX_HOST	(512)
+#define HTTP_MAX_ADDR	(4)
+#define HTTP_MAX_CONN	(4)
 
 #define MAX_SVR_NUM		(HTTP_MAX_HOST * HTTP_MAX_ADDR * HTTP_MAX_CONN)
 #define MAX_CON_NUM		(HTTP_MAX_HOST * HTTP_MAX_ADDR)
-#define MAX_LIST_NUM	HTTP_MAX_HOST
+#define MAX_LIST_NUM	(HTTP_MAX_HOST)
 #define MAX_ITEM_NUM	(HTTP_MAX_ADDR + 1)
 
 typedef struct item_index {
@@ -106,15 +101,15 @@ typedef struct index {
 } index_t;
 
 /* for context */
-#define MAX_THRD_NUM 12
-#define MAXMSG   10000
-#define STARTID  1
-#define SIZEID 10000+1 
+#define MAX_THRD_NUM (12)
+#define MAXMSG   (10000)
+#define STARTID  (1)
+#define SIZEID   (10000+1)
 
 /* for ping recv */
 #define MAX_PING_WAIT 5 // (sec)
 
-/* connection status */
+/* httpc connection status */
 typedef struct conn_list_status {
 	int list_index;
 	int item_index;
@@ -133,6 +128,47 @@ typedef struct conn_list_status {
 	int token_acquired;
 	int nrfm_auto_added;
 } conn_list_status_t;
+
+/* https connection status */
+typedef struct conn_client {
+    int occupied;
+    int thrd_idx;
+    int sess_idx;
+    int session_id;
+} conn_client_t;
+
+typedef struct allow_list {
+    int auto_added; // from allow any client action
+    time_t tombstone_date; // last disconnect time
+
+    int index;
+    int used;
+    int list_index;
+    int item_index;
+
+    char host[AHIF_MAX_DESTHOST_LEN];
+    char type[AHIF_COMM_NAME_LEN];
+    char ip[INET6_ADDRSTRLEN];
+    int act;
+    int max;
+    int curr;
+
+    conn_client_t client[MAX_SVR_NUM];
+
+    int auth_act;
+
+    /* peer overload */
+    int limit_tps;
+    int last_curr_tps;
+    int last_drop_tps;
+    int ovld_alrm_sts;
+} allow_list_t;
+
+typedef struct nrfm_https_remove_conn {
+    int list_index;
+    int item_index;
+    char host[AHIF_MAX_DESTHOST_LEN];
+} nrfm_https_remove_conn_t;
 
 /* for statistics */
 /* find current --> find thread --> find host --> write pos */
@@ -181,6 +217,8 @@ typedef struct shm_http {
 int     get_http_shm(int httpc_status_shmkey);
 void    set_httpc_status(conn_list_status_t conn_status[]);
 void    print_httpc_status();
+int     select_next_httpc_conn(char *type, char *host, char *ip, int port, int last_selected_index, conn_list_status_t *find_raw);
+int     get_shm_comm_key(char *fname, char *proc_name, int shm_mode);
 
 /* ------------------------- libvhdr.c --------------------------- */
 int     set_relay_vhdr(hdr_index_t hdr_index[], int array_size);

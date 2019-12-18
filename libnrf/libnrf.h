@@ -41,7 +41,7 @@ typedef struct svr_info {
     char mySysName[COMM_MAX_NAME_LEN];
     char myProcName[COMM_MAX_NAME_LEN];
     char mySysType[COMM_MAX_VALUE_LEN];
-    char mySvrId[COMM_MAX_VALUE_LEN];
+    //char mySvrId[COMM_MAX_VALUE_LEN]; /* no use */
 	int myLabelNum;
 } svr_info_t;
 
@@ -52,17 +52,20 @@ typedef struct assoc {
     char ip[1024];
 } assoc_t;
 
+#define MAX_NRFC_CHK_PROC   12
 typedef struct service_info {
     int sys_mp_id;
-    char service_name[1024];
-    char ovld_name[1024];
-    char proc_name[1024];
+    char service_name[128];
+    char ovld_name[128];
+    int proc_num;
+    char proc_name[MAX_NRFC_CHK_PROC][128];
+    int chk_all_active;
     int ovld_tps;
     int curr_tps;
     int curr_load;
-    int proc_table_index;
-    int proc_last_count;  // mapping with keepalive shm table
-    int proc_curr_count;  // ..
+    int proc_table_index[MAX_NRFC_CHK_PROC];
+    int proc_last_count[MAX_NRFC_CHK_PROC];  // mapping with keepalive shm table
+    int proc_curr_count[MAX_NRFC_CHK_PROC];  // ..
     int proc_alive;       // -> alive of not 
     int olcd_table_index; // mapping with OLCD shm table
     int bep_use;
@@ -191,6 +194,7 @@ typedef enum {
 } nrf_stat_op_enum_t;
 
 typedef struct {
+    char hostname[128];
     int stat_count[NRFS_OP_MAX][NRFS_CATE_MAX];
 } nrf_stat_t;
 /* for NRF Statistics  -- end */
@@ -259,7 +263,7 @@ typedef struct {
 void    def_sigaction();
 GSList  *get_associate_node(GSList *node_assoc_list, const char *type_str);
 int     get_sys_label_num();
-void    get_my_info(svr_info_t *my_info, const char *my_proc_name);
+int     get_my_info(svr_info_t *my_info, const char *my_proc_name);
 void    node_assoc_release(assoc_t *node_elem);
 void    node_list_remove_all(GSList *node_assoc_list);
 GSList  *node_list_add_elem(GSList *node_assoc_list, assoc_t *node_elem);
@@ -281,8 +285,11 @@ json_object     *search_json_object(json_object *obj, char *key_string);
 int     nf_search_specific_info(json_object *nf_profile, json_object **js_specific_info);
 void    nf_get_specific_info(int nfType, json_object *js_specific_info, nf_type_info *nf_specific_info);
 int     nf_get_allowd_plmns(json_object *nf_profile, nf_comm_plmn *allowdPlmns);
-void    NRF_STAT_INC(nrf_stat_t *NRF_STAT, int operation, int category);
-void    nrf_stat_function(int ixpcQid, IxpcQMsgType *rxIxpcMsg, int event_code, nrf_stat_t *NRF_STAT);
+GNode   *NRF_STAT_ADD_CHILD(GNode *ROOT_STAT, char *hostname);
+GNode   *NRF_STAT_ADD_CHILD_POS(GNode *ROOT_NODE, GNode *SIBLING, char *hostname, int pre_or_append);
+GNode   *NRF_STAT_FIND_CHILD(GNode *ROOT_STAT, char *hostname, int *compare_res);
+void    NRF_STAT_INC(GNode *ROOT_STAT, char *hostname, int operation, int category);
+void    nrf_stat_function(int ixpcQid, IxpcQMsgType *rxIxpcMsg, int event_code, GNode *ROOT_STAT);
 
 /* ------------------------- libnrf_app.c --------------------------- */
 nf_service_info *nf_discover_search_cache(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE);

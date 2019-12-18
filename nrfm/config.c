@@ -17,15 +17,15 @@ int cfg_get_nrf_stat_code(main_ctx_t *MAIN_CTX)
 
 int cfg_get_access_token_shm_key(main_ctx_t *MAIN_CTX)
 {
-	config_setting_t *setting_acc_token_shm_key = NULL;
-	if ((setting_acc_token_shm_key = config_lookup(&MAIN_CTX->CFG, CF_ACC_TOKEN_SHM)) == NULL) {
-		fprintf(stderr, "TODO| cant find .cfg(%s)\n", CF_ACC_TOKEN_SHM);
-		return (-1);
-	}
+	char fname[1024] = {0,};
+    sprintf(fname,"%s/%s", getenv(IV_HOME), SYSCONF_FILE);
 
-	int access_token_shm_key = config_setting_get_int(setting_acc_token_shm_key);
+    char tmp[1024] = {0,};
+    if (conflib_getNthTokenInFileSection (fname, "SHARED_MEMORY_KEY", "SHM_NRFM_ACC_TOKEN", 1, tmp) < 0 )
+        return -1;
+    int access_token_shm_key = strtol(tmp,(char**)0,0);
 
-	return access_token_shm_key;
+    return access_token_shm_key;
 }
 
 char *cfg_get_my_ip(main_ctx_t *MAIN_CTX)
@@ -537,6 +537,14 @@ int save_sysconfig(config_t *CFG, main_ctx_t *MAIN_CTX)
 {
     if (config_lookup_int(CFG, CF_SYS_DBG_MODE, &MAIN_CTX->sysconfig.debug_mode) == CONFIG_FALSE) {
         APPLOG(APPLOG_ERR, "DBG| (%s) .cfg [%s] not exist!", __func__, CF_SYS_DBG_MODE);
+        return -1;
+    }
+    if (config_lookup_int(CFG, CF_ISIFCS_MODE, &MAIN_CTX->sysconfig.isifcs_mode) == CONFIG_FALSE) {
+        APPLOG(APPLOG_ERR, "DBG| (%s) .cfg [%s] not exist!", __func__, CF_ISIFCS_MODE);
+        return -1;
+    }
+    if (config_lookup_int(CFG, CF_NFS_SHM_CREATE, &MAIN_CTX->sysconfig.nfs_shm_create) == CONFIG_FALSE) {
+        APPLOG(APPLOG_ERR, "DBG| (%s) .cfg [%s] not exist!", __func__, CF_NFS_SHM_CREATE);
         return -1;
     }
 

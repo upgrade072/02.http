@@ -42,6 +42,8 @@
 #elif LOG_PRINT
 #endif
 
+#include <libs.h>
+
 #define OUTPUT_WOULDBLOCK_THRESHOLD (1 << 16)
 
 #define ARRLEN(x) (sizeof(x) / sizeof(x[0]))

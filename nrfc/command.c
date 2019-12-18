@@ -36,7 +36,7 @@ void message_handle(evutil_socket_t fd, short what, void *arg)
 
     GeneralQMsgType *msg = (GeneralQMsgType *)msgBuff;
 
-    while (msgrcv(MAIN_CTX.my_qid.nrfc_qid, msg, sizeof(GeneralQMsgType), 0, IPC_NOWAIT) >= 0) {
+    while (msgrcv(MAIN_CTX.my_qid.nrfc_qid, msg, sizeof(GeneralQMsgType), 0, IPC_NOWAIT|MSG_NOERROR) >= 0) {
         switch (msg->mtype) {
 			case MTYPE_MMC_REQUEST:
 				mml_function((IxpcQMsgType *)msg->body);
@@ -65,7 +65,7 @@ void mml_function(IxpcQMsgType *rxIxpcMsg)
 	APPLOG(APPLOG_DEBUG, "%s() receive cmdName(%s)", __func__, mmlReq->head.cmdName);
 
 	for (i = 0; i < MAX_CMD_NUM; i++) {
-		if (!strcmp(mmlReq->head.cmdName, mmcHdlrVecTbl[i].cmdName)) {
+		if (!strcasecmp(mmlReq->head.cmdName, mmcHdlrVecTbl[i].cmdName)) {
 			mmcHdlr.func = mmcHdlrVecTbl[i].func;
 			break;
 		}

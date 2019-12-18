@@ -75,21 +75,18 @@ void save_session_info(httpc_ctx_t *httpc_ctx, int thrd_idx, int sess_idx, int s
 	httpc_ctx->sess_idx = sess_idx;
 	httpc_ctx->session_id = session_id;
 	httpc_ctx->ctx_idx = ctx_idx;
-#if 0
-	sprintf(httpc_ctx->user_ctx.head.destIp, "%s", conn_list->ip);
-#else
 	sprintf(httpc_ctx->user_ctx.head.destType, "%s", conn_list->type);
 	sprintf(httpc_ctx->user_ctx.head.destHost, "%s", conn_list->host);
 	sprintf(httpc_ctx->user_ctx.head.destIp, "%s", conn_list->ip);
 	httpc_ctx->user_ctx.head.destPort = conn_list->port;
-#endif
-#ifdef OAUTH
+
+    /* oauth 2.0 */
 	char *token = NULL;
-	if (conn_list->token_id > 0) 
-		token = get_access_token(CLIENT_CONF.ACC_TOKEN_LIST, conn_list->token_id);
+    if (conn_list->token_id > 0) {
+        token = get_access_token(CLIENT_CONF.ACC_TOKEN_LIST, conn_list->token_id);
+    }
 
 	sprintf(httpc_ctx->access_token, "%s", token != NULL ? token : "");
-#endif
 }
 
 int find_least_conn_worker()
@@ -180,7 +177,8 @@ void gather_list(conn_list_status_t CONN_STATUS[]) {
 			CONN_STATUS[index].port = 0;
 			CONN_STATUS[index].act = 0;
 			CONN_STATUS[index].occupied = 1;
-#ifdef OAUTH
+
+            /* oauth 2.0 */
 			int token_id = CONN_LIST[i].token_id;
 			CONN_STATUS[index].token_id = token_id;
 
@@ -190,7 +188,7 @@ void gather_list(conn_list_status_t CONN_STATUS[]) {
 			} else {
 				CONN_STATUS[index].token_acquired = 1;
 			}
-#endif
+
 			CONN_STATUS[index].nrfm_auto_added = CONN_LIST[i].nrfm_auto_added;
 			index++;
 		}
@@ -216,7 +214,8 @@ void gather_list(conn_list_status_t CONN_STATUS[]) {
 						CONN_STATUS[index].sess_cnt ++;
 						if (CONN_LIST[k].conn == CN_CONNECTED) 
 							CONN_STATUS[index].conn_cnt ++;
-#ifdef OAUTH
+
+                        /* oauth 2.0 */
 						int token_id = CONN_LIST[k].token_id;
 						CONN_STATUS[index].token_id = token_id;
 
@@ -226,7 +225,6 @@ void gather_list(conn_list_status_t CONN_STATUS[]) {
 						} else {
 							CONN_STATUS[index].token_acquired = 1;
 						}
-#endif
 						CONN_STATUS[index].nrfm_auto_added = CONN_LIST[k].nrfm_auto_added;
 					}
 				}
