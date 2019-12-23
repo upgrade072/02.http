@@ -3,6 +3,10 @@
 
 #include <ahif_msgtypes.h>
 #include <arpa/inet.h>
+#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/msg.h>
+#include <sys/shm.h>
 
 #ifdef LOG_LIB
 #include <loglib.h>

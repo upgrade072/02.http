@@ -256,6 +256,7 @@ HTTP_STATUS_SEND_FAIL:
 	return;
 }
 
+#ifdef STAT_LEGACY
 void stat_cnvt_for_httpc(STM_HttpcStatisticMsgType *stm_httpc, STM_CommonStatMsg *commStatItem, int i, int k)
 {
     switch (httpc_stat_idx[k]) {
@@ -285,7 +286,9 @@ void stat_cnvt_for_httpc(STM_HttpcStatisticMsgType *stm_httpc, STM_CommonStatMsg
             break;
     }
 }
+#endif
 
+#ifdef STAT_LEGACY
 void stat_cnvt_for_https(STM_HttpsStatisticMsgType *stm_https, STM_CommonStatMsg *commStatItem, int i, int k)
 {
     switch (https_stat_idx[k]) {
@@ -333,7 +336,9 @@ void stat_cnvt_for_https(STM_HttpsStatisticMsgType *stm_https, STM_CommonStatMsg
             break;
     }
 }
+#endif
 
+#ifdef STAT_LEGACY
 int stat_cnvt_legacy_form(int httpc, int https, STM_HttpcStatisticMsgType *stm_httpc, STM_HttpsStatisticMsgType *stm_https, STM_CommonStatMsgType *commStatMsg, int item_size)
 {
     int len = 0;
@@ -363,6 +368,8 @@ int stat_cnvt_legacy_form(int httpc, int https, STM_HttpcStatisticMsgType *stm_h
 
     return len;
 }
+#endif
+
 void print_stat(STM_CommonStatMsgType *commStatMsg, STM_CommonStatMsg *commStatItem, char (*str)[128], int size)
 {
 	for (int i = 0; i < size; i++) {

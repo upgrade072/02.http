@@ -19,6 +19,9 @@
 #include <appLog.h>
 #endif
 
+#include <shmqlib.h>
+#include <overloadlib.h>
+
 #include <libconfig.h>
 #include <json-c/json.h>
 #include <json-c/json_object.h>

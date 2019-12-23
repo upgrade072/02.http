@@ -690,6 +690,7 @@ char *nrf_stat_cate_str[] = {
     "NRFS_CATE_MAX"
 };
 
+#ifdef STAT_LEGACY
 void stat_cnvt_5geir_nrfm(STM_CommonStatMsg *commStatItem, STM_NrfmStatistics_s *nrfm_stat)
 {
     for (int k = 0; k < NRFS_CATE_MAX; k++) {
@@ -711,6 +712,7 @@ void stat_cnvt_5geir_nrfm(STM_CommonStatMsg *commStatItem, STM_NrfmStatistics_s 
         }
     }
 }
+#endif
 
 void nrf_stat_function(int ixpcQid, IxpcQMsgType *rxIxpcMsg, int event_code, GNode *ROOT_STAT)
 {

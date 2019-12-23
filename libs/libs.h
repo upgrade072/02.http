@@ -12,6 +12,7 @@
 #include <libconfig.h>
 #include <libfort.h>
 #include <stm_msgtypes.h>
+#include <sfm_msgtypes.h>
 
 /* ------------------------- libmml.c --------------------------- */
 int     get_mml_para_int (MMLReqMsgType *msg, char *paraName);
@@ -25,9 +26,11 @@ int     send_response_mml(IxpcQMsgType *rxIxpcMsg, char *resbuf, char resCode, c
 void    http_report_status(SFM_HttpConnStatusList *http_status, int msgId);
 void    http_stat_inc(int thrd_idx, int host_idx, int stat_idx);
 void    stat_function(IxpcQMsgType *rxIxpcMsg, int running_thrd_num, int httpc, int https, int msgId);
+#ifdef STAT_LEGACY
 void    stat_cnvt_for_httpc(STM_HttpcStatisticMsgType *stm_httpc, STM_CommonStatMsg *commStatItem, int i, int k);
 void    stat_cnvt_for_https(STM_HttpsStatisticMsgType *stm_https, STM_CommonStatMsg *commStatItem, int i, int k);
 int     stat_cnvt_legacy_form(int httpc, int https, STM_HttpcStatisticMsgType *stm_httpc, STM_HttpsStatisticMsgType *stm_https, STM_CommonStatMsgType *commStatMsg, int item_size);
+#endif
 void    print_stat(STM_CommonStatMsgType *commStatMsg, STM_CommonStatMsg *commStatItem, char (*str)[128], int size);
 void    reportAlarm(char *ProcName, int code, int level, char *info, char *desc);
 int     print_single_http_cfg(config_t *CFG_PTR, const char *cfg_path_str, const char *skip_str, const char *banner, char /*enough huge or NULL*/ *res_buff);int     print_single_http_cfg(config_t *CFG_PTR, const char *cfg_path_str, const char *skip_str, const char *banner, char /*enough huge or NULL*/ *res_buff);
