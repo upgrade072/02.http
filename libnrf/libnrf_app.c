@@ -115,7 +115,7 @@ nf_service_info *nf_discover_result(nf_discover_local_res *result_cache, nf_disc
 {
 	nf_list_shm_t *nfs_avail_shm = &NFS_TABLE->nfs_avail_shm[NFS_TABLE->curr_pos];
 
-	for (int i = 0; i < result_cache->res_num && i < MAX_NF_CACHE_NUM; i++) {
+	for (int i = 0; i < result_cache->res_num && i < MAX_NF_CACHE_RES; i++) {
 
 		nf_discover_res_info *res_info = &result_cache->nf_disc_res[i];
 	 	if (res_info->occupied == 0 || res_info->disc_raw_index < 0 || res_info->disc_raw_index >= MAX_NF_CACHE_NUM) {

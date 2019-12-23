@@ -229,18 +229,19 @@ int nf_notify_profile_add(nf_retrieve_item_t *nf_older_item, json_object *js_nf_
 		}
 	}
 
-	nf_retrieve_item_t *nf_item = malloc(sizeof(nf_retrieve_item_t));
+	nf_retrieve_item_t *nf_item = malloc(sizeof(nf_retrieve_item_t)); // 1- malloc
 	memset(nf_item, 0x00, sizeof(nf_retrieve_item_t));
 
 	sprintf(nf_item->nf_uuid, "%s", json_object_get_string(js_uuid));
 
 	if ((nf_item->item_nf_profile = json_tokener_parse(json_object_get_string(js_nf_profile))) == NULL) {
 		APPLOG(APPLOG_ERR, "{{{DBG}}} %s fail to create json_nf_profile!", __func__);
+        free(nf_item); // <-- 2-1 fail free
 		return -1;
 	}
 
 	nf_retr_info->nf_retrieve_items = g_slist_append(nf_retr_info->nf_retrieve_items, nf_item);
-	NF_MANAGE_NF_ADD(&MAIN_CTX, nf_item);
+	NF_MANAGE_NF_ADD(&MAIN_CTX, nf_item); // <-- 2-2 success add to list
 
 	return 0;
 }

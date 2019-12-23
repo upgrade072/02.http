@@ -359,7 +359,7 @@ int nf_retrieve_parse_list(json_object *js_item, nf_retrieve_item_t *item_ctx)
 
 	sscanf(json_object_get_string(js_item), "%127[^:/]://%127[^/]/nnrf-nfm/v1/nf-instances/%255s", protocol, host, item_ctx->nf_uuid);
 	APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s() %s %s %s %s", 
-			__func__, protocol, host, item_ctx->nf_uuid, strlen(item_ctx->nf_uuid) <= 0 ? "fail" : "succ");
+			__func__, protocol, host, item_ctx->nf_uuid, strlen(item_ctx->nf_uuid) == 0 ? "fail" : "succ");
 	return strlen(item_ctx->nf_uuid);
 }
 

@@ -45,6 +45,7 @@ int get_file_contents(const char* filename, char** outbuffer)
 	*outbuffer = filebuffer;
 	if (filebuffer == NULL) {
 		fprintf(stderr, "malloc out-of-memory\n");
+        fclose(file);
 		return -1;
 	}
 
@@ -52,6 +53,7 @@ int get_file_contents(const char* filename, char** outbuffer)
 	readsize = fread(filebuffer, blocksize, filesize, file);
 	if (readsize != filesize) {
 		fprintf(stderr, "didn't read file completely\n");
+        fclose(file);
 		return -1;
 	}
 

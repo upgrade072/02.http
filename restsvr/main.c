@@ -527,12 +527,12 @@ static int on_header_callback(nghttp2_session *session,
     stream_data =
         nghttp2_session_get_stream_user_data(session, frame->hd.stream_id);
 
-	/* save header for trace */
-	fprintf(stream_data->trace_file, "%s %s\n", name, value);
-
     if (!stream_data || stream_data->request_path) {
       break;
     }
+
+	/* save header for trace */
+	fprintf(stream_data->trace_file, "%s %s\n", name, value);
 
     if (namelen == sizeof(PATH) - 1 && memcmp(PATH, name, namelen) == 0) {
       size_t j;

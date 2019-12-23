@@ -129,9 +129,7 @@ int func_chg_nf_status(IxpcQMsgType *rxIxpcMsg)
 
     MMLReqMsgType   *mmlReq=(MMLReqMsgType*)rxIxpcMsg->body;
 
-	char *resBuf=malloc(1024 * 1024);
-	resBuf[0] = '\0';
-
+    /* error handle */
     char *err_txt_para_cnt = "err) para count must 1";
     char *err_txt_para_format = "err) para string must be \"REGI\" or \"UNDISCOVER\"";
     char *err_txt_not_registered = "err) NF status not regi, can't change to \"UNDISCOVER\"";
@@ -154,6 +152,10 @@ int func_chg_nf_status(IxpcQMsgType *rxIxpcMsg)
             return send_mml_res_failMsg(rxIxpcMsg, err_txt_not_registered);
         }
     }
+
+    /* malloc - send & free */
+	char *resBuf=malloc(1024 * 1024);
+	resBuf[0] = '\0';
 
     if (!strcasecmp(apply_value, "REGI")) {
         MAIN_CTX.prefer_undiscover_set = 0;

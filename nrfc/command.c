@@ -365,20 +365,22 @@ int func_add_nf_mml(IxpcQMsgType *rxIxpcMsg)
 
 	MMLReqMsgType   *mmlReq=(MMLReqMsgType*)rxIxpcMsg->body;
 
-    char *resBuf=malloc(1024 * 1024);
-	resBuf[0] = '\0';
-
 	/* mandatory */
 	char CONF_NAME[128] = {0,};
 	char TARGET_HOST[128] = {0,};
 	char NF_TYPE[128] = {0,};
 
+    /* error handle */
 	if (get_mml_para_str(mmlReq, "CONF_NAME", CONF_NAME) < 0)
 		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(CONF_NAME)");
 	if (get_mml_para_str(mmlReq, "TARGET_HOST", TARGET_HOST) < 0)
 		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(TARGET_HOST)");
 	if (get_mml_para_str(mmlReq, "NF_TYPE", NF_TYPE) < 0)
 		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(NF_TYPE)");
+
+    /* malloc - send & free */
+    char *resBuf=malloc(1024 * 1024);
+	resBuf[0] = '\0';
 
 	if (add_cfg_nf_mml(&MAIN_CTX, CONF_NAME, TARGET_HOST, NF_TYPE, mmlReq, resBuf) < 0)
 		return send_mml_res_failMsg(rxIxpcMsg, resBuf);
@@ -395,14 +397,16 @@ int func_del_nf_mml(IxpcQMsgType *rxIxpcMsg)
 
 	MMLReqMsgType   *mmlReq=(MMLReqMsgType*)rxIxpcMsg->body;
 
-    char *resBuf=malloc(1024 * 1024);
-	resBuf[0] = '\0';
-
 	/* mandatory */
 	int ID = -1;
 
+    /* error handle */
 	if ((ID = get_mml_para_int(mmlReq, "ID")) < 0)
 		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(ID)");
+
+    /* malloc - send & free */
+    char *resBuf=malloc(1024 * 1024);
+	resBuf[0] = '\0';
 
 	if (del_cfg_nf_mml(&MAIN_CTX, ID, resBuf) < 0)
 		return send_mml_res_failMsg(rxIxpcMsg, resBuf);
