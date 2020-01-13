@@ -12,7 +12,11 @@ int isifc_init()
 	return 0;
 }
 
+#if 0
 void isifc_create_pkt_for_status(IsifMsgType *txIsifMsg, service_info_t *fep_svc, svr_info_t *my_info, assoc_t *lb_assoc)
+#else
+void isifc_create_pkt(IsifMsgType *txIsifMsg, svr_info_t *my_info, assoc_t *lb_assoc, void *ptr, size_t size)
+#endif
 {
     /* ISIF Header Set */
     txIsifMsg->head.mtype = MTYPE_NRFC_BROAD_STATUS_TO_LB;
@@ -31,11 +35,20 @@ void isifc_create_pkt_for_status(IsifMsgType *txIsifMsg, service_info_t *fep_svc
 	/* schlee, is it work ??? */
     //txIsifMsg.head.option |= ISIF_OPTION_ALL_SERVER;
 
+#if 0
 	memcpy(txIsifMsg->body, fep_svc, sizeof(service_info_t));
 	txIsifMsg->head.bodyLen = sizeof(service_info_t);
+#else
+	memcpy(txIsifMsg->body, ptr, size);
+	txIsifMsg->head.bodyLen = size;
+#endif
 }
 
+#if 0
 void isifc_send_pkt_for_status(int isifc_qid, IsifMsgType *txIsifMsg)
+#else
+void isifc_send_pkt(int isifc_qid, IsifMsgType *txIsifMsg)
+#endif
 {
 	int tx_len = ISIF_HEAD_LEN + txIsifMsg->head.bodyLen;
 

@@ -362,13 +362,20 @@ nf_retrieve_info_t *nf_notify_search_info_by_uuid(main_ctx_t *MAIN_CTX, const ch
 	int nf_type_num = g_slist_length(MAIN_CTX->nf_retrieve_list);
 	for (int ii = 0; ii < nf_type_num; ii++) {
 		nf_retrieve_info_t *nf_retr_info = g_slist_nth_data(MAIN_CTX->nf_retrieve_list, ii);
-		int nf_item_num = g_slist_length(nf_retr_info->nf_retrieve_items);
-		for (int jj = 0; jj < nf_item_num; jj++) {
-			nf_retrieve_item_t *nf_item = g_slist_nth_data(nf_retr_info->nf_retrieve_items, jj);
-			if (!strcmp(nf_item->nf_uuid, nf_uuid)) {
-				return nf_retr_info;
-			}
-		}
+#if 0
+        int nf_item_num = g_slist_length(nf_retr_info->nf_retrieve_items);
+        for (int jj = 0; jj < nf_item_num; jj++) {
+            nf_retrieve_item_t *nf_item = g_slist_nth_data(nf_retr_info->nf_retrieve_items, jj);
+            if (!strcmp(nf_item->nf_uuid, nf_uuid)) {
+                return nf_retr_info;
+            }
+        }
+#else
+        nf_retrieve_item_t *nf_item = nf_retrieve_search_item_by_uuid(nf_retr_info->nf_retrieve_items, nf_uuid);
+        if (nf_item != NULL) {
+            return nf_retr_info;
+        }
+#endif
 	}
 	return NULL;
 }
@@ -378,13 +385,20 @@ nf_retrieve_item_t *nf_notify_search_item_by_uuid(main_ctx_t *MAIN_CTX, const ch
 	int nf_type_num = g_slist_length(MAIN_CTX->nf_retrieve_list);
 	for (int ii = 0; ii < nf_type_num; ii++) {
 		nf_retrieve_info_t *nf_retr_info = g_slist_nth_data(MAIN_CTX->nf_retrieve_list, ii);
-		int nf_item_num = g_slist_length(nf_retr_info->nf_retrieve_items);
-		for (int jj = 0; jj < nf_item_num; jj++) {
-			nf_retrieve_item_t *nf_item = g_slist_nth_data(nf_retr_info->nf_retrieve_items, jj);
-			if (!strcmp(nf_item->nf_uuid, nf_uuid)) {
-				return nf_item;
-			}
-		}
+#if 0
+        int nf_item_num = g_slist_length(nf_retr_info->nf_retrieve_items);
+        for (int jj = 0; jj < nf_item_num; jj++) {
+            nf_retrieve_item_t *nf_item = g_slist_nth_data(nf_retr_info->nf_retrieve_items, jj);
+            if (!strcmp(nf_item->nf_uuid, nf_uuid)) {
+                return nf_item;
+            }
+        }
+#else
+        nf_retrieve_item_t *nf_item = nf_retrieve_search_item_by_uuid(nf_retr_info->nf_retrieve_items, nf_uuid);
+        if (nf_item != NULL) {
+            return nf_item;
+        }
+#endif
 	}
 	return NULL;
 }

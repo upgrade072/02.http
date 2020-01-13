@@ -1,30 +1,98 @@
-#include "libnrf.h"
+#include <libnrf_app.h>
 
-nf_service_info *nf_discover_search_cache(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE)
+// NRFC 메시지 큐 ID 
+// extern int NrfcQid;
+
+// search_info : routing info (매칭 조건 아닐 시 NULL 세팅할 것)
+// DISC_TABLE : discover 결과 저장 테이블, 멀티 쓰레드/프로세스 경우 각각의 테이블 로컬 생성 사용할것 
+// NFS_TABLE : connection 통합 테이블 
+// NF_DISC_RESULT : NF Discover 결과 있다면 포인터 전달, 없다면 NULL 전달 
+// NRFC_QID : NRFC 메시지 큐 ID
+nf_service_info *nf_discover_search(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, char *NF_DISC_RESULT, int NRFC_QID)
+{
+    if (NF_DISC_RESULT != NULL) {
+        int res = nf_discover_table_handle(DISC_TABLE, NF_DISC_RESULT);
+        APPLOG(APPLOG_DEBUG, "(%s) update (%d)raw in DISC_TABLE(%x)", __func__, res, DISC_TABLE);
+    }
+
+    return nf_discover_search_cache(search_info, DISC_TABLE, NFS_TABLE, NRFC_QID);
+}
+
+nf_service_info *nf_discover_search_cache(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID)
 {
 	switch (search_info->nfType) {
 		case NF_TYPE_UDM:
-			return nf_discover_search_udm(search_info, DISC_TABLE, NFS_TABLE);
+			return nf_discover_search_udm(search_info, DISC_TABLE, NFS_TABLE, NRFC_QID);
+		case NF_TYPE_AMF:
+			return nf_discover_search_amf(search_info, DISC_TABLE, NFS_TABLE, NRFC_QID);
 		default:
 			APPLOG(APPLOG_ERR, "(%s) recv unknown nfType(%d)", __func__, search_info->nfType);
 			return NULL;
 	}
 }
 
-nf_service_info *nf_discover_search_udm(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE)
+nf_service_info *nf_discover_search_udm(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID)
 {
 	switch (search_info->nfSearchType) {
 		case NF_DISC_ST_SUPI:
-			return nf_discover_search_udm_supi(search_info, DISC_TABLE, NFS_TABLE);
+			return nf_discover_search_udm_supi(search_info, DISC_TABLE, NFS_TABLE, NRFC_QID);
 		case NF_DISC_ST_SUCI: 
-			return nf_discover_search_udm_suci(search_info, DISC_TABLE, NFS_TABLE);
+			return nf_discover_search_udm_suci(search_info, DISC_TABLE, NFS_TABLE, NRFC_QID);
 		default:
 			APPLOG(APPLOG_ERR, "(%s) recv unknown searchType(%d)", __func__, search_info->nfSearchType);
 			return NULL;
 	}
 }
 
-nf_service_info *nf_discover_search_udm_supi(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE)
+nf_service_info *nf_discover_search_amf(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID)
+{
+	nf_discover_local_res result_cache = {0,};
+
+	const char *default_svc_name = "namf-loc";
+	if (search_info->serviceName == NULL)
+		search_info->serviceName = default_svc_name;
+
+	for (int i = 0; i < MAX_NF_CACHE_NUM; i++) {
+		nf_discover_raw *disc_raw = &DISC_TABLE->disc_cache[i];
+
+		if (nf_discover_check_cache_raw(disc_raw, search_info) < 0) /* default info matched */
+			continue;
+
+		nf_amf_info *amfInfo = &disc_raw->nfTypeInfo.amfInfo;
+
+        // check regionId & amfSetId, if key exist
+        if (search_info->region_id != NULL && strcmp(search_info->region_id, amfInfo->amfRegionId))
+            continue;
+        if (search_info->amf_set_id != NULL && strcmp(search_info->amf_set_id, amfInfo->amfSetId))
+            continue;
+
+#if 0
+        if (search_info->plmnId_in_guami != NULL && search_info->amfId_in_guami) {
+#else
+        if (search_info->amfId_in_guami != NULL) {
+#endif
+            for (int k = 0; k < amfInfo->guamiListNum; k++) {
+                nf_guami_info *nf_guami = &amfInfo->nf_guami[k];
+#if 0
+                if (!strcmp(search_info->plmnId_in_guami, nf_guami->plmnId) &&
+                        !strcmp(search_info->amfId_in_guami, nf_guami->amfId))  {
+#else
+                if (!strcmp(search_info->amfId_in_guami, nf_guami->amfId)) {
+#endif
+                    nf_discover_order_local_res(disc_raw, &result_cache, search_info->selectionType);
+                }
+            }
+        }
+	}
+
+	/* check result */
+	nf_discover_res_log(&result_cache, search_info->selectionType);
+
+	/* find host name from SHM & return */
+	return nf_discover_result(&result_cache, search_info, DISC_TABLE, NFS_TABLE, NRFC_QID);
+}
+
+nf_service_info *nf_discover_search_udm_supi(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID)
 {
 	nf_discover_local_res result_cache = {0,};
 	char imsi[128] = {0,};
@@ -64,10 +132,10 @@ nf_service_info *nf_discover_search_udm_supi(nf_discover_key *search_info, nf_di
 	nf_discover_res_log(&result_cache, search_info->selectionType);
 
 	/* find host name from SHM & return */
-	return nf_discover_result(&result_cache, search_info, DISC_TABLE, NFS_TABLE); 
+	return nf_discover_result(&result_cache, search_info, DISC_TABLE, NFS_TABLE, NRFC_QID);
 }
 
-nf_service_info *nf_discover_search_udm_suci(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE)
+nf_service_info *nf_discover_search_udm_suci(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID)
 {
 	nf_discover_local_res result_cache = {0,};
 
@@ -108,12 +176,50 @@ nf_service_info *nf_discover_search_udm_suci(nf_discover_key *search_info, nf_di
 	nf_discover_res_log(&result_cache, search_info->selectionType);
 
 	/* find host name from SHM & return */
-	return nf_discover_result(&result_cache, search_info, DISC_TABLE, NFS_TABLE); 
+	return nf_discover_result(&result_cache, search_info, DISC_TABLE, NFS_TABLE, NRFC_QID);
 }
 
-nf_service_info *nf_discover_result(nf_discover_local_res *result_cache, nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE)
+nf_service_info *nf_discover_check_host_svc_avail(nf_discover_raw *discover_info, nfs_avail_shm_t *NFS_TABLE, int lbIndex, int *http2_conn_exist_in_lb)
 {
-	nf_list_shm_t *nfs_avail_shm = &NFS_TABLE->nfs_avail_shm[NFS_TABLE->curr_pos];
+    int POS = NFS_TABLE->curr_pos;
+    GNode **root_node = &NFS_TABLE->root_node[POS];
+
+    if (*root_node == NULL) {
+        return NULL;
+    }
+
+    nf_search_key_t key = {0,};
+
+    key.lb_id = lbIndex; // TODO!!! CHECK lbIndex CORRECT
+    key.nf_type = nf_type_to_str(discover_info->nfType);
+    key.nf_host = discover_info->hostname;
+    key.nf_svcname = discover_info->serviceName;
+
+    GNode *node_host = search_node_data(*root_node, &key, NF_NODE_DATA_DEPTH - 1);
+
+    if (node_host == NULL)
+        return NULL;
+    else
+        *http2_conn_exist_in_lb = 1;
+
+    unsigned int child_num = g_node_n_children(node_host);
+    if (child_num == 0)
+        return NULL;
+
+    for (int i = 0; i < child_num; i++) { // connInfo
+        GNode *node_conn = g_node_nth_child(node_host, i);
+        nf_connection_info_t *nf_conn = (nf_connection_info_t *)node_conn->data;
+        if (nf_conn->avail) {
+            return nf_conn->nf_service_shm_ptr;
+        }
+    }
+
+    return NULL;
+}
+
+nf_service_info *nf_discover_result(nf_discover_local_res *result_cache, nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID)
+{
+	//nf_list_shm_t *nfs_avail_shm = &NFS_TABLE->nfs_avail_shm[NFS_TABLE->curr_pos];
 
 	for (int i = 0; i < result_cache->res_num && i < MAX_NF_CACHE_RES; i++) {
 
@@ -126,21 +232,53 @@ nf_service_info *nf_discover_result(nf_discover_local_res *result_cache, nf_disc
 		/* key */
 		nf_discover_raw *discover_info = &DISC_TABLE->disc_cache[res_info->disc_raw_index];
 
+        // 1) check conn status & check http2-conn exist or not
+        // 2) if not exist, request add to NRFC
+        int http2_conn_exist_in_lb = 0;
+
 		for (int k = 0; k < search_info->lbNum && k < NF_MAX_LB_NUM; k++) {
 			int lbIndex = (search_info->start_lbId + k) % search_info->lbNum;
+#if 0
 			int availCount = nfs_avail_shm->nf_avail_cnt[lbIndex];
 
 			for (int nfsIndex = 0; nfsIndex < availCount && nfsIndex < NF_MAX_AVAIL_LIST; nfsIndex++) {
 				nf_service_info *nf_service = &nfs_avail_shm->nf_avail[lbIndex][nfsIndex];
 				
-				if (!strcmp(discover_info->hostname, nf_service->hostname)) {
-					discover_info->sel_count++;
-					APPLOG(APPLOG_DEBUG, "(%s) select (%s) in lb[%d]", 
-							__func__, nf_service->hostname, lbIndex);
-					return nf_service;
+				if (!strcmp(discover_info->hostname, nf_service->hostname) &&
+                    !strcmp(discover_info->serviceName, nf_service->serviceName)) {
+                    http2_conn_exist_in_lb = 1;
+                    if (nf_service->available) {
+                        discover_info->sel_count++;
+                        APPLOG(APPLOG_DEBUG, "(%s) select (%s) in lb[%d]", 
+                                __func__, nf_service->hostname, lbIndex);
+                        return nf_service;
+                    }
 				}
 			}
+#else
+            nf_service_info *nf_service = nf_discover_check_host_svc_avail(discover_info, NFS_TABLE, lbIndex, &http2_conn_exist_in_lb);
+            if (nf_service != NULL) {
+                discover_info->sel_count++;
+                APPLOG(APPLOG_DEBUG, "(%s) select (%s) in lb[%d]", __func__, nf_service->hostname, lbIndex);
+                return nf_service;
+            }
+#endif
 		}
+
+        if (!http2_conn_exist_in_lb) {
+            APPLOG(APPLOG_DEBUG, "(%s) can't find service/host[%s/%s] from LB, send add request to NRFC",
+                __func__, discover_info->serviceName, discover_info->hostname);
+
+            nf_disc_host_info *hostInfo = nf_discover_search_node_by_hostname(&DISC_TABLE->root_node, discover_info->hostname);
+
+            if (hostInfo != NULL && hostInfo->requested == 0 && NRFC_QID > 0) {
+                hostInfo->requested = 1;
+                if (msgsnd(NRFC_QID, discover_info, NF_DISC_HOSTINFO_LEN(hostInfo), IPC_NOWAIT) < 0) {
+                    APPLOG(APPLOG_ERR, "(%s) fail to send nfProfile[%s/%s] to NRFC",
+                            __func__, discover_info->serviceName, discover_info->hostname);
+                }
+            }
+        }
 	}
 
 	//APPLOG(APPLOG_ERR, "(%s) cant find any hostname in SHM!!", __func__);
@@ -281,6 +419,25 @@ NDTU_FAIL:
 	return res;
 }
 
+void nf_discover_update_nf_profiles(nf_discover_table *DISC_TABLE, int nfType, const char *nfInstanceId, json_object *js_nf_profile, time_t *validity_time)
+{
+    // prepare info
+    nf_disc_host_info nf_host_info = {0,};
+
+    nf_host_info.mtype = MSGID_NRF_LIB_NRFC_REQ_PROFILE;
+    sprintf(nf_host_info.nfType, "%s", nf_type_to_str(nfType));
+    sprintf(nf_host_info.hostname, "%s", nfInstanceId);
+    sprintf(nf_host_info.nfProfile, "%s", json_object_to_json_string_length(js_nf_profile, JSON_C_TO_STRING_NOSLASHESCAPE, &nf_host_info.profile_length));
+
+    memcpy(&nf_host_info.validityPeriod, validity_time, sizeof(time_t));
+
+    // create child_node
+    GNode *new_node = nf_discover_create_new_node(&nf_host_info);
+
+    // add to root_node
+    nf_discover_add_new_node(&DISC_TABLE->root_node, new_node);
+}
+
 int nf_discover_table_update(nf_discover_table *DISC_TABLE, json_object *js_nf_profile, time_t *validity_time)
 {
 	/* get nfInstanceId (hostname) */
@@ -293,13 +450,17 @@ int nf_discover_table_update(nf_discover_table *DISC_TABLE, json_object *js_nf_p
 	const char *nfInstanceId = json_object_get_string(js_nfInstanceId);
 	APPLOG(APPLOG_DEBUG, "(%s) success to search \"nfInstanceId\"=[%s]", __func__, nfInstanceId);
 
-	/* get specificInfo (udmInfo) */
+	/* get specificInfo (ex) udmInfo) */
 	json_object *js_specific_info = NULL;
 	int nfType = nf_search_specific_info(js_nf_profile, &js_specific_info);
 	if (nfType < 0) {
-		APPLOG(APPLOG_ERR, "(%s) fail to search \"specific(udm)Info\"", __func__);
+		APPLOG(APPLOG_ERR, "(%s) fail to search \"specificInfo\"", __func__);
 		return -1;
 	}
+
+    /* CREATE(UPDATE) NR PROFILE LIST */
+    nf_discover_update_nf_profiles(DISC_TABLE, nfType, nfInstanceId, js_nf_profile, validity_time);
+
 	nf_type_info nf_specific_info = {0,};
 	nf_get_specific_info(nfType, js_specific_info, &nf_specific_info);
 
@@ -323,7 +484,7 @@ int nf_discover_table_update(nf_discover_table *DISC_TABLE, json_object *js_nf_p
 		const char *serviceName = json_object_get_string(js_serviceName);
 
 		char key_priority[128] = "priority";
-		int priority = 100; /* TODO! */
+		int priority = 100;
 		json_object *js_priority = search_json_object(js_elem, key_priority);
 		if (js_priority != NULL)
 			priority = json_object_get_int(js_priority);
@@ -359,7 +520,7 @@ void nf_discover_raw_update(nf_discover_table *DISC_TABLE, int nfType, nf_type_i
 			if (candidate_index < 0) 
 				candidate_index = i;
 			continue;
-		} else if (!strcmp(serviceName, disc_raw->serviceName) && !strcmp(nfInstanceId, disc_raw->hostname)) {
+		} else if (!strcmp(nfInstanceId, disc_raw->hostname) && !strcmp(serviceName, disc_raw->serviceName)) {
 			APPLOG(APPLOG_DEBUG, "(%s) find [%s:%s] in raw update validity time to [%.24s]", 
 					__func__,  serviceName, nfInstanceId, ctime(validity_time));
 			memcpy(&disc_raw->validityPeriod, validity_time, sizeof(time_t));
@@ -389,14 +550,16 @@ void nf_discover_raw_update(nf_discover_table *DISC_TABLE, int nfType, nf_type_i
 }
 
 /* must call this function every per sec */
-int NF_DISCOVER_TABLE_STEP;
 int nf_discover_table_clear_cached(nf_discover_table *DISC_TABLE)
 {
-	NF_DISCOVER_TABLE_STEP++;
+    /* 0. REMOVE expired nf profiles(s) */
+    nf_discover_remove_expired_node(&DISC_TABLE->root_node);
+             
 	int reset_select_count = 0;
-	if (NF_DISCOVER_TABLE_STEP >= 60) { /* 1min */
+
+	if (DISC_TABLE->nf_discover_table_step++ >= 60) { /* 1min */
+		DISC_TABLE->nf_discover_table_step = 0;
 		reset_select_count = 1;
-		NF_DISCOVER_TABLE_STEP = 0;
 	}
 
 	time_t current = time(NULL);
@@ -441,35 +604,15 @@ void nf_discover_table_print(nf_discover_table *DISC_TABLE, char *print_buffer, 
 		nf_discover_raw *disc_raw = &DISC_TABLE->disc_cache[i];
 		if (disc_raw->occupied == 0) continue;
 
-		// TODO ! to library (~libnrf.c, same function)
 		char allowdPlmnsStr[1024] = {0,};
 		if (disc_raw->allowdPlmnsNum) {
-			for (int k = 0; k < disc_raw->allowdPlmnsNum; k++) {
-				nf_comm_plmn *plmns = &disc_raw->allowdPlmns[k];
-				sprintf(allowdPlmnsStr + strlen(allowdPlmnsStr), "%s%s%s", 
-					plmns->mcc, plmns->mnc, k == (disc_raw->allowdPlmnsNum - 1) ? "" : "\n");
-			}
-		} else {
-			sprintf(allowdPlmnsStr, "%s", "anyPlmns");
-		}
+            nf_get_allowd_plmns_str(disc_raw->allowdPlmnsNum, disc_raw->allowdPlmns, allowdPlmnsStr);
+        } else {
+			sprintf(allowdPlmnsStr, "anyPlmns");
+        }
 
-		// TODO ! to library (~libnrf.c, same function)
-		char typeSpecStr[1024] = {0,};
-		if (disc_raw->nfType == NF_TYPE_UDM) {
-			nf_udm_info *udmInfo = &disc_raw->nfTypeInfo.udmInfo;
-			sprintf(typeSpecStr + strlen(typeSpecStr), "%s\n", udmInfo->groupId);
-			for (int i = 0; i < udmInfo->supiRangesNum; i++) {
-				sprintf(typeSpecStr + strlen(typeSpecStr), "%s ~ %s\n",
-						udmInfo->supiRanges[i].start,
-						udmInfo->supiRanges[i].end);
-			}
-			for (int i = 0; i < udmInfo->routingIndicatorsNum; i++) {
-				sprintf(typeSpecStr + strlen(typeSpecStr), "%s ", 
-						udmInfo->routingIndicators[i]);
-			}   
-		} else {
-			sprintf(allowdPlmnsStr, "%s", "unknownType");
-		}
+        char typeSpecStr[1024] = {0,};
+        nf_get_specific_info_str(disc_raw->nfType, &disc_raw->nfTypeInfo, typeSpecStr);
 
 		// nf type to string
 		ft_printf_ln(table, "%d|%s|%s|%s|%s|%s|%d|%.19s",
@@ -492,4 +635,783 @@ void nf_discover_table_print(nf_discover_table *DISC_TABLE, char *print_buffer, 
 	}
 
 	ft_destroy_table(table);
+}
+
+GNode *nf_discover_create_new_node(nf_disc_host_info *insert_item)
+{
+    nf_disc_host_info *new_node = malloc(sizeof(nf_disc_host_info));
+    memcpy(new_node, insert_item, sizeof(nf_disc_host_info));
+
+    return g_node_new(new_node);
+}
+
+GNode *nf_discover_add_new_node(GNode **root, GNode *child)
+{
+    // 0. if root is NULL create root 
+    if (*root == NULL) {
+        nf_disc_host_info root_null_data = {0,}; // create root node
+        *root = nf_discover_create_new_node(&root_null_data);
+    }
+
+    // 1. if child num = 0, just add & return 
+    unsigned int child_num = g_node_n_children(*root);
+    if (child_num == 0) {
+        return g_node_insert_before(*root, NULL, child);
+    }
+
+    // 2. else try bsearch
+    nf_disc_host_info *insert_host_info =  (nf_disc_host_info *)child->data;
+    GNode *nth_child = NULL;
+    int low = 0;
+    int high = (child_num - 1);
+    int nth = 0;
+    int compare_res = 0;
+
+    // 2-1. if bsearch finded, update data
+    while (low <= high) {
+        nth = (low + high) / 2;
+
+        nth_child = g_node_nth_child(*root, nth);
+        nf_disc_host_info *compare_host_info = (nf_disc_host_info *)nth_child->data;
+
+        compare_res = strcmp(insert_host_info->hostname, compare_host_info->hostname);
+
+        if (compare_res == 0) {
+            memcpy(compare_host_info, insert_host_info, sizeof(nf_disc_host_info));
+            return nth_child;
+        } else if (compare_res < 0) {
+            high = nth - 1;
+        } else {
+            low = nth + 1;
+        }
+    }
+
+    // 2-2. else insert before or after
+    if (compare_res < 0) {
+        return g_node_insert_before(*root, nth_child, child);
+    } else {
+        return g_node_insert_after(*root, nth_child, child);
+    }
+}
+
+nf_disc_host_info *nf_discover_search_node_by_hostname(GNode **root, const char *hostname)
+{
+    unsigned int child_num = 0;
+
+    // 0. if root is NULL  or child == 0 return NULL
+    if (*root == NULL || (child_num = g_node_n_children(*root)) == 0) {
+        return NULL;
+    }
+
+    // 1. try bsearch
+    GNode *nth_child = NULL;
+    int low = 0;
+    int high = (child_num - 1);
+    int nth = 0;
+    int compare_res = 0;
+
+    while (low <= high) {
+        nth = (low + high) / 2;
+
+        nth_child = g_node_nth_child(*root, nth);
+        nf_disc_host_info *compare_host_info = (nf_disc_host_info *)nth_child->data;
+
+        compare_res = strcmp(hostname, compare_host_info->hostname);
+
+        if (compare_res == 0) {
+            // we find return this
+            return compare_host_info;
+        } else if (compare_res < 0) {
+            high = nth - 1;
+        } else {
+            low = nth + 1;
+        }
+    }
+
+    // can't find return NULL
+    return NULL;
+}
+
+void nf_discover_remove_expired_node(GNode **root)
+{
+    unsigned int child_num = 0;
+
+    // 0. if root is NULL  or child == 0 return NULL
+    if (*root == NULL || (child_num = g_node_n_children(*root)) == 0) {
+        return;
+    }
+            
+    time_t current = time(NULL);
+
+    // 1. backward select & check expire & free mem, remove node
+    for (int i = (child_num-1); i >= 0; i--) {
+        GNode *nth_child = g_node_nth_child(*root, i);
+        nf_disc_host_info *host_info = (nf_disc_host_info *)nth_child->data;
+
+        // 2. reset requested info
+        host_info->requested = 0;
+
+        // 3. if expired remove node 
+        if (host_info->validityPeriod < current) {
+            free(host_info);
+            g_node_destroy(nth_child);
+        }
+    }
+}
+
+int nf_search_specific_info(json_object *nf_profile, json_object **js_specific_info)
+{
+	if (nf_profile == NULL) {
+		APPLOG(APPLOG_ERR, "{{{DBG}}} something wrong %s nf_profile null!", __func__);
+		return -1;
+	}
+
+    char key_nfType[128] = "nfType";
+    json_object *js_nfType = search_json_object(nf_profile, key_nfType);
+    const char *nfType = json_object_get_string(js_nfType);
+
+    if(!strcmp(nfType, "UDM")) {
+        char key_specific_info[128] = "udmInfo";
+        *js_specific_info = search_json_object(nf_profile, key_specific_info);
+        return NF_TYPE_UDM;
+    } else if (!strcmp(nfType, "AMF")) {
+        char key_specific_info[128] = "amfInfo";
+        *js_specific_info = search_json_object(nf_profile, key_specific_info);
+        return NF_TYPE_AMF;
+    } else {
+        *js_specific_info = NULL;
+        return NF_TYPE_UNKNOWN;
+    }       
+}
+
+void nf_get_specific_info(int nfType, json_object *js_specific_info, nf_type_info *nf_specific_info)
+{           
+    if (nfType == NF_TYPE_UDM) {
+        nf_get_specific_info_udm(js_specific_info, nf_specific_info);
+    } else if (nfType == NF_TYPE_AMF) {
+        nf_get_specific_info_amf(js_specific_info, nf_specific_info);
+    }
+}
+
+/*
+"udmInfo":{
+  "groupId":"0001",
+  "supiRanges":[
+    {
+      "start":"450070000000000",
+      "end":"450079999999999"
+    }, {
+      "start":"450080000000000",
+      "end":"450089999999999"
+    }
+  ],
+  "routingIndicators":[
+    "0001", "0002"
+  ]
+},
+*/
+void nf_get_specific_info_udm(json_object *js_specific_info, nf_type_info *nf_specific_info)
+{
+    nf_udm_info *udmInfo = &nf_specific_info->udmInfo;
+        
+    /* group Id */
+    char key_groupId[128] = "groupId";
+    json_object *js_group_id = search_json_object(js_specific_info, key_groupId);
+    if (js_group_id)
+        sprintf(udmInfo->groupId, "%.27s", json_object_get_string(js_group_id));
+
+    /* supiRanges */
+    char key_supi_ranges[128] = "supiRanges";
+    json_object *js_supi_ranges = search_json_object(js_specific_info, key_supi_ranges);
+    if (js_supi_ranges) {
+        udmInfo->supiRangesNum = (json_object_array_length(js_supi_ranges) > NF_MAX_SUPI_RANGES) ?
+            NF_MAX_SUPI_RANGES : json_object_array_length(js_supi_ranges);
+        for (int i = 0; i < udmInfo->supiRangesNum; i++) {
+            json_object *js_supi_elem = json_object_array_get_idx(js_supi_ranges, i);
+            char key_start[128] = "start";
+            char key_end[128] = "end";
+            json_object *js_start = search_json_object(js_supi_elem, key_start);
+            json_object *js_end = search_json_object(js_supi_elem, key_end);
+            if (js_start)
+                sprintf(udmInfo->supiRanges[i].start, "%.21s", json_object_get_string(js_start));
+            if (js_end)
+                sprintf(udmInfo->supiRanges[i].end, "%.21s", json_object_get_string(js_end));
+        }
+    }
+    
+    /* routingIndicators */
+    char key_routing_indicators[128] = "routingIndicators";
+    json_object *js_routing_indicators = search_json_object(js_specific_info, key_routing_indicators);
+    if (js_routing_indicators) {
+        udmInfo->routingIndicatorsNum = (json_object_array_length(js_routing_indicators) > NF_MAX_RI) ?
+            NF_MAX_RI : json_object_array_length(js_routing_indicators);
+        for (int i = 0; i < udmInfo->routingIndicatorsNum; i++) {
+            json_object *js_ri_elem = json_object_array_get_idx(js_routing_indicators, i);
+            if (js_ri_elem != NULL)
+                sprintf(udmInfo->routingIndicators[i], "%.4s", json_object_get_string(js_ri_elem));
+        }
+    }
+}
+
+/*
+"amfInfo" : {
+    "amfRegionId" : "01",
+    "amfSetId" : "001",
+    "guamiList" : [ {
+                "plmnId" : "262-01",
+                "amfId" : "000001"
+            },
+            {
+                "plmnId", "302-720",
+                "amfId" : "000002"
+    } ],
+}
+*/
+void nf_get_specific_info_amf(json_object *js_specific_info, nf_type_info *nf_specific_info)
+{
+    nf_amf_info *amfInfo = &nf_specific_info->amfInfo;
+
+    /* amfRegionId */
+    char key_regionId[128] = "amfRegionId";
+    json_object *js_region_id = search_json_object(js_specific_info, key_regionId);
+    if (js_region_id)
+        sprintf(amfInfo->amfRegionId, "%.2s", json_object_get_string(js_region_id));
+
+    /* amfSetId */
+    char key_setId[128] = "amfSetId";
+    json_object *js_set_id = search_json_object(js_specific_info, key_setId);
+    if (js_set_id)
+        sprintf(amfInfo->amfSetId, "%.3s", json_object_get_string(js_set_id));
+
+    /* supiRanges */
+    char key_guami_list[128] = "guamiList";
+    json_object *js_guami_list = search_json_object(js_specific_info, key_guami_list);
+    if (js_guami_list) {
+        amfInfo->guamiListNum = (json_object_array_length(js_guami_list) > NF_MAX_GUAMI_NUM) ?
+            NF_MAX_GUAMI_NUM : json_object_array_length(js_guami_list);
+        for (int i = 0; i < amfInfo->guamiListNum; i++) {
+            json_object *js_guami_elem = json_object_array_get_idx(js_guami_list, i);
+            char key_plmnId[128] = "plmnId";
+            char key_amfId[128] = "amfId";
+            json_object *js_plmnId = search_json_object(js_guami_elem, key_plmnId);
+            json_object *js_amfId = search_json_object(js_guami_elem, key_amfId);
+            if (js_plmnId)
+                sprintf(amfInfo->nf_guami[i].plmnId, "%.6s", json_object_get_string(js_plmnId));
+            if (js_amfId)
+                sprintf(amfInfo->nf_guami[i].amfId, "%.6s", json_object_get_string(js_amfId));
+        }
+    }
+}
+
+int nf_get_allowd_plmns(json_object *nf_profile, nf_comm_plmn *allowdPlmns)
+{   
+    char key_allowd_plmns[128] = "allowedPlmns";
+	int allowdPlmnsNum = 0;
+    json_object *js_allowd_plmns = search_json_object(nf_profile, key_allowd_plmns);
+    
+	if (js_allowd_plmns) {
+		allowdPlmnsNum = (json_object_array_length(js_allowd_plmns) > NF_MAX_ALLOWD_PLMNS) ?
+			NF_MAX_ALLOWD_PLMNS : json_object_array_length(js_allowd_plmns);
+
+		for (int i = 0; i < allowdPlmnsNum; i++) {
+			json_object *js_allowd_plmn_elem = json_object_array_get_idx(js_allowd_plmns, i);
+			char key_mcc[128] = "mcc";
+			char key_mnc[128] = "mnc";
+			json_object *js_mcc = search_json_object(js_allowd_plmn_elem, key_mcc);
+			json_object *js_mnc = search_json_object(js_allowd_plmn_elem, key_mnc);
+			if (js_mcc)
+				sprintf(allowdPlmns[i].mcc, "%.3s", json_object_get_string(js_mcc));
+			if (js_mnc)
+			sprintf(allowdPlmns[i].mnc, "%.3s", json_object_get_string(js_mnc));
+		}       
+	}
+            
+    return allowdPlmnsNum;
+} 
+
+void nf_get_specific_info_str(nf_comm_type nfType, nf_type_info *nfTypeInfo, char *resBuf)
+{
+	if (nfType == NF_TYPE_UDM) {
+		nf_udm_info *udmInfo = &nfTypeInfo->udmInfo;
+        if (strlen(udmInfo->groupId))
+		sprintf(resBuf + strlen(resBuf), "group %s\n", udmInfo->groupId);
+        if (udmInfo->supiRangesNum)
+            sprintf(resBuf + strlen(resBuf), "supiRanges\n");
+		for (int i = 0; i < udmInfo->supiRangesNum; i++) {
+			sprintf(resBuf + strlen(resBuf), " %s\n  %s\n", 
+					udmInfo->supiRanges[i].start,
+					udmInfo->supiRanges[i].end);
+		}
+        if (udmInfo->routingIndicatorsNum)
+            sprintf(resBuf + strlen(resBuf), "routingInds\n");
+		for (int i = 0; i < udmInfo->routingIndicatorsNum; i++) {
+			sprintf(resBuf + strlen(resBuf), " %s\n",
+				   udmInfo->routingIndicators[i]);
+		}
+	} else if (nfType == NF_TYPE_AMF) {
+        nf_amf_info *amfInfo = &nfTypeInfo->amfInfo;
+        if (strlen(amfInfo->amfRegionId))
+            sprintf(resBuf + strlen(resBuf), "region %s\n", amfInfo->amfRegionId);
+        if (strlen(amfInfo->amfSetId))
+            sprintf(resBuf + strlen(resBuf), "setId  %s\n", amfInfo->amfSetId);
+        if (amfInfo->guamiListNum)
+            sprintf(resBuf + strlen(resBuf), "guamiList\n");
+        for (int i = 0; i < amfInfo->guamiListNum; i++) {
+            sprintf(resBuf + strlen(resBuf), " plmn  %s\n amfId %s\n", 
+                    amfInfo->nf_guami[i].plmnId, amfInfo->nf_guami[i].amfId);
+        }
+    } else {
+        sprintf(resBuf + strlen(resBuf), "unknown type\n");
+    }
+    // remove last newline
+    if (strlen(resBuf) > 0) {
+        resBuf[strlen(resBuf) - 1] = '\0';
+    }
+}
+
+void nf_get_allowd_plmns_str(int allowdPlmnsNum, nf_comm_plmn *allowdPlmns, char *resBuf)
+{
+    if (allowdPlmnsNum > 0)
+		sprintf(resBuf + strlen(resBuf), "allowdPlmns\n");
+
+	for (int k = 0; k < allowdPlmnsNum; k++) {
+		nf_comm_plmn *plmns = &allowdPlmns[k];
+		sprintf(resBuf + strlen(resBuf), " %s-%s\n", plmns->mcc, plmns->mnc);
+	}
+    // remove last newline
+    if (strlen(resBuf) > 0) {
+        resBuf[strlen(resBuf) - 1] = '\0';
+    }
+}
+
+char *nf_type_to_str(int nfType)
+{
+    switch(nfType) {
+        case NF_TYPE_NRF:
+            return "NRF";
+        case NF_TYPE_UDM:
+            return "UDM";
+        case NF_TYPE_AMF:
+            return "AMF";
+        case NF_TYPE_SMF:
+            return "SMF";
+        case NF_TYPE_AUSF:
+            return "AUSF";
+        case NF_TYPE_NEF:
+            return "NEF";
+        case NF_TYPE_PCF:
+            return "PCF";
+        case NF_TYPE_SMSF:
+            return "SMSF";
+        case NF_TYPE_NSSF:
+            return "NSSF";
+        case NF_TYPE_UDR:
+            return "UDR";
+        case NF_TYPE_LMF:
+            return "LMF";
+        case NF_TYPE_GMLC:
+            return "GMLC";
+        case NF_TYPE_5G_EIR:
+            return "EIR";
+        case NF_TYPE_SEPP:
+            return "SEPP";
+        case NF_TYPE_UPF:
+            return "UPF";
+        case NF_TYPE_N3IWF:
+            return "N3IWF";
+        case NF_TYPE_AF:
+            return "AF";
+        case NF_TYPE_UDSF:
+            return "UDSF";
+        case NF_TYPE_BSF:
+            return "BSF";
+        case NF_TYPE_CHF:
+            return "CHF";
+        case NF_TYPE_NWDAF:
+            return "NWDAF";
+        default:
+            return "UNKNOWN";
+    }
+}
+int nf_type_to_enum(char *type)
+{
+    if (!strcmp(type, "NRF"))
+        return NF_TYPE_NRF;
+    else if (!strcmp(type, "UDM"))
+        return NF_TYPE_UDM;
+    else if (!strcmp(type, "AMF"))
+        return NF_TYPE_AMF;
+    else if (!strcmp(type, "SMF"))
+        return NF_TYPE_SMF;
+    else if (!strcmp(type, "AUSF"))
+        return NF_TYPE_AUSF;
+    else if (!strcmp(type, "NEF"))
+        return NF_TYPE_NEF;
+    else if (!strcmp(type, "PCF"))
+        return NF_TYPE_PCF;
+    else if (!strcmp(type, "SMSF"))
+        return NF_TYPE_SMSF;
+    else if (!strcmp(type, "NSSF"))
+        return NF_TYPE_NSSF;
+    else if (!strcmp(type, "UDR"))
+        return NF_TYPE_UDR;
+    else if (!strcmp(type, "LMF"))
+        return NF_TYPE_LMF;
+    else if (!strcmp(type, "GMLC"))
+        return NF_TYPE_GMLC;
+    else if (!strcmp(type, "EIR"))
+        return NF_TYPE_5G_EIR;
+    else if (!strcmp(type, "SEPP"))
+        return NF_TYPE_SEPP;
+    else if (!strcmp(type, "UPF"))
+        return NF_TYPE_UPF;
+    else if (!strcmp(type, "N3IWF"))
+        return NF_TYPE_N3IWF;
+    else if (!strcmp(type, "AF"))
+        return NF_TYPE_AF;
+    else if (!strcmp(type, "UDSF"))
+        return NF_TYPE_UDSF;
+    else if (!strcmp(type, "BSF"))
+        return NF_TYPE_BSF;
+    else if (!strcmp(type, "CHF"))
+        return NF_TYPE_CHF;
+    else
+        return NF_TYPE_UNKNOWN;
+}
+
+int check_number(char *ptr)
+{
+    for (int i = 0; i < strlen(ptr); i++) {
+        if (isdigit(ptr[i]) == 0)
+            return -1;
+    }
+    return atoi(ptr);
+}
+
+json_object *search_json_object(json_object *obj, char *key_string)
+{   
+    char *ptr = strtok(key_string, "/");
+    json_object *input = obj;
+    json_object *output = NULL;
+
+    while (ptr != NULL) {
+        int cnvt_num = check_number(ptr);
+
+        if (cnvt_num >= 0) {
+            if (json_object_get_type(input) != json_type_array)
+                return NULL;
+            if ((output = json_object_array_get_idx(input, cnvt_num)) == NULL)
+                return NULL;
+        } else {
+            if (json_object_object_get_ex(input, ptr, &output) == 0)
+                return NULL;
+        }
+
+        input = output;
+        ptr = strtok(NULL, "/");
+    }
+    return output;
+}
+
+// NRFC Create Node data in SHM, APPL only read access to CURRENT POS
+gboolean node_free_data(GNode *node, gpointer data)
+{
+    if (node->data != NULL)
+        free(node->data);
+    return 0;
+}
+
+void create_full_depth_key (nf_search_key_t *key, nf_service_info *insert_data)
+{
+    key->depth = 0;
+
+    key->lb_id = insert_data->lbId;
+    key->nf_type = insert_data->type;
+    key->nf_host = insert_data->auto_add == NF_ADD_MML ? insert_data->confname : insert_data->hostname;
+    key->nf_svcname = insert_data->serviceName;
+
+    if (insert_data->auto_add == NF_ADD_MML) {
+        sprintf(key->nf_conn_info, "lb_conf=[%s]", insert_data->hostname);
+    } else {
+        sprintf(key->nf_conn_info, "%s%s://%s:%d", 
+                insert_data->scheme, !strcmp(insert_data->scheme, "https") ? "" : "-", insert_data->ipv4Address, insert_data->port);
+    }
+};
+
+GNode *create_nth_child(nf_search_key_t *key, nf_service_info *insert_data)
+{
+    nf_lbid_info_t *nf_lb = NULL;
+    nf_type_info_t *nf_type = NULL;
+    nf_host_info_t *nf_host = NULL;
+    nf_svcname_info_t *nf_svcname = NULL;
+    nf_connection_info_t *nf_connection = NULL;
+
+    switch(key->depth) {
+        case 0:
+            nf_lb = malloc(sizeof(nf_lbid_info_t));
+            nf_lb->lb_id = key->lb_id;
+            return g_node_new(nf_lb);
+        case 1:
+            nf_type = malloc(sizeof(nf_type_info_t));
+            sprintf(nf_type->type, "%.15s", key->nf_type);
+            return g_node_new(nf_type);
+        case 2:
+            nf_host = malloc(sizeof(nf_host_info_t));
+            sprintf(nf_host->hostname, "%.51s", key->nf_host);
+            
+            nf_host->auto_add = insert_data->auto_add;
+            if (nf_host->auto_add == NF_ADD_NRF || nf_host->auto_add == NF_ADD_MML) {
+                nf_host->allowdPlmnsNum = insert_data->allowdPlmnsNum;
+                memcpy(nf_host->allowdPlmns, insert_data->allowdPlmns, sizeof(nf_comm_plmn) * nf_host->allowdPlmnsNum);
+                nf_host->nfType = insert_data->nfType;
+                memcpy(&nf_host->nfTypeInfo, &insert_data->nfTypeInfo, sizeof(nf_type_info));
+            }
+            return g_node_new(nf_host);
+        case 3:
+            nf_svcname = malloc(sizeof(nf_svcname_info_t));
+            sprintf(nf_svcname->servicename, "%.31s", key->nf_svcname);
+            return g_node_new(nf_svcname);
+        case 4:
+            nf_connection = malloc(sizeof(nf_connection_info_t));
+            sprintf(nf_connection->connInfoStr, "%.63s", key->nf_conn_info);
+
+            nf_connection->auto_add = insert_data->auto_add;
+            nf_connection->priority = insert_data->priority;
+            nf_connection->load = insert_data->load;
+            nf_connection->avail = insert_data->available;
+
+            /* nf service shmtable pointer */
+            nf_connection->nf_service_shm_ptr = insert_data;
+            return g_node_new(nf_connection);
+    }
+
+    return NULL; // program will crashed 
+}
+
+int depth_compare(nf_search_key_t *key, GNode *compare_node)
+{
+    nf_lbid_info_t *nf_lb = NULL;
+    nf_type_info_t *nf_type = NULL;
+    nf_host_info_t *nf_host = NULL;
+    nf_svcname_info_t *nf_svcname = NULL;
+    nf_connection_info_t *nf_connection = NULL;
+
+    /* left input : right node */
+    switch (key->depth) {
+        case 0:
+            nf_lb = (nf_lbid_info_t *)compare_node->data;
+            return (key->lb_id  - nf_lb->lb_id);
+        case 1:
+            nf_type = (nf_type_info_t *)compare_node->data;
+            return strcmp(key->nf_type, nf_type->type);
+        case 2:
+            nf_host = (nf_host_info_t *)compare_node->data;
+            return strcmp(key->nf_host, nf_host->hostname);
+        case 3:
+            nf_svcname = (nf_svcname_info_t *)compare_node->data;
+            return strcmp(key->nf_svcname, nf_svcname->servicename);
+        case 4:
+            nf_connection = (nf_connection_info_t *)compare_node->data;
+            return strcmp(key->nf_conn_info, nf_connection->connInfoStr);
+    }
+
+    return 0; // program will crashed
+}
+
+GNode *search_or_create_node(GNode *node, nf_search_key_t *key, nf_service_info *insert_data, int create_if_none)
+{
+    int child_num = g_node_n_children(node);
+    if (child_num == 0) {
+        if (create_if_none) {
+            GNode *new_node = create_nth_child(key, insert_data);
+            g_node_append(node, new_node);
+            return new_node;
+        } else {
+            return NULL;
+        }
+    }
+
+    GNode *nth_child = NULL;
+    int low = 0;
+    int high = (child_num - 1);
+    int nth = 0;
+    int compare_res = 0;
+
+    while (low <= high) {
+        nth = (low + high) / 2;
+        nth_child = g_node_nth_child(node, nth);
+
+        compare_res = depth_compare(key, nth_child);
+
+        if (compare_res == 0) {
+            return nth_child; // HIT !
+        } else if (compare_res < 0) {
+            high = nth - 1;
+        } else {
+            low = nth + 1;
+        }
+    }
+
+    if (create_if_none == 0)
+        return NULL;
+
+    if (compare_res < 0) {
+        GNode *new_node = create_nth_child(key, insert_data);
+        g_node_insert_before(node, nth_child, new_node);
+        return new_node;
+    } else {
+        GNode *new_node = create_nth_child(key, insert_data);
+        g_node_insert_after(node, nth_child, new_node);
+        return new_node;
+    }
+}
+
+void create_node_data(GNode *root_node, nf_search_key_t *key, nf_service_info *insert_data)
+{
+    GNode *search_node = root_node;
+
+    for (int i = 0; i < NF_NODE_DATA_DEPTH; i++) {
+        key->depth = i;
+        search_node = search_or_create_node(search_node, key, insert_data, 1);
+    }
+};
+
+GNode *search_node_data(GNode *root_node, nf_search_key_t *key, int search_depth)
+{
+    GNode *search_node = root_node;
+
+    for (int i = 0; i < search_depth; i++) {
+        key->depth = i;
+        search_node = search_or_create_node(search_node, key, NULL, 0);
+        if (search_node == NULL)
+            return search_node; // giveup
+    }
+
+    return search_node; // return result (null or not)
+}
+
+void print_node_table(ft_table_t *table, GNode *node, int depth, char *temp_buff, char *nf_type_arg)
+{
+    nf_lbid_info_t *nf_lb = NULL;
+    nf_type_info_t *nf_type = NULL;
+    nf_host_info_t *nf_host = NULL;
+    nf_svcname_info_t *nf_svcname = NULL;
+    nf_connection_info_t *nf_conn = NULL;
+
+    char plmnStr[1024] = {0,};
+    char typeStr[1024] = {0,};
+
+    switch (depth) {
+        case 0:
+            ft_add_separator(table);
+            nf_lb = (nf_lbid_info_t *)node->data;
+            ft_set_cell_prop(table, FT_ANY_ROW, 0, FT_CPROP_MIN_WIDTH, 4);
+            ft_printf_ln(table, "LB-[%d]|%s", nf_lb->lb_id, temp_buff);
+            ft_add_separator(table);
+            break;
+        case 1:
+            nf_type = (nf_type_info_t *)node->data;
+            if (strlen(nf_type_arg) > 0 && strcmp(nf_type_arg, nf_type->type))
+                return;
+            ft_set_cell_prop(table, FT_ANY_ROW, 0, FT_CPROP_MIN_WIDTH, 8);
+            ft_printf_ln(table, "%s|%s", nf_type->type, temp_buff);
+            break;
+        case 2:
+            nf_host = (nf_host_info_t *)node->data;
+            ft_set_cell_prop(table, FT_ANY_ROW, 0, FT_CPROP_MIN_WIDTH, 34);
+            ft_set_cell_prop(table, FT_ANY_ROW, 1, FT_CPROP_MIN_WIDTH, 14);
+            ft_set_cell_prop(table, FT_ANY_ROW, 2, FT_CPROP_MIN_WIDTH, 24);
+            if (nf_host->auto_add == NF_ADD_NRF || nf_host->auto_add == NF_ADD_MML) {
+                nf_get_allowd_plmns_str(nf_host->allowdPlmnsNum, nf_host->allowdPlmns, plmnStr);
+                nf_get_specific_info_str(nf_host->nfType, &nf_host->nfTypeInfo, typeStr);
+            }
+            ft_printf_ln(table, "%s|%s|%s|%s", nf_host->hostname, plmnStr, typeStr, temp_buff);
+            ft_add_separator(table);
+            break;
+        case 3:
+            nf_svcname = (nf_svcname_info_t *)node->data;
+            ft_set_cell_prop(table, FT_ANY_ROW, 0, FT_CPROP_MIN_WIDTH, 12);
+            ft_printf_ln(table, "%s|%s", nf_svcname->servicename, temp_buff);
+            ft_add_separator(table);
+            break;
+        case 4:
+            nf_conn = (nf_connection_info_t *)node->data;
+            ft_set_cell_prop(table, FT_ANY_ROW, 0, FT_CPROP_MIN_WIDTH, 32);
+            ft_set_cell_prop(table, FT_ANY_ROW, 1, FT_CPROP_MIN_WIDTH, 8);
+            ft_set_cell_prop(table, FT_ANY_ROW, 2, FT_CPROP_MIN_WIDTH, 5);
+            ft_set_cell_prop(table, FT_ANY_ROW, 3, FT_CPROP_MIN_WIDTH, 5);
+            ft_set_cell_prop(table, FT_ANY_ROW, 4, FT_CPROP_MIN_WIDTH, 10);
+            if (nf_conn->auto_add == NF_ADD_MML) {
+                ft_printf_ln(table, "%s|%s|%s|%s|%s", 
+                        nf_conn->connInfoStr, 
+                        "[by mml]",
+                        "",
+                        "", 
+                        nf_conn->avail < 0 ? "NOT EXIST" : nf_conn->avail > 0 ? "AVAIL" : "NOT AVAIL");
+            } else {
+                ft_printf_ln(table, "%s|%s|p:%d|l:%d|%s", 
+                        nf_conn->connInfoStr, 
+                        nf_conn->auto_add == NF_ADD_NRF ? "[by nrf]" : "[by opr]",
+                        nf_conn->priority, 
+                        nf_conn->load, 
+                        nf_conn->avail < 0 ? "NOT EXIST" : nf_conn->avail > 0 ? "AVAIL" : "NOT AVAIL");
+            }
+            break;
+        default:
+            APPLOG(APPLOG_ERR, "%s() something wrong [cant handle depth:%d]", __func__, depth);
+            break;
+    }
+}
+
+void print_node(ft_table_t *table, GNode *node, int depth, char *nf_type)
+{
+    for (int i = 0; i < g_node_n_children(node); i++) {
+        GNode *child_node = g_node_nth_child(node, i);
+        ft_table_t *child_table = ft_create_table();
+        ft_set_border_style(child_table, FT_PLAIN_STYLE);
+
+        print_node(child_table, child_node, depth + 1, nf_type);
+
+        char *temp_buff = NULL;
+        asprintf(&temp_buff, "%s", ft_to_string(child_table));
+        if (strlen(temp_buff) > 0)
+            temp_buff[strlen(temp_buff) - 1] = '\0';
+        
+        print_node_table(table, child_node, depth, temp_buff, nf_type);
+
+        free(temp_buff);
+
+        ft_destroy_table(child_table);
+    }
+}
+
+void printf_fep_nfs_by_node_order(GNode *root_node, char *printBuff, char *nf_type)
+{
+    if (root_node == NULL)
+        return;
+
+    /* main table */
+    ft_table_t *table = ft_create_table();
+    ft_set_border_style(table, FT_PLAIN_STYLE);
+
+    /* start depth */
+    int current_depth = 0;
+
+    /* recursive call */
+    print_node(table, root_node, current_depth, nf_type);
+
+    /* print result */
+    sprintf(printBuff, "%s\n", ft_to_string(table));
+
+    /* resource clear */
+    ft_destroy_table(table);
+}
+
+void printf_fep_nfs_well_form(nfs_avail_shm_t *SHM_NFS_AVAIL, char *printBuff, char *nf_type)
+{
+    int POS = SHM_NFS_AVAIL->curr_pos;
+    GNode *root_node = SHM_NFS_AVAIL->root_node[POS];
+
+    /* print to buffer */
+    printf_fep_nfs_by_node_order(root_node, printBuff, nf_type);
 }

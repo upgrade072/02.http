@@ -44,6 +44,10 @@ void message_handle(evutil_socket_t fd, short what, void *arg)
 			case MTYPE_SETPRINT:
 				adjust_loglevel((TrcLibSetPrintMsgType *)msg);
 				continue;
+            // TODO !!! check & broadcast
+            case MSGID_NRF_LIB_NRFC_REQ_PROFILE:
+                handle_appl_req_for_lb_http2(msg->mtype, msg);
+                continue;
             default:
                 APPLOG(APPLOG_ERR, "%s() receive unknown msg (mtype:%ld)", __func__, (long)msg->mtype);
                 continue;
@@ -153,11 +157,11 @@ void printf_fep_nfs(nfs_avail_shm_t *SHM_NFS_AVAIL, char *printBuff)
 
 			/* allowd plmns */
 			char allowdPlmnsStr[1024] = {0,};
-			getAllowdPlmns(nf_info, allowdPlmnsStr);
+			nf_get_allowd_plmns_str(nf_info->allowdPlmnsNum, nf_info->allowdPlmns, allowdPlmnsStr);
 
 			/* nf-type specific info */
 			char typeSpecStr[1024] = {0,};
-			getTypeSpecStr(nf_info, typeSpecStr);
+            nf_get_specific_info_str(nf_info->nfType, &nf_info->nfTypeInfo, typeSpecStr);
 
 			ft_printf_ln(table, "%d|%s|%s|%s|%s|%s|%s|%s|%d|%d|%d|%s|%d",
 					index++,
@@ -192,10 +196,21 @@ int func_dis_nf_status(IxpcQMsgType *rxIxpcMsg)
 {
 	APPLOG(APPLOG_DEBUG, "%s() called", __func__);
 
+    MMLReqMsgType   *mmlReq=(MMLReqMsgType*)rxIxpcMsg->body;
+
+    char nf_type[32] = {0,};
+
+    get_mml_para_str(mmlReq, "NF_TYPE", nf_type);
+    if (strlen(nf_type) > 0)
+        strupr(nf_type, strlen(nf_type));
+
 	char *resBuf = malloc(1024 * 1024 * 12);
 	resBuf[0] = '\0';
 
-	printf_fep_nfs(MAIN_CTX.SHM_NFS_AVAIL, resBuf);
+    if (!strcmp(nf_type, "DUMP"))
+        printf_fep_nfs(MAIN_CTX.SHM_NFS_AVAIL, resBuf);
+    else 
+        printf_fep_nfs_well_form(MAIN_CTX.SHM_NFS_AVAIL, resBuf, nf_type);
 
 	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
 	int res = send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
@@ -415,4 +430,66 @@ int func_del_nf_mml(IxpcQMsgType *rxIxpcMsg)
 
 	free(resBuf);
 	return res;
+}
+
+void send_conn_req_profile(assoc_t *lb_assoc, nf_disc_host_info *nf_host_info)
+{
+    IsifMsgType txIsifMsg = {0,};
+
+    nf_host_info->mtype = LIBNRF_MSG_ADD_NF_PROFILE;
+
+    isifc_create_pkt(&txIsifMsg, &MAIN_CTX.my_info, lb_assoc, nf_host_info, sizeof(nf_host_info));
+    isifc_send_pkt(MAIN_CTX.my_qid.isifc_tx_qid, &txIsifMsg);
+}
+
+void handle_appl_req_with_profile(main_ctx_t *MAIN_CTX, nf_disc_host_info *nf_host_info)
+{
+    g_slist_foreach(MAIN_CTX->lb_assoc_list, (GFunc)send_conn_req_profile, nf_host_info);
+}
+
+void handle_appl_req_with_cbinfo(main_ctx_t *MAIN_CTX)
+{
+    // TODO 
+}
+
+void handle_appl_req_for_lb_http2(long mtype, GeneralQMsgType *msg)
+{
+    switch (mtype) {
+        case MSGID_NRF_LIB_NRFC_REQ_PROFILE: // suppress library calling count
+            return handle_appl_req_with_profile(&MAIN_CTX, (nf_disc_host_info *)msg);
+        case MSGID_NRF_LIB_NRFC_REQ_CALLBACK:
+            return handle_appl_req_with_cbinfo(&MAIN_CTX);
+        default:
+            return;
+    }
+}
+
+void create_fep_nfs_node_tree(nfs_avail_shm_t *SHM_NFS_AVAIL)
+{
+    int prepare_pos = (SHM_NFS_AVAIL->curr_pos + 1) % MAX_NFS_SHM_POS;
+    nf_list_shm_t *nf_avail_shm = &SHM_NFS_AVAIL->nfs_avail_shm[prepare_pos];
+    GNode **root_node = &SHM_NFS_AVAIL->root_node[prepare_pos];
+
+    if (*root_node != NULL) {
+    APPLOG(APPLOG_ERR, "{{{DBG}}} %s() remove rootnode pos[%d]", __func__, prepare_pos);
+        /* free all node data */
+        g_node_traverse(*root_node, G_IN_ORDER, G_TRAVERSE_ALL, -1, node_free_data, NULL);
+        /* remove NODE */
+        g_node_destroy(*root_node);
+        *root_node = NULL;
+    }
+    *root_node = g_node_new(NULL);
+
+    for (int i = 0 ; i < NF_MAX_LB_NUM; i++) {
+        for (int k = 0; k < NF_MAX_AVAIL_LIST; k++) {
+            nf_service_info *nf_info = &nf_avail_shm->nf_avail[i][k];
+
+            if (nf_info->occupied <= 0)
+                continue;
+
+            nf_search_key_t key = {0,};
+            create_full_depth_key(&key, nf_info);
+            create_node_data(*root_node, &key, nf_info);
+        }
+    }
 }

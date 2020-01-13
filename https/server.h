@@ -313,7 +313,6 @@ int     actcfg_http_client(int id, int ip_exist, char *ipaddr, int change_to_act
 int     chgcfg_client_max_cnt_with_auth_act_and_limit(int id, char *ipaddr, int max, int auth_act, int limit);
 int     delcfg_client_ipaddr(int id, char *ipaddr);
 int     delcfg_client_hostname(int id);
-int     chgcfg_client_ping(int interval, int timeout, int ms);
 
 /* ------------------------- list.c --------------------------- */
 https_ctx_t     *get_context(int thrd_idx, int ctx_idx, int used);

@@ -303,7 +303,10 @@ int initialize(main_ctx_t *MAIN_CTX)
 	if (MAIN_CTX->sysconfig.nfs_shm_create == 1 && create_nfs_avail_shm(MAIN_CTX) < 0) {
         APPLOG(APPLOG_ERR, "{{{INIT}}} fail to create nfs avail shared mem, proc down");
         return -1;
-	}
+	} else {
+        APPLOG(APPLOG_ERR, "{{{INIT}}} clear NFS SHM");
+        memset(MAIN_CTX->SHM_NFS_AVAIL, 0x00, sizeof(nfs_avail_shm_t));
+    }
 
     return 0;
 }
@@ -412,8 +415,10 @@ void send_status_to_lb(service_info_t *fep_svc, assoc_t *lb_assoc)
 {
 	IsifMsgType txIsifMsg = {0,};
 
-	isifc_create_pkt_for_status(&txIsifMsg, fep_svc, &MAIN_CTX.my_info, lb_assoc);
-	isifc_send_pkt_for_status(MAIN_CTX.my_qid.isifc_tx_qid, &txIsifMsg);
+    fep_svc->mtype = LIBNRF_MSG_SERVICE_INFO;
+
+	isifc_create_pkt(&txIsifMsg, &MAIN_CTX.my_info, lb_assoc, fep_svc, sizeof(service_info_t));
+	isifc_send_pkt(MAIN_CTX.my_qid.isifc_tx_qid, &txIsifMsg);
 }
 
 void broad_status_to_lb(assoc_t *lb_assoc)
@@ -508,5 +513,5 @@ void start_watching_dir(struct event_base *evbase)
 {
 	char watch_directory[1024] = {0,};
 	sprintf(watch_directory, "%s/data", getenv("IV_HOME"));
-	watch_directory_init(evbase, watch_directory);
+	watch_directory_init(evbase, watch_directory, directory_watch_action);
 }

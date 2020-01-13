@@ -2,12 +2,78 @@
 
 extern main_ctx_t MAIN_CTX;
 
+nf_retrieve_item_t *nf_retrieve_create_item(nf_retrieve_item_t *nf_add_item)
+{
+    /* make data */
+    nf_retrieve_item_t *nf_item = malloc(sizeof(nf_retrieve_item_t));
+    memcpy(nf_item, nf_add_item, sizeof(nf_retrieve_item_t));
+
+    return nf_item;
+}
+
+// add_if_fail : 0 --> just search, 1 --> add new one if not exist
+nf_retrieve_item_t *nf_retrieve_search_item(GSList **list, nf_retrieve_item_t *nf_search_item, int add_if_fail) {
+    int list_length = 0;
+
+    /* if length 0 return */
+    if ((list_length = g_slist_length(*list)) == 0) {
+        if (add_if_fail) {
+            nf_retrieve_item_t *nf_item = nf_retrieve_create_item(nf_search_item);
+            *list = g_slist_insert(*list, nf_item, 0);
+            return nf_item;
+        } else {
+            return NULL;
+        }
+    }
+
+    /* else bsearch */
+    int low = 0;
+    int high = (list_length - 1);
+    int nth = 0;
+    int compare_res = 0;
+    GSList *nth_list = NULL;
+    nf_retrieve_item_t *nth_data = NULL;
+
+    while (low <= high) {
+        nth = (low + high) / 2;
+        nth_list = g_slist_nth(*list, nth);
+        nth_data = (nf_retrieve_item_t *)nth_list->data;
+
+        compare_res = strcmp(nf_search_item->nf_uuid, nth_data->nf_uuid);
+
+        if (compare_res == 0) {
+            return nth_data; // search hit!
+        } else if (compare_res < 0) {
+            high = nth - 1;
+        } else {
+            low = nth + 1;
+        }
+    }
+
+    if (add_if_fail == 0) {
+        return NULL;
+    } else {
+        nf_retrieve_item_t *nf_item = nf_retrieve_create_item(nf_search_item);
+        if (compare_res < 0) {
+            *list = g_slist_insert(*list, nf_item, g_slist_position(*list, nth_list));
+        } else {
+            *list = g_slist_insert(*list, nf_item, g_slist_position(*list, nth_list) + 1);
+        }
+        return nf_item;
+    }
+}
+
 void nf_retrieve_addnew_and_get_profile(main_ctx_t *MAIN_CTX, nf_retrieve_info_t *nf_retr_info, nf_retrieve_item_t *nf_add_item)
 {
+#if 0
 	nf_retrieve_item_t *nf_item = malloc(sizeof(nf_retrieve_item_t));
 	memcpy(nf_item, nf_add_item, sizeof(nf_retrieve_item_t));
 
 	nf_retr_info->nf_retrieve_items = g_slist_append(nf_retr_info->nf_retrieve_items, nf_item);
+#else
+    // insert
+    nf_retrieve_item_t *nf_item = nf_retrieve_search_item(&nf_retr_info->nf_retrieve_items, nf_add_item, 1);
+#endif
 
 	nf_retrieve_single_instance(MAIN_CTX, nf_item);
 
@@ -457,13 +523,21 @@ nf_retrieve_info_t *nf_retrieve_search_info_via_seqNo(main_ctx_t *MAIN_CTX, int 
 
 nf_retrieve_item_t *nf_retrieve_search_item_by_uuid(GSList *nf_retrieve_items, const char *nf_uuid)
 {
+#if 0
 	for (int i = 0; i < g_slist_length(nf_retrieve_items); i++) {
 		nf_retrieve_item_t *nf_nth_item = g_slist_nth_data(nf_retrieve_items, i);
 		if (!strcmp(nf_nth_item->nf_uuid, nf_uuid))
 			return nf_nth_item;
 	}
 	return NULL;
+#else
+    nf_retrieve_item_t input = {0,};
+    sprintf(input.nf_uuid, nf_uuid);
+    // search 
+    return nf_retrieve_search_item(&nf_retrieve_items, &input, 0);
+#endif
 }
+
 nf_retrieve_item_t *nf_retrieve_search_item_via_seqNo(main_ctx_t *MAIN_CTX, int type, int seqNo)
 {
 	int nf_type_num = g_slist_length(MAIN_CTX->nf_retrieve_list);

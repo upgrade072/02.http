@@ -28,14 +28,13 @@
 #include <event.h>
 #include <event2/event.h>
 
-#include <gmodule.h>
+#include <glib.h>
 
 // for nrf
 #include <libnrf.h>
+#include <libnrf_app.h>
 // for isif
 #include <isif_msgtypes.h>
-
-#include <nrf_comm.h>
 
 /* for .cfg */
 #define CF_LOGLEVEL         "nrfc_cfg.sys_config.log_level"
@@ -84,8 +83,11 @@ typedef struct main_ctx {
 	nfs_avail_shm_t *SHM_NFS_AVAIL;
 	struct timeval last_pub_time;
 	fep_nfs_info_t fep_nfs_info[NF_MAX_LB_NUM];
-} main_ctx_t;
 
+#if 0
+    GNode *root_node;           // lb connection node - tree
+#endif
+} main_ctx_t;
 
 /* ------------------------- mml.c --------------------------- */
 void    init_mml(main_ctx_t *MAIN_CTX);
@@ -98,18 +100,20 @@ void    write_cfg(main_ctx_t *MAIN_CTX);
 int     init_cfg(config_t *CFG);
 int     save_sysconfig(config_t *CFG, main_ctx_t *MAIN_CTX);
 
+
 /* ------------------------- status.c --------------------------- */
-void    attach_mml_info(nf_service_info *svc_mml, nf_service_info *svc_info, nf_service_info *nf_avail_each_lb);
-void    attach_mml_info_into_lb_shm(mml_conf_t *mml_conf, nf_service_info *nf_avail_each_lb);
+void    attach_mml_info_into_lb_shm(mml_conf_t *mml_conf, nf_service_info *nf_avail_each_lb, int lb_id);
 void    attach_mml_info_into_shm(mml_conf_t *mml_conf, main_ctx_t *MAIN_CTX);
+void    add_shm_avail_count(main_ctx_t *MAIN_CTX);
 void    isif_save_recv_lb_status(main_ctx_t *MAIN_CTX, nf_service_info *nf_info);
+void    clear_nf_avail_shm(nf_list_shm_t *nf_avail_shm_prepare);
 void    clear_fep_nfs(evutil_socket_t fd, short what, void *arg);
 
 /* ------------------------- isif.c --------------------------- */
 SHM_IsifConnSts *commlib_initIsifConnSts(void); // ??? function proto ;
 int     isifc_init();
-void    isifc_create_pkt_for_status(IsifMsgType *txIsifMsg, service_info_t *fep_svc, svr_info_t *my_info, assoc_t *lb_assoc);
-void    isifc_send_pkt_for_status(int isifc_qid, IsifMsgType *txIsifMsg);
+void    isifc_create_pkt(IsifMsgType *txIsifMsg, svr_info_t *my_info, assoc_t *lb_assoc, void *ptr, size_t size);
+void    isifc_send_pkt(int isifc_qid, IsifMsgType *txIsifMsg);
 
 /* ------------------------- main.c --------------------------- */
 int     get_my_qid(main_ctx_t *MAIN_CTX);
@@ -147,3 +151,8 @@ int     del_cfg_nf_mml(main_ctx_t *MAIN_CTX, int ID, char *resBuf);
 int     func_dis_nf_mml(IxpcQMsgType *rxIxpcMsg);
 int     func_add_nf_mml(IxpcQMsgType *rxIxpcMsg);
 int     func_del_nf_mml(IxpcQMsgType *rxIxpcMsg);
+void    send_conn_req_profile(assoc_t *lb_assoc, nf_disc_host_info *nf_host_info);
+void    handle_appl_req_with_profile(main_ctx_t *MAIN_CTX, nf_disc_host_info *nf_host_info);
+void    handle_appl_req_with_cbinfo(main_ctx_t *MAIN_CTX);
+void    handle_appl_req_for_lb_http2(long mtype, GeneralQMsgType *msg);
+void    create_fep_nfs_node_tree(nfs_avail_shm_t *SHM_NFS_AVAIL);

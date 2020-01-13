@@ -13,26 +13,6 @@ void https_save_recv_fep_status(main_ctx_t *MAIN_CTX)
  * ...
  * fep[0], not use
  */
-void isif_save_recv_fep_status(service_info_t *fep_svc_info)
-{
-	if (fep_svc_info->sys_mp_id <= 0 || fep_svc_info->sys_mp_id >= MAX_FEP_NUM) {
-		APPLOG(APPLOG_ERR, "%s() receive invalid sys_mp_id (%d)!", fep_svc_info->sys_mp_id);
-		return;
-	}
-
-	int service_num = g_slist_length(MAIN_CTX.fep_service_list);
-	for (int i = 0; i < service_num; i++) {
-		fep_service_t *service_elem = g_slist_nth_data(MAIN_CTX.fep_service_list, i);
-		if (!strcmp(service_elem->service_name, fep_svc_info->service_name)) {
-			memcpy(&service_elem->fep_svc_info[fep_svc_info->sys_mp_id], fep_svc_info, sizeof(service_info_t));
-			return;
-		}
-	}
-
-    APPLOG(APPLOG_ERR, "%s() receive invalid service name(mp_id:%d service_name:%s)", 
-            __func__, fep_svc_info->sys_mp_id, fep_svc_info->service_name);
-	return;
-}
 
 void nf_heartbeat_clear_status(main_ctx_t *MAIN_CTX)
 {
@@ -256,30 +236,4 @@ void nf_heartbeat_start_process(main_ctx_t *MAIN_CTX)
     event_add(MAIN_CTX->heartbeat_ctx.ev_action, &tm_hb_interval);
 
 	APPLOG(APPLOG_ERR, "%s() will send heartbeat every (%d) sec", __func__, tm_hb_interval.tv_sec);
-}
-
-void shmq_recv_handle(evutil_socket_t fd, short what, void *arg)
-{
-	char msgBuff[1024*64];
-	IsifMsgType *rxIsifMsg = (IsifMsgType *)msgBuff;
-
-	int ret = 0;
-
-	while ((ret = shmqlib_getMsg(MAIN_CTX.my_qid.isifs_rx_qid, (char *)rxIsifMsg)) > 0) {
-
-		if (ret > sizeof(IsifMsgType)) {
-			APPLOG(APPLOG_ERR, "%s() receive unknown size(%d) msg!", __func__, ret);
-			continue;
-		}
-
-		switch (rxIsifMsg->head.mtype) {
-			case MTYPE_NRFC_BROAD_STATUS_TO_LB:
-				isif_save_recv_fep_status((service_info_t *)rxIsifMsg->body);
-				continue;
-			default:
-				APPLOG(APPLOG_ERR, "%s() receive unknown type(%d) msg!", __func__, rxIsifMsg->head.mtype);
-				continue;
-		}
-	}
-	return;
 }

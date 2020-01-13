@@ -121,13 +121,13 @@ int get_my_qid(main_ctx_t *MAIN_CTX)
         sprintf(fname,"%s/%s", getenv(IV_HOME), ISIF_CONF_FILE);
         if ((MAIN_CTX->my_qid.isifs_rx_qid = 
                     shmqlib_getQid (fname, "ISIFS_TO_APP_SHMQ", MAIN_CTX->my_info.myProcName, SHMQLIB_MODE_GETTER)) < 0) {
-            APPLOG(APPLOG_ERR,"{{{INIT}}} fail to get isifs rx qid %s:%s!", fname, MAIN_CTX->my_info.myProcName);
+            APPLOG(APPLOG_ERR,"{{{INIT}}} fail to get isifs rx qid %s:%s! err=%d(%s)!", fname, MAIN_CTX->my_info.myProcName, errno, strerror(errno));
             return -1;
         }
 
         if ((MAIN_CTX->my_qid.isifc_tx_qid = 
                     shmqlib_getQid (fname, "APP_TO_ISIFC_SHMQ", MAIN_CTX->my_info.myProcName, SHMQLIB_MODE_PUTTER)) < 0) {
-            APPLOG(APPLOG_ERR,"{{{INIT}}} fail to get isifc tx qid %s:%s!", fname, MAIN_CTX->my_info.myProcName);
+            APPLOG(APPLOG_ERR,"{{{INIT}}} fail to get isifc tx qid %s:%s! err=%d(%s)!", fname, MAIN_CTX->my_info.myProcName, errno, strerror(errno));
             return -1;
         }
     } else {
@@ -531,5 +531,5 @@ void start_watching_dir(struct event_base *evbase)
 {
 	char watch_directory[1024] = {0,};
 	sprintf(watch_directory, "%s/data", getenv("IV_HOME"));
-	watch_directory_init(evbase, watch_directory);
+	watch_directory_init(evbase, watch_directory, directory_watch_action);
 }

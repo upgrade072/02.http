@@ -278,7 +278,6 @@ int     actcfg_http_server(int id, int ip_exist, char *ipaddr, int port, int cha
 int     chgcfg_server_conn_cnt(int id, char *scheme, char *ipaddr, int port, int conn_cnt, int token_id);
 int     delcfg_server_ipaddr(int id, char *ipaddr, int port);
 int     delcfg_server_hostname(int id);
-int     chgcfg_server_ping(int interval, int timeout, int ms);
 
 /* ------------------------- list.c --------------------------- */
 httpc_ctx_t     *get_context(int thrd_idx, int ctx_idx, int used);

@@ -19,49 +19,6 @@ void dump_pkt_log(void *msg, ssize_t size)
 	free(ptr);
 }
 
-// CAUTION!!! must free after use, outbuffer
-int get_file_contents(const char* filename, char** outbuffer)
-{
-	FILE* file = NULL;
-	long filesize;
-	const int blocksize = 1;
-	size_t readsize;
-	char* filebuffer;
-
-	// Open the file
-	file = fopen(filename, "r");
-	if (NULL == file) {
-		fprintf(stderr, "'%s' not opened\n", filename);
-		return -1;
-	}
-
-	// Determine the file size
-	fseek(file, 0, SEEK_END);
-	filesize = ftell(file);
-	rewind (file);
-
-	// Allocate memory for the file contents
-	filebuffer = (char*) malloc(sizeof(char) * filesize);
-	*outbuffer = filebuffer;
-	if (filebuffer == NULL) {
-		fprintf(stderr, "malloc out-of-memory\n");
-        fclose(file);
-		return -1;
-	}
-
-	// Read in the file
-	readsize = fread(filebuffer, blocksize, filesize, file);
-	if (readsize != filesize) {
-		fprintf(stderr, "didn't read file completely\n");
-        fclose(file);
-		return -1;
-	}
-
-	// Clean exit
-	fclose(file);
-	return 0;
-}
-
 void get_svc_ipv4_addr(const char *nic_name, char *nic_addr)
 {
 	int fd = 0;

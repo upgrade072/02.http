@@ -94,12 +94,9 @@ void nf_manage_collect_avail_each_nf(nf_retrieve_item_t *nf_item, nf_list_pkt_t 
 		for (int k = 0; k < MAX_CON_NUM; k++) {
 			conn_list_status_t *conn_raw = &SHM_HTTPC_PTR->connlist[pos][k];
 
-			if (conn_raw->nrfm_auto_added <= 0) continue;
-
+			if (conn_raw->nrfm_auto_added <= NF_ADD_RAW) continue; /* report only auto added */
 			if (conn_raw->occupied <= 0) continue;
-			if (conn_raw->act <= 0) continue;
-			if (conn_raw->conn_cnt <= 0) continue;
-			if (conn_raw->token_acquired <= 0) continue;
+
 			if (!strcmp(conn_raw->host, nf_item->nf_uuid) &&
 					!strcmp(conn_raw->scheme, nf_conn->scheme) &&
 					!strcmp(conn_raw->ip, nf_conn->ip) &&
@@ -143,9 +140,6 @@ void nf_manage_collect_httpc_conn_status(main_ctx_t *MAIN_CTX)
 
 		/* collect auto added */
 		g_slist_foreach(MAIN_CTX->nf_retrieve_list, (GFunc)nf_manage_collect_avail_each_type, &my_avail_nfs);
-
-		if (MAIN_CTX->sysconfig.debug_mode)
-			printf_avail_nfs(&my_avail_nfs);
 
 		nf_manage_broadcast_nfs_to_fep(MAIN_CTX, &my_avail_nfs);
 	}
@@ -200,52 +194,6 @@ void nf_manage_https_conn_status_cb(evutil_socket_t fd, short what, void *arg)
 
 }
 
-int nf_manage_setting_opr_type(char *type)
-{
-	if (!strcmp(type, "NRF"))
-		return NF_TYPE_NRF;
-	else if (!strcmp(type, "UDM"))
-		return NF_TYPE_UDM;
-	else if (!strcmp(type, "AMF"))
-		return NF_TYPE_AMF;
-	else if (!strcmp(type, "SMF"))
-		return NF_TYPE_SMF;
-	else if (!strcmp(type, "AUSF"))
-		return NF_TYPE_AUSF;
-	else if (!strcmp(type, "NEF"))
-		return NF_TYPE_NEF;
-	else if (!strcmp(type, "PCF"))
-		return NF_TYPE_PCF;
-	else if (!strcmp(type, "SMSF"))
-		return NF_TYPE_SMSF;
-	else if (!strcmp(type, "NSSF"))
-		return NF_TYPE_NSSF;
-	else if (!strcmp(type, "UDR"))
-		return NF_TYPE_UDR;
-	else if (!strcmp(type, "LMF"))
-		return NF_TYPE_LMF;
-	else if (!strcmp(type, "GMLC"))
-		return NF_TYPE_GMLC;
-	else if (!strcmp(type, "EIR"))
-		return NF_TYPE_5G_EIR;
-	else if (!strcmp(type, "SEPP"))
-		return NF_TYPE_SEPP;
-	else if (!strcmp(type, "UPF"))
-		return NF_TYPE_UPF;
-	else if (!strcmp(type, "N3IWF"))
-		return NF_TYPE_N3IWF;
-	else if (!strcmp(type, "AF"))
-		return NF_TYPE_AF;
-	else if (!strcmp(type, "UDSF"))
-		return NF_TYPE_UDSF;
-	else if (!strcmp(type, "BSF"))
-		return NF_TYPE_BSF;
-	else if (!strcmp(type, "CHF"))
-		return NF_TYPE_CHF;
-	else 
-		return NF_TYPE_UNKNOWN;
-}
-
 void nf_manage_collect_oper_added_nf(main_ctx_t *MAIN_CTX, nf_list_pkt_t *my_avail_nfs)
 {
 	int pos = SHM_HTTPC_PTR->current;
@@ -256,20 +204,24 @@ void nf_manage_collect_oper_added_nf(main_ctx_t *MAIN_CTX, nf_list_pkt_t *my_ava
 		if (my_avail_nfs->nf_avail_num >= NF_MAX_AVAIL_LIST)
 			return;
 
-		if (conn_raw->nrfm_auto_added >= 1) continue;
-
+		if (conn_raw->nrfm_auto_added > NF_ADD_RAW) continue; /* report only operator added raw */
 		if (conn_raw->occupied <= 0) continue;
-		if (conn_raw->act <= 0) continue;
-		if (conn_raw->conn_cnt <= 0) continue;
-		if (conn_raw->token_acquired <= 0) continue;
 
 		nf_service_info *nf_avail = &my_avail_nfs->nf_avail[my_avail_nfs->nf_avail_num++];
+
+        if (conn_raw->act <= 0 ||
+            conn_raw->conn_cnt <= 0 ||
+            conn_raw->token_acquired <= 0) {
+            nf_avail->available = 0;
+        } else {
+            nf_avail->available = 1;
+        }
 
 		nf_avail->occupied = 1;
 		nf_avail->lbId = MAIN_CTX->my_info.myLabelNum;
 
 		sprintf(nf_avail->hostname, "%s", conn_raw->host);
-		nf_avail->nfType = nf_manage_setting_opr_type(conn_raw->type);
+		nf_avail->nfType = nf_type_to_enum(conn_raw->type);
 		sprintf(nf_avail->type, "%s", conn_raw->type);
 		sprintf(nf_avail->scheme, "%s", conn_raw->scheme);
 		sprintf(nf_avail->ipv4Address, "%s", conn_raw->ip);
@@ -302,6 +254,8 @@ void nf_manage_create_httpc_cmd_conn_add(main_ctx_t *MAIN_CTX, nf_retrieve_item_
 	nrfm_mml_t httpc_add_cmd = {0,};
 
 	httpc_add_cmd.command = NRFM_MML_HTTPC_ADD;
+	httpc_add_cmd.nrfm_auto_added = NF_ADD_NRF; /* this connection created by NRF (AUTO) */
+
 	httpc_add_cmd.seqNo = nf_item->httpc_cmd_ctx.seqNo = ++MAIN_CTX->MAIN_SEQNO;
 
 	sprintf(httpc_add_cmd.host, "%s", nf_item->nf_uuid);
@@ -315,48 +269,6 @@ void nf_manage_create_httpc_cmd_conn_add(main_ctx_t *MAIN_CTX, nf_retrieve_item_
 
 	int array_length = json_object_array_length(js_services);
 	for (int i = 0; i < array_length; i++) {
-#if 0
-		json_object *js_elem = json_object_array_get_idx(js_services, i);
-		char key_service[128] = "serviceName";
-		char key_scheme[128] = "scheme";
-		char key_ip[128] = "/ipEndPoints/0/ipv4Address"; // we use only 0th index in ipEndPoints
-		char key_port[128] = "/ipEndPoints/0/port";
-		json_object *js_service = search_json_object(js_elem, key_service);
-		json_object *js_scheme = search_json_object(js_elem, key_scheme);
-		json_object *js_ip = search_json_object(js_elem, key_ip);
-		json_object *js_port = search_json_object(js_elem, key_port);
-
-		if (js_scheme == NULL || js_ip == NULL) {
-			APPLOG(APPLOG_ERR, "{{{DBG}}} %s can't find scheme or ipv4Address in nfServices!", __func__);
-			continue;
-		}
-		const char *service = json_object_get_string(js_service);
-		const char *scheme = json_object_get_string(js_scheme);
-		const char *ip = json_object_get_string(js_ip);
-		int port = json_object_get_int(js_port);
-
-		if (strcmp(scheme, "https") && strcmp(scheme, "http")) {
-			APPLOG(APPLOG_ERR, "{{{DBG}}} %s scheme invalid [%s]!", __func__, scheme);
-			continue;
-		}
-		struct sockaddr_in sa = {0,};
-		if (inet_pton(AF_INET, ip, &(sa.sin_addr)) == 0) {
-			APPLOG(APPLOG_ERR, "{{{DBG}}} %s ip invalid [%s]!", __func__, ip);
-			continue;
-		}
-		if (port == 0) { /* port can not exist */
-			if (!strcmp(scheme, "https")) 
-				port = 443;
-			else 
-				port = 80;
-			APPLOG(APPLOG_ERR, "{{{DBG}}} %s port setted as [%d]", __func__, port);
-		}
-
-		if (nf_manage_fill_nrfm_mml(&httpc_add_cmd, service, scheme, ip, port) >= HTTP_MAX_CONN) {
-			APPLOG(APPLOG_ERR, "{{{DBG}}} %s httpc conn pkt full num", __func__);
-			break;
-		}
-#else
         json_object *js_elem = json_object_array_get_idx(js_services, i);
         char key_service[128] = "serviceName";
         char key_scheme[128] = "scheme";
@@ -408,7 +320,6 @@ void nf_manage_create_httpc_cmd_conn_add(main_ctx_t *MAIN_CTX, nf_retrieve_item_
                 goto NMCHCCA_END;
             }
         }
-#endif
 	}
 
 NMCHCCA_END:
@@ -490,6 +401,14 @@ void nf_manage_create_lb_list_pkt(main_ctx_t *MAIN_CTX, conn_list_status_t *conn
 		nf_avail->occupied = 1;
 		nf_avail->lbId = MAIN_CTX->my_info.myLabelNum;
 
+        if (conn_raw->act <= 0 ||
+            conn_raw->conn_cnt <= 0 ||
+            conn_raw->token_acquired <= 0) {
+            nf_avail->available = 0;
+        } else {
+            nf_avail->available = 1;
+        }
+
 		nf_avail->nfType = nfType;
 		memcpy(&nf_avail->nfTypeInfo, nf_specific_info, sizeof(nf_type_info));
 		nf_avail->allowdPlmnsNum = allowdPlmnsNum;
@@ -505,7 +424,7 @@ void nf_manage_create_lb_list_pkt(main_ctx_t *MAIN_CTX, conn_list_status_t *conn
 		nf_avail->priority = nf_manage_create_lb_list_get_priority(nf_profile, nf_avail->serviceName);
 		nf_avail->load = nf_manage_create_lb_list_get_load(nf_profile, nf_avail->serviceName);
 
-		nf_avail->auto_add = 1;
+		nf_avail->auto_add = conn_raw->nrfm_auto_added;
 	}
 }
 
@@ -586,28 +505,6 @@ void nf_manage_handle_httpc_alive(nrfm_noti_t *httpc_noti)
 		NF_MANAGE_RESTORE_HTTPC_CONN(&MAIN_CTX);
 	}
 }
-
-#if 0
-int nf_manage_search_specific_info(json_object *nf_profile, json_object **js_specific_info)
-{
-	char key_nfType[128] = "nfType";
-	json_object *js_nfType = search_json_object(nf_profile, key_nfType);
-	const char *nfType = json_object_get_string(js_nfType);
-
-	if(!strcmp(nfType, "UDM")) {
-		char key_specific_info[128] = "udmInfo";
-		*js_specific_info = search_json_object(nf_profile, key_specific_info);
-		return NF_TYPE_UDM;
-	} else if(!strcmp(nfType, "UDR")) {
-		char key_specific_info[128] = "udrInfo";
-		*js_specific_info = search_json_object(nf_profile, key_specific_info);
-		return NF_TYPE_UDR;
-	} else {
-		*js_specific_info = NULL;
-		return NF_TYPE_UNKNOWN;
-	}
-}
-#endif
 
 void nf_manage_send_httpc_cmd(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item)
 {

@@ -679,6 +679,20 @@ int check_token_uuid(const char *audience)
 }
 
 /* oauth 2.0 */
+/*
+{
+    "alg": "HS256", // algo
+    "typ": "JWT"
+}
+.
+{
+    "audience": "NF producer UUID",
+    "expiration": 1649949847,       // expire time
+    "issuer": "NF Consumer UUID",
+    "scope": "namf-loc namf-evts namf-loc namf-mt", // service scope
+    "subject": "NRF UUID"
+}
+*/
 int check_access_token(char *token, char *oauth_scope)
 {
 	jwt_t *jwt = NULL;

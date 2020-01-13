@@ -154,10 +154,10 @@ void write_list(conn_list_status_t CONN_STATUS[], char *buff) {
 					CONN_STATUS[j].conn_cnt,
 					(CONN_STATUS[j].conn_cnt > 0) ?  "Connected" : (CONN_STATUS[j].act == 1) ? "Disconnect" : "Deact",
 					CONN_STATUS[j].token_id,
-					(CONN_STATUS[j].nrfm_auto_added > 0) ? "O" : "X");
+					(CONN_STATUS[j].nrfm_auto_added > NF_ADD_RAW) ? "O" : "X");
 		}
 	}
-    resLen += sprintf(buff + resLen, "----------------------------------------------------------------------------------------------------------------------------------------------------------\n");
+    sprintf(buff + resLen, "----------------------------------------------------------------------------------------------------------------------------------------------------------\n");
 }
 
 /* before gather, must be memset! */

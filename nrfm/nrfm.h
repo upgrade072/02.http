@@ -34,8 +34,8 @@
 #include <http_comm.h>
 
 // for nrf
-#include <nrf_comm.h>
 #include <libnrf.h>
+#include <libnrf_app.h>
 // for isif
 #include <isif_msgtypes.h>
 
@@ -56,7 +56,7 @@
 #define CF_OVLD_TPS_ENABLED	"nrfm_cfg.sys_config.ovld_tps_enabled"
 #define CF_OVLD_NOTIFY_CODE	"nrfm_cfg.sys_config.ovld_notify_code"
 #define CF_ISIFCS_MODE      "nrfm_cfg.sys_config.isifcs_mode"
-#define CF_NFS_SHM_CREATE   "nrfc_cfg.sys_config.nfs_shm_create"
+#define CF_NFS_SHM_CREATE   "nrfm_cfg.sys_config.nfs_shm_create"
 #define CF_RECOVERY_TIME	"nrfm_cfg.sys_info.recovery_time"
 #define CF_SUBSCRIBE_FORM	"nrfm_cfg.subscription_form"
 #define CF_HTTP_RSP_WAIT_TM	"nrfm_cfg.timer_info.httpc_rsp_wait_tm"
@@ -122,7 +122,7 @@ typedef enum nf_item_ctx_type {
 
 typedef struct nf_retrieve_item {
 	/* item ctx type profile */
-	char nf_uuid[1024];
+	char nf_uuid[128];
 	json_object *item_nf_profile;
 	nrf_ctx_t retrieve_item_ctx;
 
@@ -134,7 +134,7 @@ typedef struct nf_retrieve_item {
 
 typedef struct nf_retrieve_info {
 	/* for retrieve list */
-	char nf_type[128];
+	char nf_type[12];
 	int	limit;
 	nrf_ctx_t retrieve_list_ctx;
 	json_object *js_retrieve_response; // NRF receive response
@@ -275,6 +275,9 @@ void    nf_token_update_shm_process(main_ctx_t *MAIN_CTX, token_ctx_list_t *toke
 /* ------------------------- isif.c --------------------------- */
 void    isifc_create_pkt_for_status(IsifMsgType *txIsifMsg, nf_service_info *nf_info, svr_info_t *my_info, assoc_t *fep_assoc);
 void    isifc_send_pkt_for_status(int isifc_qid, IsifMsgType *txIsifMsg);
+void    isif_save_recv_fep_status(service_info_t *fep_svc_info);
+void    isif_handle_fep_conn_req_profile(nf_disc_host_info *nf_host_info);
+void    shmq_recv_handle(evutil_socket_t fd, short what, void *arg);
 
 /* ------------------------- retrieve.c --------------------------- */
 void    nf_retrieve_addnew_and_get_profile(main_ctx_t *MAIN_CTX, nf_retrieve_info_t *nf_retr_info, nf_retrieve_item_t *nf_add_item);
@@ -354,14 +357,12 @@ void    start_watching_dir(struct event_base *evbase);
 
 /* ------------------------- heartbeat.c --------------------------- */
 void    https_save_recv_fep_status(main_ctx_t *MAIN_CTX);
-void    isif_save_recv_fep_status(service_info_t *fep_svc_info);
 void    nf_heartbeat_clear_status(main_ctx_t *MAIN_CTX);
 int     nf_heartbeat_create_body(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ahifPkt);
 void    nf_heartbeat_create_pkt(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ahifPkt);
 void    nf_heartbeat_handle_resp_proc(AhifHttpCSMsgType *ahifPkt);
 void    nf_heartbeat_send_proc(evutil_socket_t fd, short what, void *arg);
 void    nf_heartbeat_start_process(main_ctx_t *MAIN_CTX);
-void    shmq_recv_handle(evutil_socket_t fd, short what, void *arg);
 
 /* ------------------------- subscribe.c --------------------------- */
 void    nf_subscribe_check_time(evutil_socket_t fd, short what, void *arg);
@@ -421,7 +422,6 @@ void    nf_regi_save_recv_nf_profile(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ah
 /* ------------------------- util.c --------------------------- */
 int     check_number(char *ptr);
 void    dump_pkt_log(void *msg, ssize_t size);
-int     get_file_contents(const char* filename, char** outbuffer);
 void    get_svc_ipv4_addr(const char *nic_name, char *nic_addr);
 void    handle_ctx_timeout(evutil_socket_t fd, short what, void *arg);
 void    LOG_JSON_OBJECT(const char *banner, json_object *js_obj);

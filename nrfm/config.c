@@ -139,8 +139,8 @@ char *cfg_get_nf_info(nf_retrieve_info_t *nf_retr_info)
 	char temp[1024] = {0,};
 	if (!strcmp(nf_retr_info->nf_type, "UDM")) {
 		sprintf(temp, "/udmInfo");
-	} else if (!strcmp(nf_retr_info->nf_type, "UDR")) {
-		sprintf(temp, "/udrInfo");
+	} else if (!strcmp(nf_retr_info->nf_type, "AMF")) {
+		sprintf(temp, "/amfInfo");
 	} else {
 		sprintf(temp, "/unknwon");
 	}
@@ -155,8 +155,8 @@ char *cfg_get_nf_type(nf_retrieve_info_t *nf_retr_info)
 	char temp[1024] = {0,};
 	if (!strcmp(nf_retr_info->nf_type, "UDM")) {
 		sprintf(temp, "UDM");
-	} else if (!strcmp(nf_retr_info->nf_type, "UDR")) {
-		sprintf(temp, "UDR");
+	} else if (!strcmp(nf_retr_info->nf_type, "AMF")) {
+		sprintf(temp, "AMF");
 	} else {
 		sprintf(temp, "UNKNOWN");
 	}
@@ -399,13 +399,13 @@ int load_cfg_retrieve_list(main_ctx_t *MAIN_CTX)
 			continue;
 		}
 
-		nf_retrieve_info_t *retrieve_item = malloc(sizeof(nf_retrieve_info_t));
-		memset(retrieve_item, 0x00, sizeof(nf_retrieve_info_t));
+		nf_retrieve_info_t *subscribe_item = malloc(sizeof(nf_retrieve_info_t));
+		memset(subscribe_item, 0x00, sizeof(nf_retrieve_info_t));
 
-		sprintf(retrieve_item->nf_type, config_setting_get_string(cf_nf_type));
-		retrieve_item->limit = config_setting_get_int(cf_limit);
+		sprintf(subscribe_item->nf_type, config_setting_get_string(cf_nf_type));
+		subscribe_item->limit = config_setting_get_int(cf_limit);
 
-		MAIN_CTX->nf_retrieve_list = g_slist_append(MAIN_CTX->nf_retrieve_list, retrieve_item);
+		MAIN_CTX->nf_retrieve_list = g_slist_append(MAIN_CTX->nf_retrieve_list, subscribe_item);
 	}
 
 	return nf_type_num;

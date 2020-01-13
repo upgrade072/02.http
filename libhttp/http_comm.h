@@ -130,7 +130,7 @@ typedef struct conn_list_status {
 	/* for OAuth 2.0 */
 	int token_id;
 	int token_acquired;
-	int nrfm_auto_added;
+    int nrfm_auto_added;
 } conn_list_status_t;
 
 /* https connection status */
@@ -220,7 +220,6 @@ typedef struct shm_http {
 /* ------------------------- libshm.c --------------------------- */
 int     get_http_shm(int httpc_status_shmkey);
 void    set_httpc_status(conn_list_status_t conn_status[]);
-void    print_httpc_status();
 int     select_next_httpc_conn(char *type, char *host, char *ip, int port, int last_selected_index, conn_list_status_t *find_raw);
 int     get_shm_comm_key(char *fname, char *proc_name, int shm_mode);
 

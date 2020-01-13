@@ -311,14 +311,6 @@ void send_to_peerlb(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx)
 	return stp_snd_to_peer(peer_tcp_ctx, recv_ctx); /* send relay to peer */
 }
 
-void desthost_case_sensitive(httpc_ctx_t *recv_ctx)
-{
-	for (int i = 0; i < strlen(recv_ctx->user_ctx.head.destHost); i++) {
-		if (isalnum(recv_ctx->user_ctx.head.destHost[i]) == 0)
-			recv_ctx->user_ctx.head.destHost[i] = '_';
-	}
-}
-
 void send_to_remote(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx)
 {
 	conn_list_t *httpc_conn = 0;

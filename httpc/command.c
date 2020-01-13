@@ -198,7 +198,7 @@ void nrfm_mmc_add_proc(nrfm_mml_t *nrfm_cmd)
 				CONN_LIST[k].port = nf_conn->port;
 				CONN_LIST[k].token_id = nrfm_cmd->token_id;
 				CONN_LIST[k].act = 1;
-				CONN_LIST[k].nrfm_auto_added = 1; /* this list is added by nrfm */
+				CONN_LIST[k].nrfm_auto_added = nrfm_cmd->nrfm_auto_added; /*  RAW | NRF | (MML) | CB */
                 APPLOG(APPLOG_ERR, "{{{DBG}}} %s() add new connlist by nrfm [scheme:%s type:%s host:%s ip:%s port:%d token_id:%d auto_add:%d]",
                     __func__, 
                     CONN_LIST[k].scheme,
@@ -229,7 +229,7 @@ void nrfm_mmc_act_dact_proc(nrfm_mml_t *nrfm_cmd, int act)
 	for (int k = 1; k < MAX_SVR_NUM; k++) {
 		if (CONN_LIST[k].used == 0)
 			continue;
-		if (CONN_LIST[k].nrfm_auto_added == 0)
+		if (CONN_LIST[k].nrfm_auto_added == NF_ADD_RAW)
 			continue;
 		if (CONN_LIST[k].list_index == list_index) {
 			if (act) {
@@ -262,7 +262,7 @@ void nrfm_mmc_del_proc(nrfm_mml_t *nrfm_cmd)
 	for (int k = 1; k < MAX_SVR_NUM; k++) {
 		if (CONN_LIST[k].used == 0)
 			continue;
-		if (CONN_LIST[k].nrfm_auto_added == 0)
+		if (CONN_LIST[k].nrfm_auto_added == NF_ADD_RAW)
 			continue;
 		if (CONN_LIST[k].list_index == list_index) {
 			http2_session_data_t *session_data = get_session(CONN_LIST[k].thrd_index,
@@ -295,7 +295,7 @@ void nrfm_mmc_clear_proc()
 	for (int k = 1; k < MAX_SVR_NUM; k++) {
 		if (CONN_LIST[k].used == 0)
 			continue;
-		if (CONN_LIST[k].nrfm_auto_added == 0)
+		if (CONN_LIST[k].nrfm_auto_added == NF_ADD_RAW)
 			continue;
 
 		int list_index = get_list(CONN_LIST[k].host);

@@ -608,10 +608,18 @@ stop_and_return:
 int comp_and_save(char input[][TOKEN_MAX_LEN], char comp[][TOKEN_MAX_LEN], key_value_t token[TOKEN_MAX_NUM], int array_num)
 {   
     for (int i = 0, cnt = 0; i < array_num; i++) {
+#if 0
         if (comp[i][0] == '$') {
             sprintf(token[cnt].key, "%s", comp[i]);
             sprintf(token[cnt].value, "%s", input[i]);
             cnt++;
+#else
+        char *ptr = strchr(comp[i], '$');
+        if (ptr != NULL && !strncmp(input[i], comp[i], ptr - comp[i])) {
+            sprintf(token[cnt].key, "%s", ptr);
+            sprintf(token[cnt].value, "%s", input[i]);
+            cnt++;
+#endif
         } else if (strcmp(input[i], comp[i])) {
             return -1;
         }

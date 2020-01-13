@@ -32,31 +32,6 @@ void set_httpc_status(conn_list_status_t conn_status[])
 	SHM_HTTPC_PTR->current = index;
 }
 
-void print_httpc_status()
-{
-	int pos = SHM_HTTPC_PTR->current;
-	for (int i = 0; i < MAX_CON_NUM; i++) {
-		conn_list_status_t *conn_raw = &SHM_HTTPC_PTR->connlist[pos][i];
-		if (conn_raw->occupied <= 0)
-			continue;
-		if (conn_raw->act <= 0)
-			continue;
-		if (conn_raw->conn_cnt <= 0)
-			continue;
-		APPLOG(APPLOG_ERR, "[%4d] [%12s] [%8s] [%40s] [%20s] [%5d] [%3d] [%3d] [%5d] [%s]",
-				i,
-				conn_raw->scheme,
-				conn_raw->type,
-				conn_raw->host,
-				conn_raw->ip,
-				conn_raw->port,
-				conn_raw->sess_cnt,
-				conn_raw->conn_cnt,
-				conn_raw->token_id,
-				(conn_raw->nrfm_auto_added) ? "AUTO" : "OPER");
-	}
-}
-
 int select_next_httpc_conn(char *type, char *host, char *ip, int port, int last_selected_index, conn_list_status_t *find_raw)
 {
     int start_line = last_selected_index + 1;

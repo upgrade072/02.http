@@ -140,7 +140,7 @@ void node_list_print_log(GSList *node_assoc_list)
 }
 
 #define NOTIFY_WATCH_MAX_BUFF (1024 * 12)
-extern void directory_watch_action(const char *file_name);
+static void (*directory_watch_action)();
 static void config_watch_callback(struct bufferevent *bev, void *args)
 {   
     char buf[NOTIFY_WATCH_MAX_BUFF] = {0,};
@@ -148,7 +148,7 @@ static void config_watch_callback(struct bufferevent *bev, void *args)
     char *ptr; 
     for (ptr = buf; ptr < buf + numRead; ) {
         struct inotify_event *event = (struct inotify_event*)ptr;
-        if (event->len > 0) {
+        if (directory_watch_action != NULL && event->len > 0) {
             /* function point */
 			directory_watch_action(event->name);
         }
@@ -156,8 +156,13 @@ static void config_watch_callback(struct bufferevent *bev, void *args)
     }
 }
 
-int watch_directory_init(struct event_base *evbase, const char *path_name)
+int watch_directory_init(struct event_base *evbase, const char *path_name, void (*callback_function)(const char *arg_is_path))
 {
+    if (callback_function == NULL) {
+		fprintf(stderr, "INIT| ERR| callback function is NULL!");
+		return -1;
+    }
+
 	int inotifyFd = inotify_init();
 	if (inotifyFd == -1) {
 		fprintf(stderr, "INIT| ERR| inotify init fail!\n");
@@ -170,6 +175,9 @@ int watch_directory_init(struct event_base *evbase, const char *path_name)
 		return -1;
 	} else {
 		fprintf(stderr, "INIT| inotify add watch [%d:%s]\n", inotifyWd, path_name);
+
+        /* ADD CALLBACK ACTION */
+        directory_watch_action = callback_function;
 	}
 
 
@@ -280,6 +288,23 @@ void print_token_info_raw(acc_token_shm_t *ACC_TOKEN_LIST, char *respBuff)
 	ft_destroy_table(table);
 }
 
+char *get_nrfm_cmd_str(int cmd)
+{
+    switch (cmd) {
+        case NRFM_MML_HTTPC_ADD:
+            return "ADD";
+        case NRFM_MML_HTTPC_ACT:
+            return "ACT";
+        case NRFM_MML_HTTPC_DACT:
+            return "DACT";
+        case NRFM_MML_HTTPC_DEL:
+            return "DEL";
+        case NRFM_MML_HTTPC_CLEAR:
+            return "<CLEAR!!!>";
+        default:
+            return "UNKNOWN";
+    }
+}
 
 void print_nrfm_mml_raw(nrfm_mml_t *httpc_cmd)
 {
@@ -311,89 +336,6 @@ void print_nrfm_mml_raw(nrfm_mml_t *httpc_cmd)
 	APPLOG(APPLOG_DEBUG, "\n%s", ft_to_string(table_m));
 	ft_destroy_table(table_c);
 	ft_destroy_table(table_m);
-}
-
-void getTypeSpecStr(nf_service_info *nf_info, char *resBuf)
-{
-	if (nf_info->nfType == NF_TYPE_UDM) {
-		nf_udm_info *udmInfo = &nf_info->nfTypeInfo.udmInfo;
-		sprintf(resBuf + strlen(resBuf), "%s\n", udmInfo->groupId);
-		for (int i = 0; i < udmInfo->supiRangesNum; i++) {
-			sprintf(resBuf + strlen(resBuf), "%s ~ %s\n", 
-					udmInfo->supiRanges[i].start,
-					udmInfo->supiRanges[i].end);
-		}
-		for (int i = 0; i < udmInfo->routingIndicatorsNum; i++) {
-			sprintf(resBuf + strlen(resBuf), "%s ",
-				   udmInfo->routingIndicators[i]);
-		}
-	}
-}
-
-void getAllowdPlmns(nf_service_info *nf_info, char *resBuf)
-{
-	for (int k = 0; k < nf_info->allowdPlmnsNum; k++) {
-		nf_comm_plmn *plmns = &nf_info->allowdPlmns[k];
-		sprintf(resBuf + strlen(resBuf), "%s%s%s", 
-			plmns->mcc, plmns->mnc, k == (nf_info->allowdPlmnsNum - 1) ? "" : "\n");
-	}
-}
-
-void printf_avail_nfs(nf_list_pkt_t *avail_nfs)
-{
-	ft_table_t *table = ft_create_table();
-
-	ft_set_cell_prop(table, 0, FT_ANY_COLUMN, FT_CPROP_ROW_TYPE, FT_ROW_HEADER);
-	ft_set_border_style(table, FT_BASIC2_STYLE);
-	ft_write_ln(table, "index", "type", "service", "allowedPlmns\n(mcc+mnc)", "typeInfo", "hostname", "scheme", "ipv4", "port", "priority", "auto", "lb_id");
-
-    for (int i = 0, index = 1; i < avail_nfs->nf_avail_num; i++) {
-        nf_service_info *nf_info = &avail_nfs->nf_avail[i];
-        if (nf_info->occupied <= 0)
-            continue;
-
-		/* allowd plmns */
-		char allowdPlmnsStr[1024] = {0,};
-		getAllowdPlmns(nf_info, allowdPlmnsStr);
-
-		/* nf-type specific info */
-		char typeSpecStr[1024 * 12] = {0,};
-		getTypeSpecStr(nf_info, typeSpecStr);
-
-        ft_printf_ln(table, "%d|%s|%s|%s|%s|%s|%s|%s|%d|%d|%s|%d",
-				index++,
-                nf_info->type,
-                strlen(nf_info->serviceName) ? nf_info->serviceName : "ANY", 
-				strlen(allowdPlmnsStr) ? allowdPlmnsStr : "ANY",
-				strlen(typeSpecStr) ? typeSpecStr : "ANY",
-                nf_info->hostname,
-                nf_info->scheme,
-                nf_info->ipv4Address,
-                nf_info->port,
-                nf_info->priority,
-				nf_info->auto_add == 0 ? "X" : "O",
-				nf_info->lbId);
-    }
-	APPLOG(APPLOG_ERR, "\n%s", ft_to_string(table));
-	ft_destroy_table(table);
-}
-
-char *get_nrfm_cmd_str(int cmd)
-{
-    switch (cmd) {
-        case NRFM_MML_HTTPC_ADD:
-			return "ADD";
-		case NRFM_MML_HTTPC_ACT:
-			return "ACT";
-        case NRFM_MML_HTTPC_DACT:
-			return "DACT";
-        case NRFM_MML_HTTPC_DEL:
-			return "DEL";
-		case NRFM_MML_HTTPC_CLEAR:
-			return "<CLEAR!!!>";
-		default:
-			return "UNKNOWN";
-    }
 }
 
 int cnvt_cfg_to_json(json_object *obj, config_setting_t *setting, int callerType)
@@ -449,136 +391,6 @@ int cnvt_cfg_to_json(json_object *obj, config_setting_t *setting, int callerType
 
 	return 0;
 }
-
-int check_number(char *ptr)
-{
-    for (int i = 0; i < strlen(ptr); i++) {
-        if (isdigit(ptr[i]) == 0)
-            return -1;
-    }
-    return atoi(ptr);
-}
-
-json_object *search_json_object(json_object *obj, char *key_string)
-{   
-    char *ptr = strtok(key_string, "/");
-    json_object *input = obj;
-    json_object *output = NULL;
-
-    while (ptr != NULL) {
-        int cnvt_num = check_number(ptr);
-    
-        if (cnvt_num >= 0) {
-            if (json_object_get_type(input) != json_type_array)
-                return NULL;
-            if ((output = json_object_array_get_idx(input, cnvt_num)) == NULL)
-                return NULL;
-        } else {
-            if (json_object_object_get_ex(input, ptr, &output) == 0)
-                return NULL;
-        }
-    
-        input = output;
-        ptr = strtok(NULL, "/");
-    }
-    return output;
-}
-
-int nf_search_specific_info(json_object *nf_profile, json_object **js_specific_info)
-{
-	if (nf_profile == NULL) {
-		APPLOG(APPLOG_ERR, "{{{DBG}}} something wrong %s nf_profile null!", __func__);
-		return -1;
-	}
-
-    char key_nfType[128] = "nfType";
-    json_object *js_nfType = search_json_object(nf_profile, key_nfType);
-    const char *nfType = json_object_get_string(js_nfType);
-
-    if(!strcmp(nfType, "UDM")) {
-        char key_specific_info[128] = "udmInfo";
-        *js_specific_info = search_json_object(nf_profile, key_specific_info);
-        return NF_TYPE_UDM;
-    } else if(!strcmp(nfType, "UDR")) {
-        char key_specific_info[128] = "udrInfo";
-        *js_specific_info = search_json_object(nf_profile, key_specific_info);
-        return NF_TYPE_UDR;
-    } else {
-        *js_specific_info = NULL;
-        return NF_TYPE_UNKNOWN;
-    }       
-}
-
-void nf_get_specific_info(int nfType, json_object *js_specific_info, nf_type_info *nf_specific_info)
-{           
-    if (nfType == NF_TYPE_UDM) {
-        nf_udm_info *udmInfo = &nf_specific_info->udmInfo;
-            
-        /* group Id */
-        char key_groupId[128] = "groupId";
-        json_object *js_group_id = search_json_object(js_specific_info, key_groupId);
-		if (js_group_id)
-			sprintf(udmInfo->groupId, "%s", json_object_get_string(js_group_id));
-
-        /* supiRanges */
-        char key_supi_ranges[128] = "supiRanges";
-        json_object *js_supi_ranges = search_json_object(js_specific_info, key_supi_ranges);
-		if (js_supi_ranges) {
-			udmInfo->supiRangesNum = (json_object_array_length(js_supi_ranges) > NF_MAX_SUPI_RANGES) ?
-				NF_MAX_SUPI_RANGES : json_object_array_length(js_supi_ranges);
-			for (int i = 0; i < udmInfo->supiRangesNum; i++) {
-				json_object *js_supi_elem = json_object_array_get_idx(js_supi_ranges, i);
-				char key_start[128] = "start";
-				char key_end[128] = "end";
-				json_object *js_start = search_json_object(js_supi_elem, key_start);
-				json_object *js_end = search_json_object(js_supi_elem, key_end);
-				if (js_start)
-					sprintf(udmInfo->supiRanges[i].start, "%s", json_object_get_string(js_start));
-				if (js_end)
-					sprintf(udmInfo->supiRanges[i].end, "%s", json_object_get_string(js_end));
-			}
-		}
-        
-        /* routingIndicators */
-        char key_routing_indicators[128] = "routingIndicators";
-		json_object *js_routing_indicators = search_json_object(js_specific_info, key_routing_indicators);
-		if (js_routing_indicators) {
-			udmInfo->routingIndicatorsNum = (json_object_array_length(js_routing_indicators) > NF_MAX_RI) ?
-				NF_MAX_RI : json_object_array_length(js_routing_indicators);
-			for (int i = 0; i < udmInfo->routingIndicatorsNum; i++) {
-				json_object *js_ri_elem = json_object_array_get_idx(js_routing_indicators, i);
-				if (js_ri_elem != NULL)
-					sprintf(udmInfo->routingIndicators[i], "%s", json_object_get_string(js_ri_elem));
-			}
-		}
-    }
-}
-
-int nf_get_allowd_plmns(json_object *nf_profile, nf_comm_plmn *allowdPlmns)
-{   
-    char key_allowd_plmns[128] = "allowedPlmns";
-	int allowdPlmnsNum = 0;
-    json_object *js_allowd_plmns = search_json_object(nf_profile, key_allowd_plmns);
-    
-	if (js_allowd_plmns) {
-		allowdPlmnsNum = (json_object_array_length(js_allowd_plmns) > NF_MAX_ALLOWD_PLMNS) ?
-			NF_MAX_ALLOWD_PLMNS : json_object_array_length(js_allowd_plmns);
-
-		for (int i = 0; i < allowdPlmnsNum; i++) {
-			json_object *js_allowd_plmn_elem = json_object_array_get_idx(js_allowd_plmns, i);
-			char key_mcc[128] = "mcc";
-			char key_mnc[128] = "mnc";
-			json_object *js_mcc = search_json_object(js_allowd_plmn_elem, key_mcc);
-			json_object *js_mnc = search_json_object(js_allowd_plmn_elem, key_mnc);
-			if (js_mcc)
-				sprintf(allowdPlmns[i].mcc, "%s", json_object_get_string(js_mcc));
-			if (js_mnc)
-			sprintf(allowdPlmns[i].mnc, "%s", json_object_get_string(js_mnc));
-		}       
-	}
-            
-    return allowdPlmnsNum;
-} 
 
 /*
  * statistics
