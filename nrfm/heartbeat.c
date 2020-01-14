@@ -235,5 +235,5 @@ void nf_heartbeat_start_process(main_ctx_t *MAIN_CTX)
     MAIN_CTX->heartbeat_ctx.ev_action = event_new(MAIN_CTX->EVBASE, -1, EV_PERSIST, nf_heartbeat_send_proc, NULL);
     event_add(MAIN_CTX->heartbeat_ctx.ev_action, &tm_hb_interval);
 
-	APPLOG(APPLOG_ERR, "%s() will send heartbeat every (%d) sec", __func__, tm_hb_interval.tv_sec);
+	APPLOG(APPLOG_ERR, "%s() will send heartbeat every (%ld) sec", __func__, tm_hb_interval.tv_sec);
 }

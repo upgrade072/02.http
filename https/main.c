@@ -715,7 +715,7 @@ int check_access_token(char *token, char *oauth_scope)
 	long double expiration = jwt_get_grant_int(jwt, "expiration");
 	time_t current = time(NULL);
 	if (expiration == 0 || expiration < current) {
-		APPLOG(APPLOG_DETAIL, "{{{JWT}}} wrong expiration! [%ld]", expiration);
+		APPLOG(APPLOG_DETAIL, "{{{JWT}}} wrong expiration! [%Lf]", expiration);
 		jwt_free(jwt);
 		return (-1);
 	}

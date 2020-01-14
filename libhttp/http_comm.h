@@ -9,6 +9,7 @@
 #include <sys/shm.h>
 
 #ifdef LOG_LIB
+#include <math.h>
 #include <loglib.h>
 #elif LOG_APP
 #include <appLog.h>

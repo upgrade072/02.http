@@ -35,7 +35,7 @@ void isifc_send_pkt_for_status(int isifc_qid, IsifMsgType *txIsifMsg)
 void isif_save_recv_fep_status(service_info_t *fep_svc_info)
 {
     if (fep_svc_info->sys_mp_id <= 0 || fep_svc_info->sys_mp_id >= MAX_FEP_NUM) {
-        APPLOG(APPLOG_ERR, "%s() receive invalid sys_mp_id (%d)!", fep_svc_info->sys_mp_id);
+        APPLOG(APPLOG_ERR, "%s() receive invalid sys_mp_id (%d)!", __func__, fep_svc_info->sys_mp_id);
         return;
     }
 

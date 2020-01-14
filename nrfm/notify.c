@@ -179,9 +179,11 @@ void nf_notify_handle_request_proc(AhifHttpCSMsgType *ahifPkt)
 		struct timeval cur_time = {0,};
 		gettimeofday(&cur_time, NULL);
 
-#ifdef OVLD_LEGACY
-        // eir
+#ifdef OVLD_LEGACY // eir
 		ovldlib_isOvldCtrl(cur_time.tv_sec, OVLDLIB_MODE_DONT_CTRL, MAIN_CTX.sysconfig.ovld_notify_code);
+#elif OVLD_2TEAM // epcc
+		int ovld_ret_code = 0;
+		ovldlib_isOvldCtrl(0, cur_time.tv_sec, OVLDLIB_MODE_DONT_CTRL, &ovld_ret_code);
 #else
 		ovldlib_isOvldCtrl(cur_time.tv_sec, OVLDLIB_MODE_DONT_CTRL, MAIN_CTX.sysconfig.ovld_notify_code, "NOTIFY");
 
@@ -216,15 +218,15 @@ int nf_notify_profile_add(nf_retrieve_item_t *nf_older_item, json_object *js_nf_
 
 	if (nf_older_item != NULL) {
 		nf_retr_info->nf_retrieve_items = g_slist_remove(nf_retr_info->nf_retrieve_items, nf_older_item);
-		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s remove item addr(%x)", __func__, nf_older_item);
+		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s remove item addr(%p)", __func__, nf_older_item);
 
 		if (nf_older_item->item_nf_profile) {
-			APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s remove nf_profile addr(%x)", __func__, nf_older_item->item_nf_profile);
+			APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s remove nf_profile addr(%p)", __func__, nf_older_item->item_nf_profile);
 			json_object_put(nf_older_item->item_nf_profile);
 		}
 		if (nf_older_item) {
 			NF_MANAGE_NF_DEL(&MAIN_CTX, nf_older_item);
-			APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s free nf_item addr(%x)", __func__, nf_older_item);
+			APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s free nf_item addr(%p)", __func__, nf_older_item);
 			free(nf_older_item);
 		}
 	}
@@ -295,7 +297,7 @@ int nf_notify_profile_modify(nf_retrieve_item_t *nf_item, json_object *js_profil
 		sprintf(path_value, "%s", json_object_get_string(js_path));
 		json_object *js_target_path = search_json_object(nf_item->item_nf_profile, path_value);
 		if (js_target_path == NULL) {
-			APPLOG(APPLOG_ERR, "{{{DBG}}} %s nf_profile not exist [%s]", path_value);
+			APPLOG(APPLOG_ERR, "{{{DBG}}} %s nf_profile not exist [%s]", __func__, path_value);
 			return -1;
 		}
 
@@ -320,15 +322,15 @@ int nf_notify_profile_remove(nf_retrieve_item_t *nf_item)
 	nf_retrieve_info_t *nf_retr_info = nf_notify_search_info_by_uuid(&MAIN_CTX, nf_item->nf_uuid);
 
 	nf_retr_info->nf_retrieve_items = g_slist_remove(nf_retr_info->nf_retrieve_items, nf_item);
-	APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s remove item addr(%x)", __func__, nf_item);
+	APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s remove item addr(%p)", __func__, nf_item);
 
 	if (nf_item->item_nf_profile) {
-		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s remove nf_profile addr(%x)", __func__, nf_item->item_nf_profile);
+		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s remove nf_profile addr(%p)", __func__, nf_item->item_nf_profile);
 		json_object_put(nf_item->item_nf_profile);
 	}
 	if (nf_item) {
 		NF_MANAGE_NF_DEL(&MAIN_CTX, nf_item);
-		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s free nf_item addr(%x)", __func__, nf_item);
+		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s free nf_item addr(%p)", __func__, nf_item);
 		free(nf_item);
 	}
 

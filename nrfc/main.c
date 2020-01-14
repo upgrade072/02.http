@@ -96,11 +96,10 @@ int get_olcd_index_with_tps(char *svc_name, int *tps)
 
 void fep_service_log(service_info_t *fep_svc)
 {
-	APPLOG(APPLOG_ERR, "{{{CHECK}}} mp(%d) (%s:%s:%s ... :tps %d), olcd index(%d) use_bep(%d:conn %d)",
+	APPLOG(APPLOG_ERR, "{{{CHECK}}} mp(%d) (%s:%s ... :tps %d), olcd index(%d) use_bep(%d:conn %d)",
 			fep_svc->sys_mp_id,
 			fep_svc->service_name,
 			fep_svc->ovld_name,
-			fep_svc->proc_name,
 			fep_svc->ovld_tps,
 			fep_svc->olcd_table_index,
 			fep_svc->bep_use,
@@ -188,7 +187,7 @@ int set_overload_info(main_ctx_t *MAIN_CTX, config_setting_t *elem)
 
     for(int i = 0; i < svc_info.proc_num; i++) {
         if ((svc_info.proc_table_index[i] = get_proc_table_index(svc_info.proc_name[i])) < 0) {
-            APPLOG(APPLOG_ERR, "{{{INIT}}} cant find service info [%s] from PROC_TABLE", svc_info.proc_name);
+            APPLOG(APPLOG_ERR, "{{{INIT}}} cant find service info [%s] from PROC_TABLE", svc_info.proc_name[i]);
             return -1;
         }
     }
@@ -272,8 +271,8 @@ int initialize(main_ctx_t *MAIN_CTX)
 
 	/* attach to overload table */
 
-#if 0
-	if (ovldlib_init (MAIN_CTX->my_info.myProcName) < 0) {
+#ifdef OVLD_2TEAM
+	if (ovldlib_init (0, MAIN_CTX->my_info.myProcName) < 0) {
 #else
     if (ovldlib_attach_shm () < 0) {
 #endif

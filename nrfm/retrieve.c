@@ -176,7 +176,7 @@ void nf_retrieve_instance_handle_resp_proc(AhifHttpCSMsgType *ahifPkt)
 	nf_retrieve_item_t *nf_item = nf_retrieve_search_item_via_seqNo(&MAIN_CTX, NF_ITEM_CTX_TYPE_PROFILE, head->ahifCid);
 
 	if (nf_item == NULL) {
-		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s() something wrong, can't find ctx (seqNo:%s)",
+		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s() something wrong, can't find ctx (seqNo:%d)",
 				__func__, head->ahifCid);
 		return;
 	}
@@ -240,7 +240,7 @@ void nf_retrieve_item_handle_timeout(nrf_ctx_t *nf_ctx)
 	nf_retrieve_item_t *nf_item = nf_retrieve_search_item_via_seqNo(&MAIN_CTX, NF_ITEM_CTX_TYPE_PROFILE, nf_ctx->seqNo);
 
 	if (nf_item == NULL) {
-		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s() something wrong, can't find ctx (seqNo:%s)",
+		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s() something wrong, can't find ctx (seqNo:%d)",
 				__func__, nf_ctx->seqNo);
 		return;
 	}
@@ -351,7 +351,7 @@ void nf_retrieve_list_handle_resp_proc(AhifHttpCSMsgType *ahifPkt)
 	nf_retrieve_info_t *nf_retr_info = nf_retrieve_search_info_via_seqNo(&MAIN_CTX, head->ahifCid);
 
 	if (nf_retr_info == NULL) {
-		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s() something wrong, can't find ctx (seqNo:%s)",
+		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s() something wrong, can't find ctx (seqNo:%d)",
 				__func__, head->ahifCid);
 		return;
 	}
@@ -392,7 +392,7 @@ void nf_retrieve_list_handle_timeout(nrf_ctx_t *nf_ctx)
 	nf_retrieve_info_t *nf_retr_info = nf_retrieve_search_info_via_seqNo(&MAIN_CTX, nf_ctx->seqNo);
 
 	if (nf_retr_info == NULL) {
-		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s() something wrong, can't find ctx (seqNo:%s)",
+		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s() something wrong, can't find ctx (seqNo:%d)",
 				__func__, nf_ctx->seqNo);
 		return;
 	}

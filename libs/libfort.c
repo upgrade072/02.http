@@ -5674,8 +5674,8 @@ vsnprintf_buffer(f_string_buffer_t *buffer, const struct f_string_view *fmt,
 #pragma clang diagnostic ignored "-Wformat-nonliteral"
 #endif
 #if defined(FT_GCC_COMPILER)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
+//#pragma GCC diagnostic push
+//#pragma GCC diagnostic ignored "-Wformat-nonliteral"
 #endif
     size_t width_capacity = string_buffer_width_capacity(buffer);
     switch (buffer->type) {
@@ -5697,7 +5697,7 @@ vsnprintf_buffer(f_string_buffer_t *buffer, const struct f_string_view *fmt,
 #pragma clang diagnostic pop
 #endif
 #if defined(FT_GCC_COMPILER)
-#pragma GCC diagnostic pop
+//#pragma GCC diagnostic pop
 #endif
 }
 

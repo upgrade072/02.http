@@ -4,6 +4,7 @@
 #include <glib.h>
 #include <json-c/json.h>
 #include <json-c/json_object.h>
+#include <http_comm.h>
 
 typedef enum {
 	NF_TYPE_UNKNOWN = 0,

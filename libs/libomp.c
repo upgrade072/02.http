@@ -408,7 +408,7 @@ void reportAlarm(char *ProcName, int code, int level, char *info, char *desc)
     sprintf(almMsg->almDesc, desc);
 
     if (msgsnd(ixpcQid, (void*)&sndMsg, txLen, IPC_NOWAIT) < 0) {
-        APPLOG(APPLOG_ERR, "Send alarm message fail. errno=%d(%s)\n", __func__, errno, strerror(errno));
+        APPLOG(APPLOG_ERR, "Send alarm message fail. errno=%d(%s)\n", errno, strerror(errno));
     }
 }
 

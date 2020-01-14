@@ -338,7 +338,11 @@ int initialize(main_ctx_t *MAIN_CTX)
 
 	/* if overload set = 1, enable it */
 	if (MAIN_CTX->sysconfig.ovld_tps_enabled > 0) {
+#ifdef OVLD_2TEAM
+		if (ovldlib_init(0, MAIN_CTX->my_info.myProcName) < 0) {
+#else
 		if (ovldlib_init(MAIN_CTX->my_info.myProcName) < 0) {
+#endif
 			APPLOG(APPLOG_ERR, "{{{INIT}}} fail to init ovldlib proc=(%s) enabled=(%d) code=(%d)",
 					MAIN_CTX->my_info.myProcName, MAIN_CTX->sysconfig.ovld_tps_enabled, MAIN_CTX->sysconfig.ovld_notify_code);
 			return -1;

@@ -570,7 +570,7 @@ void nrf_stat_function(int ixpcQid, IxpcQMsgType *rxIxpcMsg, int event_code, GNo
             APPLOG(APPLOG_ERR, "[STAT OP : %s, %s]", commStatItem->strkey1, commStatItem->strkey2);
             for (int k = 0; k < NRFS_CATE_MAX; k++) {
                 commStatItem->ldata[k] = NRF_STAT->stat_count[i][k];
-                APPLOG(APPLOG_ERR, "--cate %s, VAL %d", nrf_stat_cate_str[k], commStatItem->ldata[k]);
+                APPLOG(APPLOG_ERR, "--cate %s, VAL %ld", nrf_stat_cate_str[k], commStatItem->ldata[k]);
             }
 #ifdef STAT_LEGACY
             int curr_row = stm_nrfm_row++;

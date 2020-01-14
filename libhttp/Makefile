@@ -26,7 +26,7 @@ install:
 	\cp ./http_comm.h $(DEST_BUILD)/include
 	\cp $(AOUT) $(DEST_PKG)/lib
 	\cp $(AOUT) $(DEST_BUILD)/lib
-	\gcc ./example.c -o sample -I./ $(INC_PATH) ./$(AOUT) -lpthread -lrt  -L../../../lib -lShmQueue -lcomm -lLog
+#	\gcc ./example.c -o sample -I./ $(INC_PATH) ./$(AOUT) -lpthread -lrt  -L../../../lib -lShmQueue -lcomm -lLog
 #	\cp sample $(DEST_PKG)/bin
 
 clean:

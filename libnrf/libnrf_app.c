@@ -12,7 +12,7 @@ nf_service_info *nf_discover_search(nf_discover_key *search_info, nf_discover_ta
 {
     if (NF_DISC_RESULT != NULL) {
         int res = nf_discover_table_handle(DISC_TABLE, NF_DISC_RESULT);
-        APPLOG(APPLOG_DEBUG, "(%s) update (%d)raw in DISC_TABLE(%x)", __func__, res, DISC_TABLE);
+        APPLOG(APPLOG_DEBUG, "(%s) update (%d)raw in DISC_TABLE(%p)", __func__, res, DISC_TABLE);
     }
 
     return nf_discover_search_cache(search_info, DISC_TABLE, NFS_TABLE, NRFC_QID);
