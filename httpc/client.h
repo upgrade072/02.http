@@ -134,6 +134,7 @@ typedef struct conn_list {
 	int reconn_candidate;				// stream_id is full, trigger reconnect
 
 	int nrfm_auto_added;				// this conn list added by nrfm 
+	time_t tombstone_date;				// last (conn->disconn) time
 } conn_list_t;
 
 typedef enum conn_status {
@@ -317,8 +318,6 @@ void    main_loop();
 int     initialize();
 int     main(int argc, char **argv);
 
-
-
 /* ------------------------- command.c --------------------------- */
 void    handle_nrfm_request(GeneralQMsgType *msg);
 void    handle_nrfm_mmc(nrfm_mml_t *nrfm_cmd);
@@ -328,6 +327,7 @@ void    nrfm_mmc_add_proc(nrfm_mml_t *nrfm_cmd);
 void    nrfm_mmc_act_dact_proc(nrfm_mml_t *nrfm_cmd, int act);
 void    nrfm_mmc_del_proc(nrfm_mml_t *nrfm_cmd);
 void    nrfm_mmc_clear_proc();
+void    nrfm_mmc_tombstone_proc(nrfm_mml_t *nrfm_cmd);
 int     set_nrfm_response_msg(int ahif_msg_type) ;
 void    adjust_loglevel(TrcLibSetPrintMsgType *trcMsg);
 void    message_handle(evutil_socket_t fd, short what, void *arg);

@@ -40,6 +40,16 @@ typedef enum {
     NF_ADD_CALLBACK     // FEP applicaton added
 } nf_add_type;
 
+typedef enum http_mml_cmd {
+	HTTP_MML_HTTPC_CLEAR = 0,	// NRFM restarted, clear all auto add cmd
+	HTTP_MML_HTTPC_ADD,			// -> add & auto act
+	HTTP_MML_HTTPC_ACT,
+	HTTP_MML_HTTPC_DACT,
+	HTTP_MML_HTTPC_DEL,			// -> auto dact & delete
+	HTTP_MML_HTTPC_TOMBSTONE	// -> remove tomestoned connection
+} http_mml_cmd_t;
+
+
 typedef struct {
 	char mcc[3 + 1];    // '^\d{2,3}$'
 	char mnc[3 + 1];
@@ -162,6 +172,6 @@ typedef struct {
     time_t validityPeriod;                          /* NOW + remain time sec */
     int requested;                                  /* send request only 1 times per sec */
 } nf_disc_host_info;
-#define NF_DISC_HOSTINFO_LEN(a) (MAX_NF_UUID_LEN + sizeof(size_t) + a->profile_length)
+#define NF_DISC_HOSTINFO_LEN(a) (sizeof(a->nfType) + sizeof(a->hostname) + sizeof(a->profile_length) + a->profile_length)
 
 #endif

@@ -133,6 +133,7 @@ void print_list(conn_list_status_t conn_status[]) {
 
 /* watch out for buffer size */
 void write_list(conn_list_status_t CONN_STATUS[], char *buff) {
+#if 0
 	int i, j, resLen;
 
     resLen = sprintf(buff, "\n  ID HOSTNAME                                 TYPE   SCHEME   IP_ADDR                            PORT CONN(max/curr)    STATUS     TOKEN_ID  (AUTO_ADDED)\n");
@@ -143,7 +144,7 @@ void write_list(conn_list_status_t CONN_STATUS[], char *buff) {
 				continue;
 			if (CONN_STATUS[j].list_index != i)
 				continue;
-			resLen += sprintf(buff + resLen, "%4d %-40s %-6s %-6s   %-33s %5d (%4d  / %4d)   %10s     %5d        %s\n",
+			resLen += sprintf(buff + resLen, "%4d %-40s %-6s %-6s   %-33s %5d (%4d  / %4d)   %10s     %5d        %3s\n",
 					CONN_STATUS[j].list_index,
 					CONN_STATUS[j].host,
 					CONN_STATUS[j].type,
@@ -154,10 +155,45 @@ void write_list(conn_list_status_t CONN_STATUS[], char *buff) {
 					CONN_STATUS[j].conn_cnt,
 					(CONN_STATUS[j].conn_cnt > 0) ?  "Connected" : (CONN_STATUS[j].act == 1) ? "Disconnect" : "Deact",
 					CONN_STATUS[j].token_id,
-					(CONN_STATUS[j].nrfm_auto_added > NF_ADD_RAW) ? "O" : "X");
+					CONN_STATUS[j].nrfm_auto_added == NF_ADD_RAW ? " X " : 
+					CONN_STATUS[j].nrfm_auto_added == NF_ADD_NRF ? "NRF" : "CB" );
 		}
 	}
     sprintf(buff + resLen, "----------------------------------------------------------------------------------------------------------------------------------------------------------\n");
+#else
+	ft_table_t *table = ft_create_table();
+	ft_set_border_style(table, FT_PLAIN_STYLE);
+
+	/* head */
+	ft_set_cell_prop(table, 0, FT_ANY_COLUMN, FT_CPROP_ROW_TYPE, FT_ROW_HEADER);
+
+	ft_write_ln(table, "ID", "HOSTNAME", "TYPE", "SCHEME", "IPADDR", "PORT", "CONN(max/curr)", "STATUS", "TOKEN_ID", "AUTO_ADDED", "TOMBSTONE_DATE");
+	for ( int i = 0; i < MAX_LIST_NUM; i++) {
+		for ( int j = 0; j < MAX_CON_NUM; j++) {
+			if (CONN_STATUS[j].occupied != 1)
+				continue;
+			if (CONN_STATUS[j].list_index != i)
+				continue;
+			ft_printf_ln(table, "%d|%s|%s|%s|%s|%d|(%d/%d)|%s|%d|%s|%.24s",
+				CONN_STATUS[j].list_index,
+				CONN_STATUS[j].host,
+				CONN_STATUS[j].type,
+				CONN_STATUS[j].scheme,
+				CONN_STATUS[j].ip,
+				CONN_STATUS[j].port,
+				CONN_STATUS[j].sess_cnt,
+				CONN_STATUS[j].conn_cnt,
+				(CONN_STATUS[j].conn_cnt > 0) ?  "Connected" : (CONN_STATUS[j].act == 1) ? "Disconnect" : "Deact",
+				CONN_STATUS[j].token_id,
+				CONN_STATUS[j].nrfm_auto_added == NF_ADD_RAW ? " X " : 
+				CONN_STATUS[j].nrfm_auto_added == NF_ADD_NRF ? "NRF" : "CB",
+				CONN_STATUS[j].tombstone_date != 0 ? ctime(&CONN_STATUS[j].tombstone_date) : "");
+		}
+	}
+	ft_add_separator(table);
+	sprintf(buff, "%s", ft_to_string(table));
+	ft_destroy_table(table);
+#endif
 }
 
 /* before gather, must be memset! */
@@ -212,8 +248,15 @@ void gather_list(conn_list_status_t CONN_STATUS[]) {
 							CONN_STATUS[index].occupied = 1;
 						}
 						CONN_STATUS[index].sess_cnt ++;
-						if (CONN_LIST[k].conn == CN_CONNECTED) 
+						if (CONN_LIST[k].conn == CN_CONNECTED) {
 							CONN_STATUS[index].conn_cnt ++;
+						} else {
+							if (CONN_STATUS[index].conn_cnt == 0) { /* save last disconnected time */
+								if (CONN_STATUS[index].tombstone_date <= CONN_LIST[k].tombstone_date) {
+									CONN_STATUS[index].tombstone_date = CONN_LIST[k].tombstone_date;
+								}
+							}
+						}
 
                         /* oauth 2.0 */
 						int token_id = CONN_LIST[k].token_id;

@@ -420,6 +420,7 @@ static void submit_request(http2_session_data *session_data) {
   config_setting_t *cf_bodys = config_lookup(&MAIN_CFG, "api.request_body");
   if (cf_bodys == NULL) {
 	  fprintf(stderr, "can't find member [api.request_body]!\n");
+	  free(hdrs);
 	  return;
   }
 
@@ -445,6 +446,7 @@ static void submit_request(http2_session_data *session_data) {
   }
 
   stream_data->stream_id = stream_id;
+  free(hdrs);
 }
 
 /* Serialize the frame and send (or buffer) the data to

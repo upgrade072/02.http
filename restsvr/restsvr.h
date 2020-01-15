@@ -30,8 +30,8 @@
 
 #include <libconfig.h>
 
-#include <gmodule.h>
-#include <nrf_comm.h>
+#include <glib.h>
+#include <libnrf.h>
 
 #ifdef LOG_LIB
 #include <sysconf.h>

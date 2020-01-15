@@ -50,6 +50,7 @@ typedef struct svr_info {
 } svr_info_t;
 
 typedef struct assoc {
+	int index; // 01234 ...
     char name[1024];
     char type[1024];
     char group[1024];
@@ -96,20 +97,12 @@ typedef struct nf_conn_info {
 	int cnt;
 } nf_conn_info_t;
 
-typedef enum nrfm_mml_cmd {
-	NRFM_MML_HTTPC_CLEAR = 0, /* NRFM restart clear all */
-	NRFM_MML_HTTPC_ADD,		/* add & act */
-	NRFM_MML_HTTPC_ACT,
-	NRFM_MML_HTTPC_DACT,
-	NRFM_MML_HTTPC_DEL		/* dact & del */
-} nrfm_mml_cmd_t;
-
 typedef struct nrfm_mml {
 	/* key */
 	int seqNo;
 
 	/* request */
-	nrfm_mml_cmd_t command;
+	http_mml_cmd_t command;
     int nrfm_auto_added;
 	char host[64];
 	char type[16];
@@ -236,7 +229,7 @@ void    NRF_STAT_INC(GNode *ROOT_STAT, char *hostname, int operation, int catego
 void    stat_cnvt_5geir_nrfm(STM_CommonStatMsg *commStatItem, STM_NrfmStatistics_s *nrfm_stat);
 #endif
 void    nrf_stat_function(int ixpcQid, IxpcQMsgType *rxIxpcMsg, int event_code, GNode *ROOT_STAT);
-char *get_nrfm_cmd_str(int cmd);
+char *get_http_cmd_str(int cmd);
 
 #endif /* __LIBNRF_H__ */
 

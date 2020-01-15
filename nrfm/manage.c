@@ -27,7 +27,7 @@ void NF_MANAGE_NF_CLEAR(main_ctx_t *MAIN_CTX)
     nrfm_mml_t *httpc_cmd = (nrfm_mml_t *)msg->body;
         
     msg->mtype = (long)MSGID_NRFM_HTTPC_MMC_REQUEST;
-    httpc_cmd->command = NRFM_MML_HTTPC_CLEAR;
+    httpc_cmd->command = HTTP_MML_HTTPC_CLEAR;
             
     int res = msgsnd(MAIN_CTX->my_qid.httpc_qid, msg, sizeof(nrfm_mml_t), IPC_NOWAIT);
             
@@ -152,6 +152,70 @@ void nf_manage_collect_httpc_conn_status_cb(evutil_socket_t fd, short what, void
 	nf_manage_collect_httpc_conn_status(&MAIN_CTX);
 }
 
+void nf_manage_httpc_remove_tombstone(main_ctx_t *MAIN_CTX, conn_list_status_t *httpc_conn)
+{
+	char msgBuff[sizeof(GeneralQMsgType)] = {0,}; 
+
+	GeneralQMsgType *msg = (GeneralQMsgType *)msgBuff;
+	nrfm_mml_t *httpc_cmd = (nrfm_mml_t *)msg->body;
+
+	msg->mtype = (long)MSGID_NRFM_HTTPC_MMC_REQUEST;
+	httpc_cmd->command = HTTP_MML_HTTPC_TOMBSTONE;
+
+    httpc_cmd->seqNo = ++MAIN_CTX->MAIN_SEQNO;
+
+    sprintf(httpc_cmd->host, httpc_conn->host);
+    sprintf(httpc_cmd->type, httpc_conn->type);
+
+    httpc_cmd->info_cnt = 1;
+    httpc_cmd->nf_conns[0].occupied = 1;
+    sprintf(httpc_cmd->nf_conns[0].scheme, httpc_conn->scheme);
+    sprintf(httpc_cmd->nf_conns[0].ip, httpc_conn->ip);
+    httpc_cmd->nf_conns[0].port = httpc_conn->port;
+
+    /* dump log */
+    print_nrfm_mml_raw(httpc_cmd);
+
+    /* send */
+    int res = msgsnd(MAIN_CTX->my_qid.httpc_qid, msg, sizeof(nrfm_mml_t), IPC_NOWAIT);
+    if (res < 0) {
+		APPLOG(APPLOG_ERR, "{{{DBG}}} %s called, msgsnd res (%d:fail) httpc_qid(%d)", __func__, res, MAIN_CTX->my_qid.httpc_qid);
+	}
+}
+
+void nf_manage_httpc_conn_status_cb(evutil_socket_t fd, short what, void *arg)
+{
+    int tombstone_expire_min = 0;
+    time_t curr_tm = time(NULL);
+
+    /* if timer(min) == 0, just leave */
+    config_setting_t *setting = config_lookup(&MAIN_CTX.CFG, CF_HTTPC_DISCONN_TM);
+	if (setting == NULL) {
+		APPLOG(APPLOG_ERR, "%s() cant find config [%s] in ~/nrfm.cfg", __func__, CF_HTTPC_DISCONN_TM);
+		return;
+	}
+    if ((tombstone_expire_min = config_setting_get_int(setting)) <= 0)  {
+        return;
+    }
+
+	int pos = SHM_HTTPC_PTR->current;
+
+	for (int k = 0; k < MAX_CON_NUM; k++) {
+		conn_list_status_t *httpc_conn = &SHM_HTTPC_PTR->connlist[pos][k];
+
+		if (httpc_conn->nrfm_auto_added != NF_ADD_CALLBACK) continue;
+		if (httpc_conn->occupied <= 0) continue;
+		if (httpc_conn->conn_cnt > 0) continue;
+		if (httpc_conn->tombstone_date == 0) continue;
+
+		if ((curr_tm - httpc_conn->tombstone_date) >= (tombstone_expire_min * 60)) {
+			APPLOG(APPLOG_ERR, "%s() remove old tombstone httpc conn [%.24s + %d min] host (%s)",
+					__func__, ctime(&httpc_conn->tombstone_date), tombstone_expire_min, httpc_conn->host);
+			nf_manage_httpc_remove_tombstone(&MAIN_CTX, httpc_conn);
+		}
+	}
+}
+
 void nf_manage_https_conn_status_cb(evutil_socket_t fd, short what, void *arg)
 {
     int tombstone_expire_min = 0;
@@ -159,6 +223,10 @@ void nf_manage_https_conn_status_cb(evutil_socket_t fd, short what, void *arg)
 
     /* if timer(min) == 0, just leave */
     config_setting_t *setting = config_lookup(&MAIN_CTX.CFG, CF_HTTPS_DISCONN_TM);
+	if (setting == NULL) {
+		APPLOG(APPLOG_ERR, "%s() cant find config [%s] in ~/nrfm.cfg", __func__, CF_HTTPS_DISCONN_TM);
+		return;
+	}
     if ((tombstone_expire_min = config_setting_get_int(setting)) <= 0)  {
         return;
     }
@@ -240,9 +308,9 @@ void nf_manage_create_httpc_cmd_conn_act_dact(main_ctx_t *MAIN_CTX, nf_retrieve_
 		return;
 
 	if (act)
-		httpc_cmd->command = NRFM_MML_HTTPC_ACT;
+		httpc_cmd->command = HTTP_MML_HTTPC_ACT;
 	else
-		httpc_cmd->command = NRFM_MML_HTTPC_DACT;
+		httpc_cmd->command = HTTP_MML_HTTPC_DACT;
 
 	httpc_cmd->seqNo = nf_item->httpc_cmd_ctx.seqNo = ++MAIN_CTX->MAIN_SEQNO;
 
@@ -253,7 +321,7 @@ void nf_manage_create_httpc_cmd_conn_add(main_ctx_t *MAIN_CTX, nf_retrieve_item_
 {
 	nrfm_mml_t httpc_add_cmd = {0,};
 
-	httpc_add_cmd.command = NRFM_MML_HTTPC_ADD;
+	httpc_add_cmd.command = HTTP_MML_HTTPC_ADD;
 	httpc_add_cmd.nrfm_auto_added = NF_ADD_NRF; /* this connection created by NRF (AUTO) */
 
 	httpc_add_cmd.seqNo = nf_item->httpc_cmd_ctx.seqNo = ++MAIN_CTX->MAIN_SEQNO;
@@ -338,7 +406,7 @@ void nf_manage_create_httpc_cmd_conn_del(main_ctx_t *MAIN_CTX, nf_retrieve_item_
 	if (httpc_cmd->info_cnt <= 0)
 		return;
 
-	httpc_cmd->command = NRFM_MML_HTTPC_DEL;
+	httpc_cmd->command = HTTP_MML_HTTPC_DEL;
 	httpc_cmd->seqNo = nf_item->httpc_cmd_ctx.seqNo = ++MAIN_CTX->MAIN_SEQNO;
 
 	return;
@@ -481,7 +549,7 @@ void nf_manage_handle_cmd_res(nrfm_mml_t *httpc_cmd_res)
 	stop_ctx_timer(NF_CTX_TYPE_HTTPC_CMD, &nf_item->httpc_cmd_ctx);
 
 	switch (httpc_cmd_res->command) {
-		case NRFM_MML_HTTPC_ADD:
+		case HTTP_MML_HTTPC_ADD:
 			nf_item->httpc_cmd.id = httpc_cmd_res->id;
 			APPLOG(APPLOG_ERR, "{{{DBG}}} %s add success response id (%d)", __func__,  nf_item->httpc_cmd.id);
 			break;

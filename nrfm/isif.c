@@ -73,6 +73,40 @@ void isif_handle_fep_conn_req_profile(nf_disc_host_info *nf_host_info)
     }
 }
 
+void isif_handle_fep_conn_handle_req(http_conn_handle_req_t *handle_req)
+{
+	char msgBuff[sizeof(GeneralQMsgType)] = {0,};
+
+	GeneralQMsgType *msg = (GeneralQMsgType *)msgBuff;
+	nrfm_mml_t *httpc_cmd = (nrfm_mml_t *)msg->body;
+
+	/* create request pkt */
+	msg->mtype = (long)MSGID_NRFM_HTTPC_MMC_REQUEST;
+	httpc_cmd->command = handle_req->command; // only ADD / DEL received
+	httpc_cmd->nrfm_auto_added = NF_ADD_CALLBACK;
+	httpc_cmd->seqNo = ++MAIN_CTX.MAIN_SEQNO;
+
+	sprintf(httpc_cmd->host, handle_req->host);
+	sprintf(httpc_cmd->type, handle_req->type);
+
+	httpc_cmd->info_cnt = 1;
+	httpc_cmd->nf_conns[0].occupied = 1;
+	sprintf(httpc_cmd->nf_conns[0].scheme, handle_req->scheme);
+	sprintf(httpc_cmd->nf_conns[0].ip, handle_req->ip);
+	httpc_cmd->nf_conns[0].port = handle_req->port;
+	httpc_cmd->nf_conns[0].cnt = handle_req->cnt;
+
+	/* dump log */
+	print_nrfm_mml_raw(httpc_cmd);
+
+	/* send */
+	int res = msgsnd(MAIN_CTX.my_qid.httpc_qid, msg, sizeof(nrfm_mml_t), IPC_NOWAIT);
+	if (res < 0) {
+		APPLOG(APPLOG_ERR, "{{{DBG}}} %s called, res (%d:fail), will retry {httpc_qid:%d}",
+				__func__, res, MAIN_CTX.my_qid.httpc_qid);
+	}
+}
+
 void shmq_recv_handle(evutil_socket_t fd, short what, void *arg)
 {
     char msgBuff[1024*64];
@@ -94,6 +128,8 @@ void shmq_recv_handle(evutil_socket_t fd, short what, void *arg)
                     isif_save_recv_fep_status((service_info_t *)rxIsifMsg->body);
                 else if (*subMsgType == LIBNRF_MSG_ADD_NF_PROFILE)
                     isif_handle_fep_conn_req_profile((nf_disc_host_info *)rxIsifMsg->body);
+				else if (*subMsgType == LIBNRF_MSG_ADD_NF_CALLBACK)
+					isif_handle_fep_conn_handle_req((http_conn_handle_req_t *)rxIsifMsg->body);
                 continue;
             default:
                 APPLOG(APPLOG_ERR, "%s() receive unknown type(%d) msg!", __func__, rxIsifMsg->head.mtype);

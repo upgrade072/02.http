@@ -117,24 +117,27 @@ HNR_ERROR_REPLY:
 void handle_nrfm_mmc(nrfm_mml_t *nrfm_cmd)
 {
 	APPLOG(APPLOG_ERR, "{{{DBG}}} %s called, cmdType(%d) [%s]",
-			__func__, nrfm_cmd->command, get_nrfm_cmd_str(nrfm_cmd->command));
+			__func__, nrfm_cmd->command, get_http_cmd_str(nrfm_cmd->command));
 	print_nrfm_mml_raw(nrfm_cmd);
 
 	switch (nrfm_cmd->command) {
-		case NRFM_MML_HTTPC_ADD:
+		case HTTP_MML_HTTPC_ADD:
 			nrfm_mmc_add_proc(nrfm_cmd);
 			break;
-		case NRFM_MML_HTTPC_ACT:
+		case HTTP_MML_HTTPC_ACT:
 			nrfm_mmc_act_dact_proc(nrfm_cmd, 1);
 			break;
-		case NRFM_MML_HTTPC_DACT:
+		case HTTP_MML_HTTPC_DACT:
 			nrfm_mmc_act_dact_proc(nrfm_cmd, 0);
 			break;
-		case NRFM_MML_HTTPC_DEL:
+		case HTTP_MML_HTTPC_DEL:
 			nrfm_mmc_del_proc(nrfm_cmd);
 			break;
-		case NRFM_MML_HTTPC_CLEAR: /* NRFM restarted ! */
+		case HTTP_MML_HTTPC_CLEAR: /* NRFM restarted ! */
 			nrfm_mmc_clear_proc();
+			break;
+		case HTTP_MML_HTTPC_TOMBSTONE:
+			nrfm_mmc_tombstone_proc(nrfm_cmd);
 			break;
 	}
 }
@@ -156,6 +159,10 @@ void nrfm_mmc_res_log()
 
 void nrfm_mmc_send_resp(nrfm_mml_t *nrfm_cmd_req)
 {
+	// this type is one-way cmd
+	if (nrfm_cmd_req->nrfm_auto_added == NF_ADD_CALLBACK)
+		return;
+
     char msgBuff[sizeof(GeneralQMsgType)] = {0,};
 
     GeneralQMsgType *msg = (GeneralQMsgType *)msgBuff;
@@ -295,8 +302,13 @@ void nrfm_mmc_clear_proc()
 	for (int k = 1; k < MAX_SVR_NUM; k++) {
 		if (CONN_LIST[k].used == 0)
 			continue;
+#if 0
 		if (CONN_LIST[k].nrfm_auto_added == NF_ADD_RAW)
 			continue;
+#else
+		if (CONN_LIST[k].nrfm_auto_added != NF_ADD_NRF) // only nrf triggered connection clear
+			continue;
+#endif
 
 		int list_index = get_list(CONN_LIST[k].host);
 		del_item(list_index, CONN_LIST[k].ip, CONN_LIST[k].port);
@@ -326,6 +338,50 @@ void nrfm_mmc_clear_proc()
 
 	// node change, remake
 	trig_refresh_select_node(&CLIENT_CONF);
+}
+
+void nrfm_mmc_tombstone_proc(nrfm_mml_t *nrfm_cmd)
+{
+	int list_index = get_list(nrfm_cmd->host);
+	int item_index = get_item(list_index, nrfm_cmd->nf_conns[0].ip, nrfm_cmd->nf_conns[0].port);
+
+	if (list_index <= 0 || item_index <= 0) {
+		APPLOG(APPLOG_ERR, "{{{DBG}}} %s() called but list_index(%d) item_index(%d), (%s:%s:%d)",
+				__func__, list_index, item_index, nrfm_cmd->host, nrfm_cmd->nf_conns[0].ip, nrfm_cmd->nf_conns[0].port);
+		return;
+	} else {
+		APPLOG(APPLOG_ERR, "{{{DBG}}} %s() called try to find & del list_index(%d) item_index(%d), (%s:%s:%d)",
+				__func__, list_index, item_index, nrfm_cmd->host, nrfm_cmd->nf_conns[0].ip, nrfm_cmd->nf_conns[0].port);
+	}
+
+	del_item(list_index, nrfm_cmd->nf_conns[0].ip, nrfm_cmd->nf_conns[0].port);
+	del_list(nrfm_cmd->host);
+
+	for (int k = 1; k < MAX_SVR_NUM; k++) {
+		if (CONN_LIST[k].list_index == list_index && 
+				CONN_LIST[k].item_index == item_index) {
+
+			APPLOG(APPLOG_ERR, "{{{DBG}}} %s try to clear CONN_LIST[index:%d host:%s ip:%s port:%d]", 
+					__func__, k, CONN_LIST[k].host, CONN_LIST[k].ip, CONN_LIST[k].port);
+
+			http2_session_data_t *session_data = get_session(CONN_LIST[k].thrd_index,
+					CONN_LIST[k].session_index, CONN_LIST[k].session_id);
+
+			if (session_data != NULL) {
+				/* disconnect must act in worker */
+				intl_req_t intl_req = {0,};
+				int thrd_index = session_data->thrd_index;
+				set_intl_req_msg(&intl_req, thrd_index, 0, session_data->session_index,
+						session_data->session_id, 0, HTTP_INTL_SESSION_DEL);
+				if (-1 == msgsnd(THRD_WORKER[thrd_index].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), IPC_NOWAIT)) {
+					APPLOG(APPLOG_DEBUG, "%s() msgsnd fail!!!", __func__);
+				}
+			}
+			/* for fast delete */
+			memset(&CONN_LIST[k], 0x00, sizeof(conn_list_t));
+			break;
+		}
+	}
 }
 
 int set_nrfm_response_msg(int ahif_msg_type) 

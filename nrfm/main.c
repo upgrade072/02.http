@@ -27,7 +27,6 @@ int get_httpc_shm()
 }
 
 int get_https_shm(main_ctx_t *MAIN_CTX)
-
 {
     char fname[1024] = {0,};
     sprintf(fname,"%s/%s", getenv(IV_HOME), SYSCONF_FILE);
@@ -492,9 +491,12 @@ void start_loop(main_ctx_t *MAIN_CTX)
 	struct event *ev_tick = event_new(MAIN_CTX->EVBASE, -1, EV_PERSIST, main_tick_callback, NULL);
 	event_add(ev_tick, &tic_sec);
 
-    /* remove https tombstoned connection info */
+    /* remove httpc/s tombstoned connection info */
+	struct timeval ten_sec = {10, 0};
+    struct event *ev_remove_httpc_tombstone = event_new(MAIN_CTX->EVBASE, -1, EV_PERSIST, nf_manage_httpc_conn_status_cb, NULL);
+    event_add(ev_remove_httpc_tombstone, &ten_sec);
     struct event *ev_remove_https_tombstone = event_new(MAIN_CTX->EVBASE, -1, EV_PERSIST, nf_manage_https_conn_status_cb, NULL);
-    event_add(ev_remove_https_tombstone, &tic_sec);
+    event_add(ev_remove_https_tombstone, &ten_sec);
 
     /* publish conn status to fep (or not) */
     if (MAIN_CTX->sysconfig.nfs_shm_create) {

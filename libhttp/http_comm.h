@@ -19,6 +19,7 @@
 // if stream id reach to 1073741823, no more assign ascend stream id
 // so prepare reconnect when stream id reach HTTP_PREPARE_STREAM_LIMIT
 #if 0
+// => move to client.cfg client_cfg.http_option.prepare_close_stream_limit
 #define HTTP_PREPARE_STREAM_LIMIT 1000000000
 #endif
 
@@ -34,7 +35,6 @@ int *lOG_FLAG;
 #elif LOG_PRINT
 #define APPLOG(level, fmt, ...) fprintf(stderr, fmt "\n", ##__VA_ARGS__)
 #endif
-
 
 typedef enum http_encode_scheme {
 	HTTP_EN_RFC3986 = 0,
@@ -52,9 +52,7 @@ typedef enum http_encode_scheme {
 /* virtual header : non semi-colon start */
 #define HDR_AUTHORIZATION			"authorization"		// authorization: Bearer token_raw
 #define HDR_CONTENT_TYPE			"content-type"		// it used by NRF (http) request lib
-#if 0 // move to vhdr use
-#define HDR_CONTENT_ENCODING		"content-encoding"
-#endif
+/* if you want use more header, check [http_vhdr.h] */
 
 typedef struct HttpCSAhifTagType {
 	int thrd_index;
@@ -111,9 +109,6 @@ typedef struct index {
 #define STARTID  (1)
 #define SIZEID   (10000+1)
 
-/* for ping recv */
-#define MAX_PING_WAIT 5 // (sec)
-
 /* httpc connection status */
 typedef struct conn_list_status {
 	int list_index;
@@ -132,6 +127,7 @@ typedef struct conn_list_status {
 	int token_id;
 	int token_acquired;
     int nrfm_auto_added;
+	time_t tombstone_date;
 } conn_list_status_t;
 
 /* https connection status */

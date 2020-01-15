@@ -64,7 +64,6 @@ static size_t next_proto_list_len;
 /* proto */
 char *replace_value_body(const char *value, http2_stream_data *stream_data, key_value_t token[TOKEN_MAX_NUM]);
 static void eventcb(struct bufferevent *bev, short events, void *ptr);
-int watch_directory_init(struct event_base *evbase, const char *path_name);
 int keepalivelib_init(char *processName);
 void keepalivelib_increase();
 
@@ -1188,7 +1187,7 @@ static void run()
   // check config file changed
   char watch_directory[1024] = {0,};
   sprintf(watch_directory, "%s/data", getenv("IV_HOME"));
-  watch_directory_init(evbase, watch_directory);
+  watch_directory_init(evbase, watch_directory, NULL);
 
   // for https
   initialize_app_context(&app_ctx_for_https, ssl_ctx, evbase);

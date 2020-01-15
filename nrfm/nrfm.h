@@ -61,6 +61,7 @@
 #define CF_SUBSCRIBE_FORM	"nrfm_cfg.subscription_form"
 #define CF_HTTP_RSP_WAIT_TM	"nrfm_cfg.timer_info.httpc_rsp_wait_tm"
 #define CF_NRFM_RETRY_TM	"nrfm_cfg.timer_info.nrfm_retry_after_tm"
+#define CF_HTTPC_DISCONN_TM	"nrfm_cfg.timer_info.httpc_disconn_info_min"
 #define CF_HTTPS_DISCONN_TM	"nrfm_cfg.timer_info.https_disconn_info_min"
 #define CF_NRF_RETRIEVAL	"nrfm_cfg.retrieval_nf_type"
 #define CF_MY_PROFILE		"my_profile"
@@ -213,7 +214,7 @@ typedef struct main_ctx {
 	int httpc_alive_status;		// httpc --> nrfm : I'm alive
 	int fep_conn_status;		// https --> nrfm : some FEP alive
 
-    allow_list_t *HTTPS_ALLOW_STATUS;   // https allow status shm, find tombstone & remove request
+    allow_list_t *HTTPS_ALLOW_STATUS;   // https allow status shm, find tombstone & send remove request
 
     GNode *NRF_STAT;
 } main_ctx_t;
@@ -272,11 +273,13 @@ void    nf_token_start_process(main_ctx_t *MAIN_CTX);
 void    nf_token_update_shm(acc_token_info_t *token_info, const char *access_token, double due_date);
 void    nf_token_update_shm_process(main_ctx_t *MAIN_CTX, token_ctx_list_t *token_request, AhifHttpCSMsgType *ahifPkt);
 
+
 /* ------------------------- isif.c --------------------------- */
 void    isifc_create_pkt_for_status(IsifMsgType *txIsifMsg, nf_service_info *nf_info, svr_info_t *my_info, assoc_t *fep_assoc);
 void    isifc_send_pkt_for_status(int isifc_qid, IsifMsgType *txIsifMsg);
 void    isif_save_recv_fep_status(service_info_t *fep_svc_info);
 void    isif_handle_fep_conn_req_profile(nf_disc_host_info *nf_host_info);
+void    isif_handle_fep_conn_handle_req(http_conn_handle_req_t *handle_req);
 void    shmq_recv_handle(evutil_socket_t fd, short what, void *arg);
 
 /* ------------------------- retrieve.c --------------------------- */
@@ -320,8 +323,8 @@ void    nf_manage_collect_avail_each_type(nf_retrieve_info_t *nf_retr_info, nf_l
 void    nf_manage_broadcast_nfs_to_fep(main_ctx_t *MAIN_CTX, nf_list_pkt_t *my_avail_nfs);
 void    nf_manage_collect_httpc_conn_status(main_ctx_t *MAIN_CTX);
 void    nf_manage_collect_httpc_conn_status_cb(evutil_socket_t fd, short what, void *arg);
+void    nf_manage_httpc_conn_status_cb(evutil_socket_t fd, short what, void *arg);
 void    nf_manage_https_conn_status_cb(evutil_socket_t fd, short what, void *arg);
-int     nf_manage_setting_opr_type(char *type);
 void    nf_manage_collect_oper_added_nf(main_ctx_t *MAIN_CTX, nf_list_pkt_t *my_avail_nfs);
 void    nf_manage_create_httpc_cmd_conn_act_dact(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item, int act);
 void    nf_manage_create_httpc_cmd_conn_add(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item);
@@ -332,7 +335,6 @@ void    nf_manage_create_lb_list_pkt(main_ctx_t *MAIN_CTX, conn_list_status_t *c
 int     nf_manage_fill_nrfm_mml(nrfm_mml_t *nrfm_cmd, const char *service, const char *scheme, const char *ip, int port);
 void    nf_manage_handle_cmd_res(nrfm_mml_t *httpc_cmd_res);
 void    nf_manage_handle_httpc_alive(nrfm_noti_t *httpc_noti);
-int     nf_manage_search_specific_info(json_object *nf_profile, json_object **js_specific_info);
 void    nf_manage_send_httpc_cmd(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item);
 void    nf_manage_send_nfs_status_to_fep(assoc_t *node_elem, nf_service_info *nf_info);
 

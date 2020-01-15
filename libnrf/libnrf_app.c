@@ -1,7 +1,36 @@
 #include <libnrf_app.h>
 
-// NRFC 메시지 큐 ID 
-// extern int NrfcQid;
+// handle_req : LB HTTPC 요청할 connection 정보 (자동 broadcasting)
+// NRFC_QID : NRFC 메시키 큐 ID
+int http2_appl_api_to_httpc(http_conn_handle_req_t *handle_req, int NRFC_QID)
+{
+	int result = 0;
+
+	if (NRFC_QID < 0 || 
+			(handle_req->command != HTTP_MML_HTTPC_ADD && handle_req->command != HTTP_MML_HTTPC_DEL)) 
+		goto HAATC_RET_NEG;
+
+	if ((strcmp(handle_req->scheme, "https") && strcmp(handle_req->scheme, "http")) ||
+			strlen(handle_req->type) == 0 || strlen(handle_req->host) == 0 || strlen(handle_req->ip) == 0 ||
+			(handle_req->port <= 0 || handle_req->port > 65535)) 
+		goto HAATC_RET_NEG;
+
+	// ok we send
+	handle_req->mtype = MSGID_NRF_LIB_NRFC_REQ_CALLBACK;
+	handle_req->cnt = 2;
+	
+	// to NRFC
+	if ((result = msgsnd(NRFC_QID, handle_req, sizeof(http_conn_handle_req_t) - sizeof(long), IPC_NOWAIT)) < 0)
+		goto HAATC_RET_NEG;
+
+	return (1);
+
+HAATC_RET_NEG:
+	APPLOG(APPLOG_ERR, "(%s) can't handle req (nrfc_qid:%d, cmd:%d) (%s:%s:%s:%s:%d) (msgsnd_res:%d)", 
+			__func__, NRFC_QID, handle_req->command,
+			handle_req->scheme, handle_req->type, handle_req->host, handle_req->ip, handle_req->port, result);
+	return (-1);
+}
 
 // search_info : routing info (매칭 조건 아닐 시 NULL 세팅할 것)
 // DISC_TABLE : discover 결과 저장 테이블, 멀티 쓰레드/프로세스 경우 각각의 테이블 로컬 생성 사용할것 
@@ -273,7 +302,7 @@ nf_service_info *nf_discover_result(nf_discover_local_res *result_cache, nf_disc
 
             if (hostInfo != NULL && hostInfo->requested == 0 && NRFC_QID > 0) {
                 hostInfo->requested = 1;
-                if (msgsnd(NRFC_QID, discover_info, NF_DISC_HOSTINFO_LEN(hostInfo), IPC_NOWAIT) < 0) {
+                if (msgsnd(NRFC_QID, hostInfo, NF_DISC_HOSTINFO_LEN(hostInfo), IPC_NOWAIT) < 0) {
                     APPLOG(APPLOG_ERR, "(%s) fail to send nfProfile[%s/%s] to NRFC",
                             __func__, discover_info->serviceName, discover_info->hostname);
                 }
@@ -1120,23 +1149,6 @@ gboolean node_free_data(GNode *node, gpointer data)
         free(node->data);
     return 0;
 }
-
-void create_full_depth_key (nf_search_key_t *key, nf_service_info *insert_data)
-{
-    key->depth = 0;
-
-    key->lb_id = insert_data->lbId;
-    key->nf_type = insert_data->type;
-    key->nf_host = insert_data->auto_add == NF_ADD_MML ? insert_data->confname : insert_data->hostname;
-    key->nf_svcname = insert_data->serviceName;
-
-    if (insert_data->auto_add == NF_ADD_MML) {
-        sprintf(key->nf_conn_info, "lb_conf=[%s]", insert_data->hostname);
-    } else {
-        sprintf(key->nf_conn_info, "%s%s://%s:%d", 
-                insert_data->scheme, !strcmp(insert_data->scheme, "https") ? "" : "-", insert_data->ipv4Address, insert_data->port);
-    }
-};
 
 GNode *create_nth_child(nf_search_key_t *key, nf_service_info *insert_data)
 {

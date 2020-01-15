@@ -442,14 +442,50 @@ void send_conn_req_profile(assoc_t *lb_assoc, nf_disc_host_info *nf_host_info)
     isifc_send_pkt(MAIN_CTX.my_qid.isifc_tx_qid, &txIsifMsg);
 }
 
+void send_conn_handle_req(assoc_t *lb_assoc, http_conn_handle_req_t *handle_req)
+{
+    IsifMsgType txIsifMsg = {0,};
+
+    handle_req->mtype = LIBNRF_MSG_ADD_NF_CALLBACK;
+
+    isifc_create_pkt(&txIsifMsg, &MAIN_CTX.my_info, lb_assoc, handle_req, sizeof(http_conn_handle_req_t));
+    isifc_send_pkt(MAIN_CTX.my_qid.isifc_tx_qid, &txIsifMsg);
+}
+
+void check_and_send_conn_req(assoc_t *lb_assoc, http_conn_handle_req_t *handle_req)
+{
+	nfs_avail_shm_t *SHM_NFS_AVAIL = MAIN_CTX.SHM_NFS_AVAIL;
+
+	int POS = SHM_NFS_AVAIL->curr_pos;
+	GNode **root_node = &SHM_NFS_AVAIL->root_node[POS];
+
+	if (*root_node == NULL) {
+		APPLOG(APPLOG_ERR, "%s() cant handle req, SHM_NFS_AVAIL is null");
+		return;
+	}
+
+	nf_search_key_t key = {0,};
+	create_cb_depth_key(&key, lb_assoc->index, handle_req); // TODO index mismatch check
+
+	GNode *node_conn = search_node_data(*root_node, &key, NF_NODE_DATA_DEPTH);
+
+	if ((handle_req->command == HTTP_MML_HTTPC_ADD && node_conn == NULL) ||
+			(handle_req->command == HTTP_MML_HTTPC_DEL && node_conn != NULL)) {
+		// if add req & conn not exist => send
+		// if del req & conn exist => send
+		send_conn_handle_req(lb_assoc, handle_req);
+	}
+
+}
+
 void handle_appl_req_with_profile(main_ctx_t *MAIN_CTX, nf_disc_host_info *nf_host_info)
 {
     g_slist_foreach(MAIN_CTX->lb_assoc_list, (GFunc)send_conn_req_profile, nf_host_info);
 }
 
-void handle_appl_req_with_cbinfo(main_ctx_t *MAIN_CTX)
+void handle_appl_req_with_cbinfo(main_ctx_t *MAIN_CTX, http_conn_handle_req_t *handle_req)
 {
-    // TODO 
+	g_slist_foreach(MAIN_CTX->lb_assoc_list, (GFunc)check_and_send_conn_req, handle_req);
 }
 
 void handle_appl_req_for_lb_http2(long mtype, GeneralQMsgType *msg)
@@ -458,11 +494,43 @@ void handle_appl_req_for_lb_http2(long mtype, GeneralQMsgType *msg)
         case MSGID_NRF_LIB_NRFC_REQ_PROFILE: // suppress library calling count
             return handle_appl_req_with_profile(&MAIN_CTX, (nf_disc_host_info *)msg);
         case MSGID_NRF_LIB_NRFC_REQ_CALLBACK:
-            return handle_appl_req_with_cbinfo(&MAIN_CTX);
+            return handle_appl_req_with_cbinfo(&MAIN_CTX, (http_conn_handle_req_t *)msg);
         default:
             return;
     }
 }
+
+void create_cb_depth_key(nf_search_key_t *key, int lb_index, http_conn_handle_req_t *handle_req)
+{
+	key->depth = 0;
+	
+	key->lb_id = lb_index + 1;
+	key->nf_type = handle_req->type;
+	key->nf_host = handle_req->host;
+
+	char empty_ptr[12] = {0,};
+	key->nf_svcname = empty_ptr;
+
+	sprintf(key->nf_conn_info, "%s%s://%s:%d",
+			handle_req->scheme, !strcmp(handle_req->scheme, "https") ? "" : "-", handle_req->ip, handle_req->port);
+}
+
+void create_full_depth_key (nf_search_key_t *key, nf_service_info *insert_data)
+{
+    key->depth = 0;
+
+    key->lb_id = insert_data->lbId;
+    key->nf_type = insert_data->type;
+    key->nf_host = insert_data->auto_add == NF_ADD_MML ? insert_data->confname : insert_data->hostname;
+    key->nf_svcname = insert_data->serviceName;
+
+    if (insert_data->auto_add == NF_ADD_MML) {
+        sprintf(key->nf_conn_info, "lb_conf=[%s]", insert_data->hostname);
+    } else {
+        sprintf(key->nf_conn_info, "%s%s://%s:%d",
+                insert_data->scheme, !strcmp(insert_data->scheme, "https") ? "" : "-", insert_data->ipv4Address, insert_data->port);
+    }
+};
 
 void create_fep_nfs_node_tree(nfs_avail_shm_t *SHM_NFS_AVAIL)
 {

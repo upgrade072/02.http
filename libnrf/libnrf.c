@@ -25,6 +25,7 @@ GSList *get_associate_node(GSList *node_assoc_list, const char *type_str)
     }
 
     char buffer[2048] = {0,};
+	int index = 0;
     while (fgets(buffer, 2048, fp)) {
         assoc_t node_elem = {0,};
 
@@ -38,6 +39,7 @@ GSList *get_associate_node(GSList *node_assoc_list, const char *type_str)
         if (inet_pton(AF_INET, node_elem.ip, &(sa.sin_addr)) == 0)
             continue;
 
+		node_elem.index = index++; // 01234
         /* re-arrange fep list */
         new_assoc = node_list_add_elem(new_assoc, &node_elem);
     }
@@ -288,19 +290,21 @@ void print_token_info_raw(acc_token_shm_t *ACC_TOKEN_LIST, char *respBuff)
 	ft_destroy_table(table);
 }
 
-char *get_nrfm_cmd_str(int cmd)
+char *get_http_cmd_str(int cmd)
 {
     switch (cmd) {
-        case NRFM_MML_HTTPC_ADD:
+        case HTTP_MML_HTTPC_ADD:
             return "ADD";
-        case NRFM_MML_HTTPC_ACT:
+        case HTTP_MML_HTTPC_ACT:
             return "ACT";
-        case NRFM_MML_HTTPC_DACT:
+        case HTTP_MML_HTTPC_DACT:
             return "DACT";
-        case NRFM_MML_HTTPC_DEL:
+        case HTTP_MML_HTTPC_DEL:
             return "DEL";
-        case NRFM_MML_HTTPC_CLEAR:
-            return "<CLEAR!!!>";
+        case HTTP_MML_HTTPC_CLEAR:
+            return "<NRF CLEAR!!!>";
+		case HTTP_MML_HTTPC_TOMBSTONE:
+			return "<tombstone clear>";
         default:
             return "UNKNOWN";
     }
@@ -328,7 +332,7 @@ void print_nrfm_mml_raw(nrfm_mml_t *httpc_cmd)
 	ft_set_cell_prop(table_m, 0, FT_ANY_COLUMN, FT_CPROP_ROW_TYPE, FT_ROW_HEADER);
 	ft_write_ln(table_m, "command", "host", "type", "info_cnt", "items");
 	ft_printf_ln(table_m, "%s|%s|%s|%d|%s", 
-			get_nrfm_cmd_str(httpc_cmd->command),
+			get_http_cmd_str(httpc_cmd->command),
 			httpc_cmd->host,
 			httpc_cmd->type,
 			httpc_cmd->info_cnt,

@@ -99,6 +99,9 @@ void delete_http2_session_data(http2_session_data_t *session_data)
 	CONN_LIST[session_data->conn_index].thrd_index = 0;
 	CONN_LIST[session_data->conn_index].session_index = 0;
 	CONN_LIST[session_data->conn_index].session_id = 0;
+	/* save last conn => disconn time */
+	if (CONN_LIST[session_data->conn_index].conn == CN_CONNECTED)
+		CONN_LIST[session_data->conn_index].tombstone_date = time(NULL);
 	CONN_LIST[session_data->conn_index].conn = CN_NOT_CONNECTED;
 	CONN_LIST[session_data->conn_index].reconn_candidate = 0;
 
@@ -731,6 +734,7 @@ static void eventcb(struct bufferevent *bev, short events, void *ptr) {
 		/* session connected */
 		pthread_mutex_lock(&ONLY_CRT_SESS_LOCK);
 		CONN_LIST[session_data->conn_index].conn = CN_CONNECTED;
+		CONN_LIST[session_data->conn_index].tombstone_date = 0;
 		session_data->connected = 1;
 		gettimeofday(&session_data->ping_rcv_time, NULL);
 		APPLOG(APPLOG_DETAIL, "%s() Connected conn_index %5d thrd_index %2d session_index %5d ip %s port %d",

@@ -19,6 +19,18 @@
 #endif
 #include <comm_msgtypes.h>
 
+typedef struct http_con_handle_req {
+	long mtype;
+
+    http_mml_cmd_t command;
+    char scheme[12];
+    char type[16];
+    char host[64];
+    char ip[64];
+    int port;
+    int cnt;
+} http_conn_handle_req_t;
+
 typedef struct {
     int index;          /* my table index */
     int occupied;       /* use or not */
@@ -141,6 +153,7 @@ typedef struct nf_search_key {
 /* -NF STATUS TABLE ------------------------------------------ */
 
 /* ------------------------- libnrf_app.c --------------------------- */
+int     http2_appl_api_to_httpc(http_conn_handle_req_t *handle_req, int NRFC_QID);
 nf_service_info *nf_discover_search(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, char *NF_DISC_RESULT, int NRFC_QID);
 nf_service_info *nf_discover_search_cache(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID);
 nf_service_info *nf_discover_search_udm(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID);
@@ -173,7 +186,6 @@ int     nf_type_to_enum(char *type);
 int     check_number(char *ptr);
 json_object     *search_json_object(json_object *obj, char *key_string);
 gboolean        node_free_data(GNode *node, gpointer data);
-void    create_full_depth_key (nf_search_key_t *key, nf_service_info *insert_data);
 GNode   *create_nth_child(nf_search_key_t *key, nf_service_info *insert_data);
 int     depth_compare(nf_search_key_t *key, GNode *compare_node);
 GNode   *search_or_create_node(GNode *node, nf_search_key_t *key, nf_service_info *insert_data, int create_if_none);
