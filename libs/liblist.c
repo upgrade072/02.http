@@ -95,3 +95,13 @@ int del_item(int list_index, const char *name, int port)
 	}
 	return (-1);
 }
+int get_item_num(int list_index)
+{
+	int count = 0, i = 0;
+
+	for (i = 1; i < MAX_ITEM_NUM; i++) {
+		if (INDEX[list_index].item_idx[i].occupied == 1)
+			count ++;
+	}
+	return count;
+}

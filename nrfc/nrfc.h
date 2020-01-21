@@ -84,9 +84,7 @@ typedef struct main_ctx {
 	struct timeval last_pub_time;
 	fep_nfs_info_t fep_nfs_info[NF_MAX_LB_NUM];
 
-#if 0
     GNode *root_node;           // lb connection node - tree
-#endif
 } main_ctx_t;
 
 /* ------------------------- mml.c --------------------------- */

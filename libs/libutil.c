@@ -174,3 +174,24 @@ char *strupr(char *input, int str_len)
     }
     return input;
 }
+
+char *read_file_stream(char *filename)
+{
+	FILE *fh = fopen(filename, "rb");
+	int length = 0;
+
+	if (fh != NULL) {
+		fseek(fh, 0L, SEEK_END);
+		length = ftell(fh);
+		rewind(fh);
+		char *buffer = malloc(length);
+		if (buffer != NULL) { 
+			fread(buffer, length, 1, fh);
+		}
+		if (fh != NULL) 
+			fclose(fh);
+		return buffer;
+	}
+
+	return NULL;
+}

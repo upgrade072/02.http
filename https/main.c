@@ -286,6 +286,7 @@ static http2_session_data *create_http2_session_data(app_context *app_ctx,
 	return session_data;
 }
 
+/* caution!!! this func must called by worker */
 static void delete_http2_session_data(http2_session_data *session_data) {
 	http2_stream_data *stream_data;
 

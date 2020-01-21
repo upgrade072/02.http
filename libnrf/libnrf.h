@@ -200,6 +200,54 @@ typedef struct {
 } nrf_stat_t;
 /* for NRF Statistics  -- end */
 
+
+/* -NF STATUS TABLE ------------------------------------------ */
+#define NF_NODE_DATA_DEPTH  5
+
+typedef struct nf_lbid_info {
+    int lb_id;
+} nf_lbid_info_t;
+
+typedef struct nf_type_info {
+    char type[16];
+} nf_type_info_t;
+
+typedef struct nf_host_info {
+    char hostname[52];
+
+    int allowdPlmnsNum;
+    nf_comm_plmn allowdPlmns[NF_MAX_ALLOWD_PLMNS];
+
+    nf_comm_type nfType;
+    nf_type_info nfTypeInfo;
+
+    int auto_add;
+} nf_host_info_t;
+
+typedef struct nf_svcname_info {
+    char servicename[32];
+} nf_svcname_info_t;
+
+typedef struct nf_connection_info {
+    char connInfoStr[64];   // https://192.168.200.231:5555
+
+    int auto_add;
+    int priority;
+    int load;
+    int avail;
+
+    nf_service_info *nf_service_shm_ptr;
+} nf_connection_info_t;
+
+typedef struct nf_search_key {
+    int depth;
+    int lb_id;
+    const char *nf_type;
+    const char *nf_host;
+    const char *nf_svcname;
+    char nf_conn_info[64];
+} nf_search_key_t;
+/* -NF STATUS TABLE ------------------------------------------ */
 /* ------------------------- libnrf.c --------------------------- */
 void    def_sigaction();
 GSList  *get_associate_node(GSList *node_assoc_list, const char *type_str);
@@ -230,6 +278,16 @@ void    stat_cnvt_5geir_nrfm(STM_CommonStatMsg *commStatItem, STM_NrfmStatistics
 #endif
 void    nrf_stat_function(int ixpcQid, IxpcQMsgType *rxIxpcMsg, int event_code, GNode *ROOT_STAT);
 char *get_http_cmd_str(int cmd);
+gboolean        node_free_data(GNode *node, gpointer data);
+GNode   *create_nth_child(nf_search_key_t *key, nf_service_info *insert_data);
+int     ln_depth_compare(nf_search_key_t *key, GNode *compare_node);
+GNode   *search_or_create_node(GNode *node, nf_search_key_t *key, nf_service_info *insert_data, int create_if_none);
+void    create_node_data(GNode *root_node, nf_search_key_t *key, nf_service_info *insert_data);
+GNode   *search_node_data(GNode *root_node, nf_search_key_t *key, int search_depth);
+void    print_node_table(ft_table_t *table, GNode *node, int depth, char *temp_buff, char *nf_type_arg);
+void    print_node(ft_table_t *table, GNode *node, int depth, char *nf_type);
+void    printf_fep_nfs_by_node_order(GNode *root_node, char *printBuff, char *nf_type);
+void    printf_fep_nfs_well_form(GNode *root_node, char *printBuff, char *nf_type);
 
 #endif /* __LIBNRF_H__ */
 

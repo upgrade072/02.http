@@ -1,6 +1,7 @@
 #ifndef __NRF_COMM_H__
 #define __NRF_COMM_H__
 
+#include <stdio.h>
 #include <glib.h>
 #include <json-c/json.h>
 #include <json-c/json_object.h>
@@ -146,7 +147,6 @@ typedef struct {
 typedef struct {
 	int curr_pos;
 	nf_list_shm_t nfs_avail_shm[MAX_NFS_SHM_POS];
-    GNode *root_node[MAX_NFS_SHM_POS];
 } nfs_avail_shm_t;
 
 /* for lb send pkt */
@@ -172,6 +172,8 @@ typedef struct {
     time_t validityPeriod;                          /* NOW + remain time sec */
     int requested;                                  /* send request only 1 times per sec */
 } nf_disc_host_info;
-#define NF_DISC_HOSTINFO_LEN(a) (sizeof(a->nfType) + sizeof(a->hostname) + sizeof(a->profile_length) + a->profile_length)
+#define NF_DISC_HOSTINFO_LEN(a) (sizeof(a->mtype) + sizeof(a->nfType) + sizeof(a->hostname) + sizeof(a->profile_length) + a->profile_length)
 
+void    nf_get_specific_info_str(nf_comm_type nfType, nf_type_info *nfTypeInfo, char *resBuf);
+void    nf_get_allowd_plmns_str(int allowdPlmnsNum, nf_comm_plmn *allowdPlmns, char *resBuf);
 #endif

@@ -613,3 +613,295 @@ void nrf_stat_function(int ixpcQid, IxpcQMsgType *rxIxpcMsg, int event_code, GNo
 
 	return;
 }
+
+gboolean node_free_data(GNode *node, gpointer data)
+{
+    if (node->data != NULL)
+        free(node->data);
+    return 0;
+}
+
+GNode *create_nth_child(nf_search_key_t *key, nf_service_info *insert_data)
+{
+    nf_lbid_info_t *nf_lb = NULL;
+    nf_type_info_t *nf_type = NULL;
+    nf_host_info_t *nf_host = NULL;
+    nf_svcname_info_t *nf_svcname = NULL;
+    nf_connection_info_t *nf_connection = NULL;
+
+    switch(key->depth) {
+        case 0:
+            nf_lb = malloc(sizeof(nf_lbid_info_t));
+			memset(nf_lb, 0x00, sizeof(nf_lbid_info_t));
+            nf_lb->lb_id = key->lb_id;
+            return g_node_new(nf_lb);
+        case 1:
+            nf_type = malloc(sizeof(nf_type_info_t));
+			memset(nf_type, 0x00, sizeof(nf_type_info_t));
+            sprintf(nf_type->type, "%.15s", key->nf_type);
+            return g_node_new(nf_type);
+        case 2:
+            nf_host = malloc(sizeof(nf_host_info_t));
+			memset(nf_host, 0x00, sizeof(nf_host_info_t));
+            sprintf(nf_host->hostname, "%.51s", key->nf_host);
+            
+            nf_host->auto_add = insert_data->auto_add;
+            if (nf_host->auto_add == NF_ADD_NRF || nf_host->auto_add == NF_ADD_MML) {
+                nf_host->allowdPlmnsNum = insert_data->allowdPlmnsNum;
+                memcpy(nf_host->allowdPlmns, insert_data->allowdPlmns, sizeof(nf_comm_plmn) * nf_host->allowdPlmnsNum);
+                nf_host->nfType = insert_data->nfType;
+                memcpy(&nf_host->nfTypeInfo, &insert_data->nfTypeInfo, sizeof(nf_type_info));
+            }
+            return g_node_new(nf_host);
+        case 3:
+            nf_svcname = malloc(sizeof(nf_svcname_info_t));
+			memset(nf_svcname, 0x00, sizeof(nf_svcname_info_t));
+            sprintf(nf_svcname->servicename, "%.31s", key->nf_svcname);
+            return g_node_new(nf_svcname);
+        case 4:
+            nf_connection = malloc(sizeof(nf_connection_info_t));
+			memset(nf_connection, 0x00, sizeof(nf_connection_info_t));
+            sprintf(nf_connection->connInfoStr, "%.63s", key->nf_conn_info);
+
+            nf_connection->auto_add = insert_data->auto_add;
+            nf_connection->priority = insert_data->priority;
+            nf_connection->load = insert_data->load;
+            nf_connection->avail = insert_data->available;
+
+            /* nf service shmtable pointer */
+            nf_connection->nf_service_shm_ptr = insert_data;
+            return g_node_new(nf_connection);
+    }
+
+    return NULL; // program will crashed 
+}
+
+int ln_depth_compare(nf_search_key_t *key, GNode *compare_node)
+{
+    nf_lbid_info_t *nf_lb = NULL;
+    nf_type_info_t *nf_type = NULL;
+    nf_host_info_t *nf_host = NULL;
+    nf_svcname_info_t *nf_svcname = NULL;
+    nf_connection_info_t *nf_connection = NULL;
+
+    /* left input : right node */
+    switch (key->depth) {
+        case 0:
+            nf_lb = (nf_lbid_info_t *)compare_node->data;
+            return (key->lb_id  - nf_lb->lb_id);
+        case 1:
+            nf_type = (nf_type_info_t *)compare_node->data;
+            return strcmp(key->nf_type, nf_type->type);
+        case 2:
+            nf_host = (nf_host_info_t *)compare_node->data;
+            return strcmp(key->nf_host, nf_host->hostname);
+        case 3:
+            nf_svcname = (nf_svcname_info_t *)compare_node->data;
+            return strcmp(key->nf_svcname, nf_svcname->servicename);
+        case 4:
+            nf_connection = (nf_connection_info_t *)compare_node->data;
+            return strcmp(key->nf_conn_info, nf_connection->connInfoStr);
+    }
+
+    return 0; // program will crashed
+}
+
+GNode *search_or_create_node(GNode *node, nf_search_key_t *key, nf_service_info *insert_data, int create_if_none)
+{
+    int child_num = g_node_n_children(node);
+    if (child_num == 0) {
+        if (create_if_none) {
+            GNode *new_node = create_nth_child(key, insert_data);
+            g_node_append(node, new_node);
+            return new_node;
+        } else {
+            return NULL;
+        }
+    }
+
+    GNode *nth_child = NULL;
+    int low = 0;
+    int high = (child_num - 1);
+    int nth = 0;
+    int compare_res = 0;
+
+    while (low <= high) {
+        nth = (low + high) / 2;
+        nth_child = g_node_nth_child(node, nth);
+
+        compare_res = ln_depth_compare(key, nth_child);
+
+        if (compare_res == 0) {
+            return nth_child; // HIT !
+        } else if (compare_res < 0) {
+            high = nth - 1;
+        } else {
+            low = nth + 1;
+        }
+    }
+
+    if (create_if_none == 0)
+        return NULL;
+
+    if (compare_res < 0) {
+        GNode *new_node = create_nth_child(key, insert_data);
+        g_node_insert_before(node, nth_child, new_node);
+        return new_node;
+    } else {
+        GNode *new_node = create_nth_child(key, insert_data);
+        g_node_insert_after(node, nth_child, new_node);
+        return new_node;
+    }
+}
+
+void create_node_data(GNode *root_node, nf_search_key_t *key, nf_service_info *insert_data)
+{
+    GNode *search_node = root_node;
+
+    for (int i = 0; i < NF_NODE_DATA_DEPTH; i++) {
+        key->depth = i;
+        search_node = search_or_create_node(search_node, key, insert_data, 1);
+    }
+};
+
+GNode *search_node_data(GNode *root_node, nf_search_key_t *key, int search_depth)
+{
+    GNode *search_node = root_node;
+
+    for (int i = 0; i < search_depth; i++) {
+		APPLOG(APPLOG_ERR, "{DBG} %s() search depth(%d)", __func__, i);
+        key->depth = i;
+        search_node = search_or_create_node(search_node, key, NULL, 0);
+        if (search_node == NULL) {
+			APPLOG(APPLOG_ERR, "{DBG} %s() giveup return NULL", __func__);
+            return search_node; // giveup
+		}
+    }
+
+	return search_node; // return result (null or not)
+}
+
+void print_node_table(ft_table_t *table, GNode *node, int depth, char *temp_buff, char *nf_type_arg)
+{
+    nf_lbid_info_t *nf_lb = NULL;
+    nf_type_info_t *nf_type = NULL;
+    nf_host_info_t *nf_host = NULL;
+    nf_svcname_info_t *nf_svcname = NULL;
+    nf_connection_info_t *nf_conn = NULL;
+
+    char plmnStr[1024] = {0,};
+    char typeStr[1024] = {0,};
+
+    switch (depth) {
+        case 0:
+            ft_add_separator(table);
+            nf_lb = (nf_lbid_info_t *)node->data;
+            ft_set_cell_prop(table, FT_ANY_ROW, 0, FT_CPROP_MIN_WIDTH, 4);
+            ft_printf_ln(table, "LB-[%d]|%s", nf_lb->lb_id, temp_buff);
+            ft_add_separator(table);
+            break;
+        case 1:
+            nf_type = (nf_type_info_t *)node->data;
+            if (strlen(nf_type_arg) > 0 && strcmp(nf_type_arg, nf_type->type))
+                return;
+            ft_set_cell_prop(table, FT_ANY_ROW, 0, FT_CPROP_MIN_WIDTH, 8);
+            ft_printf_ln(table, "%s|%s", nf_type->type, temp_buff);
+            break;
+        case 2:
+            nf_host = (nf_host_info_t *)node->data;
+            ft_set_cell_prop(table, FT_ANY_ROW, 0, FT_CPROP_MIN_WIDTH, 34);
+            ft_set_cell_prop(table, FT_ANY_ROW, 1, FT_CPROP_MIN_WIDTH, 14);
+            ft_set_cell_prop(table, FT_ANY_ROW, 2, FT_CPROP_MIN_WIDTH, 24);
+            if (nf_host->auto_add == NF_ADD_NRF || nf_host->auto_add == NF_ADD_MML) {
+                nf_get_allowd_plmns_str(nf_host->allowdPlmnsNum, nf_host->allowdPlmns, plmnStr);
+                nf_get_specific_info_str(nf_host->nfType, &nf_host->nfTypeInfo, typeStr);
+            }
+            ft_printf_ln(table, "%s|%s|%s|%s", nf_host->hostname, plmnStr, typeStr, temp_buff);
+            ft_add_separator(table);
+            break;
+        case 3:
+            nf_svcname = (nf_svcname_info_t *)node->data;
+            ft_set_cell_prop(table, FT_ANY_ROW, 0, FT_CPROP_MIN_WIDTH, 12);
+            ft_printf_ln(table, "%s|%s", nf_svcname->servicename, temp_buff);
+            ft_add_separator(table);
+            break;
+        case 4:
+            nf_conn = (nf_connection_info_t *)node->data;
+            ft_set_cell_prop(table, FT_ANY_ROW, 0, FT_CPROP_MIN_WIDTH, 32);
+            ft_set_cell_prop(table, FT_ANY_ROW, 1, FT_CPROP_MIN_WIDTH, 8);
+            ft_set_cell_prop(table, FT_ANY_ROW, 2, FT_CPROP_MIN_WIDTH, 5);
+            ft_set_cell_prop(table, FT_ANY_ROW, 3, FT_CPROP_MIN_WIDTH, 5);
+            ft_set_cell_prop(table, FT_ANY_ROW, 4, FT_CPROP_MIN_WIDTH, 10);
+            if (nf_conn->auto_add == NF_ADD_MML) {
+                ft_printf_ln(table, "%s|%s|%s|%s|%s", 
+                        nf_conn->connInfoStr, 
+                        "[by mml]",
+                        "",
+                        "", 
+                        nf_conn->avail < 0 ? "NOT EXIST" : nf_conn->avail > 0 ? "AVAIL" : "NOT AVAIL");
+            } else {
+                ft_printf_ln(table, "%s|%s|p:%d|l:%d|%s", 
+                        nf_conn->connInfoStr, 
+                        nf_conn->auto_add == NF_ADD_RAW ? "[by opr]" : 
+                        nf_conn->auto_add == NF_ADD_NRF ? "[by nrf]" : 
+						nf_conn->auto_add == NF_ADD_MML ? "[by mml]" : "[by api]",
+                        nf_conn->priority, 
+                        nf_conn->load, 
+                        nf_conn->avail < 0 ? "NOT EXIST" : nf_conn->avail > 0 ? "AVAIL" : "NOT AVAIL");
+            }
+            break;
+        default:
+            APPLOG(APPLOG_ERR, "%s() something wrong [cant handle depth:%d]", __func__, depth);
+            break;
+    }
+}
+
+void print_node(ft_table_t *table, GNode *node, int depth, char *nf_type)
+{
+    for (int i = 0; i < g_node_n_children(node); i++) {
+        GNode *child_node = g_node_nth_child(node, i);
+        ft_table_t *child_table = ft_create_table();
+        ft_set_border_style(child_table, FT_PLAIN_STYLE);
+
+        print_node(child_table, child_node, depth + 1, nf_type);
+
+        char *temp_buff = NULL;
+        asprintf(&temp_buff, "%s", ft_to_string(child_table));
+        if (strlen(temp_buff) > 0)
+            temp_buff[strlen(temp_buff) - 1] = '\0';
+        
+        print_node_table(table, child_node, depth, temp_buff, nf_type);
+
+        free(temp_buff);
+
+        ft_destroy_table(child_table);
+    }
+}
+
+void printf_fep_nfs_by_node_order(GNode *root_node, char *printBuff, char *nf_type)
+{
+    if (root_node == NULL)
+        return;
+
+    /* main table */
+    ft_table_t *table = ft_create_table();
+    ft_set_border_style(table, FT_PLAIN_STYLE);
+
+    /* start depth */
+    int current_depth = 0;
+
+    /* recursive call */
+    print_node(table, root_node, current_depth, nf_type);
+
+    /* print result */
+    sprintf(printBuff, "%s\n", ft_to_string(table));
+
+    /* resource clear */
+    ft_destroy_table(table);
+}
+
+void printf_fep_nfs_well_form(GNode *root_node, char *printBuff, char *nf_type)
+{
+    /* print to buffer */
+    printf_fep_nfs_by_node_order(root_node, printBuff, nf_type);
+}

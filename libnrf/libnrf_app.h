@@ -104,54 +104,6 @@ typedef struct {
 } nf_discover_local_res;
 
 
-/* -NF STATUS TABLE ------------------------------------------ */
-#define NF_NODE_DATA_DEPTH  5
-
-typedef struct nf_lbid_info {
-    int lb_id;
-} nf_lbid_info_t;
-
-typedef struct nf_type_info {
-    char type[16];
-} nf_type_info_t;
-
-typedef struct nf_host_info {
-    char hostname[52];
-
-    int allowdPlmnsNum;
-    nf_comm_plmn allowdPlmns[NF_MAX_ALLOWD_PLMNS];
-
-    nf_comm_type nfType;
-    nf_type_info nfTypeInfo;
-
-    int auto_add;
-} nf_host_info_t;
-
-typedef struct nf_svcname_info {
-    char servicename[32];
-} nf_svcname_info_t;
-
-typedef struct nf_connection_info {
-    char connInfoStr[64];   // https://192.168.200.231:5555
-
-    int auto_add;
-    int priority;
-    int load;
-    int avail;
-
-    nf_service_info *nf_service_shm_ptr;
-} nf_connection_info_t;
-
-typedef struct nf_search_key {
-    int depth;
-    int lb_id;
-    const char *nf_type;
-    const char *nf_host;
-    const char *nf_svcname;
-    char nf_conn_info[64];
-} nf_search_key_t;
-/* -NF STATUS TABLE ------------------------------------------ */
-
 /* ------------------------- libnrf_app.c --------------------------- */
 int     http2_appl_api_to_httpc(http_conn_handle_req_t *handle_req, int NRFC_QID);
 nf_service_info *nf_discover_search(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, char *NF_DISC_RESULT, int NRFC_QID);
@@ -179,21 +131,9 @@ void    nf_get_specific_info(int nfType, json_object *js_specific_info, nf_type_
 void    nf_get_specific_info_udm(json_object *js_specific_info, nf_type_info *nf_specific_info);
 void    nf_get_specific_info_amf(json_object *js_specific_info, nf_type_info *nf_specific_info);
 int     nf_get_allowd_plmns(json_object *nf_profile, nf_comm_plmn *allowdPlmns);
-void    nf_get_specific_info_str(nf_comm_type nfType, nf_type_info *nfTypeInfo, char *resBuf);
-void    nf_get_allowd_plmns_str(int allowdPlmnsNum, nf_comm_plmn *allowdPlmns, char *resBuf);
 char    *nf_type_to_str(int nfType);
 int     nf_type_to_enum(char *type);
 int     check_number(char *ptr);
 json_object     *search_json_object(json_object *obj, char *key_string);
-gboolean        node_free_data(GNode *node, gpointer data);
-GNode   *create_nth_child(nf_search_key_t *key, nf_service_info *insert_data);
-int     depth_compare(nf_search_key_t *key, GNode *compare_node);
-GNode   *search_or_create_node(GNode *node, nf_search_key_t *key, nf_service_info *insert_data, int create_if_none);
-void    create_node_data(GNode *root_node, nf_search_key_t *key, nf_service_info *insert_data);
-GNode   *search_node_data(GNode *root_node, nf_search_key_t *key, int search_depth);
-void    print_node_table(ft_table_t *table, GNode *node, int depth, char *temp_buff, char *nf_type_arg);
-void    print_node(ft_table_t *table, GNode *node, int depth, char *nf_type);
-void    printf_fep_nfs_by_node_order(GNode *root_node, char *printBuff, char *nf_type);
-void    printf_fep_nfs_well_form(nfs_avail_shm_t *SHM_NFS_AVAIL, char *printBuff, char *nf_type);
 
 #endif

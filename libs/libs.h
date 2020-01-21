@@ -36,6 +36,7 @@ void    reportAlarm(char *ProcName, int code, int level, char *info, char *desc)
 int     print_single_http_cfg(config_t *CFG_PTR, const char *cfg_path_str, const char *skip_str, const char *banner, char /*enough huge or NULL*/ *res_buff);int     print_single_http_cfg(config_t *CFG_PTR, const char *cfg_path_str, const char *skip_str, const char *banner, char /*enough huge or NULL*/ *res_buff);
 void    print_dual_http_cfg(const char *before, const char *after, char *result);
 
+
 /* ------------------------- liblist.c --------------------------- */
 int     new_list(const char *name);
 int     get_list(const char *name);
@@ -44,6 +45,7 @@ int     del_list(const char *name);
 int     new_item(int list_index, const char *name, int port);
 int     get_item(int list_index, const char *name, int port);
 int     del_item(int list_index, const char *name, int port);
+int     get_item_num(int list_index);
 
 /* ------------------------- libutil.c --------------------------- */
 void    DumpHex(const void* data, size_t size);
@@ -55,6 +57,7 @@ void    json_delimiter(char *string);
 char    *replaceAll(char *s, const char *olds, const char *news) ;
 char    *strlwr(char *input/* overwrite */, int str_len);
 char    *strupr(char *input/* overwrite */, int str_len);
+char	 *read_file_stream(char *filename);
 
 /* ------------------------- libhdr.c --------------------------- */
 int     set_defined_header(hdr_index_t HDR_INDEX[], char *name, char *val, AhifHttpCSMsgType *appData);

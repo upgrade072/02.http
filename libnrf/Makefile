@@ -3,7 +3,7 @@ include ../MakeVars
 CFLAG       = $(CFLAGS)  -D_GNU_SOURCE
 BUILD_INC_PATH  = -I../build/include -I../build/include/glib-2.0 -I../build/lib/glib-2.0/include
 
-SRCS		= libnrf.c libnrf_app.c
+SRCS		= libnrf.c libnrf_app.c libnrf_comm.c
 OBJS		= $(SRCS:.c=.o)
 
 AOUT		= libnrf.a libnrf_app.a
@@ -23,11 +23,11 @@ all:: clean $(AOUT) install
 	\cp ./libnrf_app.h $(DEST_BUILD)/include
 	$(CC) $(CFLAG) $(BUILD_INC_PATH) $(INC_PATH) -c $<
 
-libnrf.a: libnrf.o
-	$(AR) -rc libnrf.a libnrf.o
+libnrf.a: libnrf.o libnrf_comm.o
+	$(AR) -rc libnrf.a libnrf.o libnrf_comm.o
 
-libnrf_app.a: libnrf_app.o
-	$(AR) -rc libnrf_app.a libnrf_app.o
+libnrf_app.a: libnrf_app.o libnrf_comm.o
+	$(AR) -rc libnrf_app.a libnrf_app.o libnrf_comm.o
 
 install:
 	\cp libnrf.a $(DEST_PKG)/lib
@@ -36,4 +36,4 @@ install:
 	\cp libnrf_app.a $(DEST_BUILD)/lib
 
 clean:
-	\rm -f $(OBJS) $(AOUT) core.* sample
+	\rm -f $(OBJS) $(AOUT) core.* sample tceetree.out.png

@@ -67,7 +67,7 @@ void add_shm_avail_count(main_ctx_t *MAIN_CTX)
 			nf_service_info *nf_avail = &nf_avail_shm_prepare->nf_avail[i][k];
 			if (nf_avail->occupied == 0) {
 				nf_avail_shm_prepare->nf_avail_cnt[i] = k;
-				APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s set nf_avail_count lbIdx:%d cnt:%d", __func__, i, k);
+				//APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s set nf_avail_count lbIdx:%d cnt:%d", __func__, i, k);
 				break;
 			}
 		}

@@ -177,16 +177,36 @@ void nrfm_mmc_send_resp(nrfm_mml_t *nrfm_cmd_req)
 	} 
 }
 
+void nrfm_handle_session(http2_session_data_t *session_data)
+{
+	/* disconnect must act in worker */
+	intl_req_t intl_req = {0,};
+	int thrd_index = session_data->thrd_index;
+	set_intl_req_msg(&intl_req, thrd_index, 0, session_data->session_index,
+			session_data->session_id, 0, HTTP_INTL_SESSION_DEL);
+	if (-1 == msgsnd(THRD_WORKER[thrd_index].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), IPC_NOWAIT)) {
+		APPLOG(APPLOG_DEBUG, "%s() msgsnd fail!!!", __func__);
+	}
+}
+
 void nrfm_mmc_add_proc(nrfm_mml_t *nrfm_cmd)
 {
-	int list_index = new_list(nrfm_cmd->host);
+	int list_index = get_list(nrfm_cmd->host);
+	if (list_index <= 0)
+		list_index = new_list(nrfm_cmd->host);
+	if (list_index < 0)
+		return; 
 	
 	for (int i = 0; (list_index > 0) && (i < nrfm_cmd->info_cnt); i++) {
 		nf_conn_info_t *nf_conn = &nrfm_cmd->nf_conns[i];
-		int item_index = new_item(list_index, nf_conn->ip, nf_conn->port);
 
+		int item_index = get_item(list_index, nf_conn->ip, nf_conn->port);
+		if (item_index > 0) /* already exist case, add fail */
+			continue;
+		else
+			item_index = new_item(list_index, nf_conn->ip, nf_conn->port);
 		if (item_index < 0) {
-			APPLOG(APPLOG_ERR, "{{{DBG}}} %s cause full of list[%d] or item[%d] skip", __func__, list_index, item_index);
+			APPLOG(APPLOG_ERR, "{{{DBG}}} %s cause full of list[%d] or item[%d] skipped", __func__, list_index, item_index);
 			continue;
 		}
 
@@ -248,7 +268,7 @@ void nrfm_mmc_act_dact_proc(nrfm_mml_t *nrfm_cmd, int act)
 				http2_session_data_t *session_data = get_session(CONN_LIST[k].thrd_index,
 						CONN_LIST[k].session_index, CONN_LIST[k].session_id);
 				if (session_data != NULL) {
-					delete_http2_session_data(session_data);
+					nrfm_handle_session(session_data);
 				}
 			}
 		}
@@ -265,27 +285,36 @@ void nrfm_mmc_act_dact_proc(nrfm_mml_t *nrfm_cmd, int act)
 void nrfm_mmc_del_proc(nrfm_mml_t *nrfm_cmd)
 {
 	int list_index = nrfm_cmd->id;
+	if (list_index == 0)
+		list_index = get_list(nrfm_cmd->host);
+	if (list_index < 0)
+		return;
 
-	for (int k = 1; k < MAX_SVR_NUM; k++) {
-		if (CONN_LIST[k].used == 0)
+	for (int i = 0; (list_index > 0) && (i < nrfm_cmd->info_cnt); i++) {
+		nf_conn_info_t *nf_conn = &nrfm_cmd->nf_conns[i];
+
+		int item_index = get_item(list_index, nf_conn->ip, nf_conn->port);
+		if (item_index <= 0)
 			continue;
-		if (CONN_LIST[k].nrfm_auto_added == NF_ADD_RAW)
-			continue;
-		if (CONN_LIST[k].list_index == list_index) {
-			http2_session_data_t *session_data = get_session(CONN_LIST[k].thrd_index,
-					CONN_LIST[k].session_index, CONN_LIST[k].session_id);
-			if (session_data != NULL) {
-				delete_http2_session_data(session_data);
+		for (int k = 1; k < MAX_SVR_NUM; k++) {
+			if (CONN_LIST[k].used == 0)
+				continue;
+			if (CONN_LIST[k].nrfm_auto_added == NF_ADD_RAW)
+				continue;
+			if (CONN_LIST[k].list_index == list_index && CONN_LIST[k].item_index == item_index) {
+				http2_session_data_t *session_data = get_session(CONN_LIST[k].thrd_index,
+						CONN_LIST[k].session_index, CONN_LIST[k].session_id);
+				if (session_data != NULL) {
+					nrfm_handle_session(session_data);
+				}
+				memset(&CONN_LIST[k], 0x00, sizeof(conn_list_t));
+				del_item(list_index, nf_conn->ip, nf_conn->port);
 			}
-			memset(&CONN_LIST[k], 0x00, sizeof(conn_list_t));
 		}
 	}
-	/* clear list / item index */
-	for (int i = 0; i < nrfm_cmd->info_cnt; i++) {
-		nf_conn_info_t *nf_conn = &nrfm_cmd->nf_conns[i];
-		del_item(list_index, nf_conn->ip, nf_conn->port);
-	}
-	del_list(nrfm_cmd->host);
+
+	if (get_item_num(list_index) == 0)
+		del_list(nrfm_cmd->host);
 
 	nrfm_mmc_res_log();
 	nrfm_cmd->id = -1; // replay added ID 
@@ -302,13 +331,8 @@ void nrfm_mmc_clear_proc()
 	for (int k = 1; k < MAX_SVR_NUM; k++) {
 		if (CONN_LIST[k].used == 0)
 			continue;
-#if 0
-		if (CONN_LIST[k].nrfm_auto_added == NF_ADD_RAW)
-			continue;
-#else
 		if (CONN_LIST[k].nrfm_auto_added != NF_ADD_NRF) // only nrf triggered connection clear
 			continue;
-#endif
 
 		int list_index = get_list(CONN_LIST[k].host);
 		del_item(list_index, CONN_LIST[k].ip, CONN_LIST[k].port);
@@ -320,14 +344,7 @@ void nrfm_mmc_clear_proc()
 		http2_session_data_t *session_data = get_session(CONN_LIST[k].thrd_index,
 				CONN_LIST[k].session_index, CONN_LIST[k].session_id);
 		if (session_data != NULL) {
-			/* disconnect must act in worker */
-			intl_req_t intl_req = {0,};
-			int thrd_index = session_data->thrd_index;
-			set_intl_req_msg(&intl_req, thrd_index, 0, session_data->session_index,
-					session_data->session_id, 0, HTTP_INTL_SESSION_DEL);
-			if (-1 == msgsnd(THRD_WORKER[thrd_index].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), IPC_NOWAIT)) {
-				APPLOG(APPLOG_DEBUG, "%s() msgsnd fail!!!", __func__);
-			}
+			nrfm_handle_session(session_data);
 		}
 		/* for fast delete */
 		memset(&CONN_LIST[k], 0x00, sizeof(conn_list_t));
@@ -354,9 +371,6 @@ void nrfm_mmc_tombstone_proc(nrfm_mml_t *nrfm_cmd)
 				__func__, list_index, item_index, nrfm_cmd->host, nrfm_cmd->nf_conns[0].ip, nrfm_cmd->nf_conns[0].port);
 	}
 
-	del_item(list_index, nrfm_cmd->nf_conns[0].ip, nrfm_cmd->nf_conns[0].port);
-	del_list(nrfm_cmd->host);
-
 	for (int k = 1; k < MAX_SVR_NUM; k++) {
 		if (CONN_LIST[k].list_index == list_index && 
 				CONN_LIST[k].item_index == item_index) {
@@ -368,20 +382,16 @@ void nrfm_mmc_tombstone_proc(nrfm_mml_t *nrfm_cmd)
 					CONN_LIST[k].session_index, CONN_LIST[k].session_id);
 
 			if (session_data != NULL) {
-				/* disconnect must act in worker */
-				intl_req_t intl_req = {0,};
-				int thrd_index = session_data->thrd_index;
-				set_intl_req_msg(&intl_req, thrd_index, 0, session_data->session_index,
-						session_data->session_id, 0, HTTP_INTL_SESSION_DEL);
-				if (-1 == msgsnd(THRD_WORKER[thrd_index].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), IPC_NOWAIT)) {
-					APPLOG(APPLOG_DEBUG, "%s() msgsnd fail!!!", __func__);
-				}
+				nrfm_handle_session(session_data);
 			}
 			/* for fast delete */
 			memset(&CONN_LIST[k], 0x00, sizeof(conn_list_t));
 			break;
 		}
 	}
+	del_item(list_index, nrfm_cmd->nf_conns[0].ip, nrfm_cmd->nf_conns[0].port);
+	if (get_item_num(list_index) == 0)
+		del_list(nrfm_cmd->host);
 }
 
 int set_nrfm_response_msg(int ahif_msg_type) 

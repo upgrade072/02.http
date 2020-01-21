@@ -185,6 +185,8 @@ void nf_manage_httpc_remove_tombstone(main_ctx_t *MAIN_CTX, conn_list_status_t *
 
 void nf_manage_httpc_conn_status_cb(evutil_socket_t fd, short what, void *arg)
 {
+	APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s called", __func__);
+
     int tombstone_expire_min = 0;
     time_t curr_tm = time(NULL);
 
@@ -203,15 +205,24 @@ void nf_manage_httpc_conn_status_cb(evutil_socket_t fd, short what, void *arg)
 	for (int k = 0; k < MAX_CON_NUM; k++) {
 		conn_list_status_t *httpc_conn = &SHM_HTTPC_PTR->connlist[pos][k];
 
-		if (httpc_conn->nrfm_auto_added != NF_ADD_CALLBACK) continue;
 		if (httpc_conn->occupied <= 0) continue;
+		if (httpc_conn->nrfm_auto_added == NF_ADD_RAW) continue;
 		if (httpc_conn->conn_cnt > 0) continue;
 		if (httpc_conn->tombstone_date == 0) continue;
 
 		if ((curr_tm - httpc_conn->tombstone_date) >= (tombstone_expire_min * 60)) {
 			APPLOG(APPLOG_ERR, "%s() remove old tombstone httpc conn [%.24s + %d min] host (%s)",
 					__func__, ctime(&httpc_conn->tombstone_date), tombstone_expire_min, httpc_conn->host);
-			nf_manage_httpc_remove_tombstone(&MAIN_CTX, httpc_conn);
+			if (httpc_conn->nrfm_auto_added == NF_ADD_NRF) {
+				nf_retrieve_item_t *nf_item = nf_notify_search_item_by_uuid(&MAIN_CTX, httpc_conn->host);
+				if (nf_item != NULL)
+					nf_notify_profile_remove(nf_item);
+			} else if (httpc_conn->nrfm_auto_added == NF_ADD_CALLBACK) {
+				acc_token_info_t *token_info = get_acc_token_info(MAIN_CTX.nrf_access_token.ACC_TOKEN_LIST, httpc_conn->token_id, 1);
+				if (token_info != NULL)
+					nf_token_del_shm_by_nf(token_info);
+				nf_manage_httpc_remove_tombstone(&MAIN_CTX, httpc_conn);
+			}
 		}
 	}
 }
@@ -272,7 +283,11 @@ void nf_manage_collect_oper_added_nf(main_ctx_t *MAIN_CTX, nf_list_pkt_t *my_ava
 		if (my_avail_nfs->nf_avail_num >= NF_MAX_AVAIL_LIST)
 			return;
 
+#if 0
 		if (conn_raw->nrfm_auto_added > NF_ADD_RAW) continue; /* report only operator added raw */
+#else
+		if (conn_raw->nrfm_auto_added == NF_ADD_NRF) continue; /* report only operator added raw */
+#endif
 		if (conn_raw->occupied <= 0) continue;
 
 		nf_service_info *nf_avail = &my_avail_nfs->nf_avail[my_avail_nfs->nf_avail_num++];
@@ -294,6 +309,7 @@ void nf_manage_collect_oper_added_nf(main_ctx_t *MAIN_CTX, nf_list_pkt_t *my_ava
 		sprintf(nf_avail->scheme, "%s", conn_raw->scheme);
 		sprintf(nf_avail->ipv4Address, "%s", conn_raw->ip);
 		nf_avail->port = conn_raw->port;
+		nf_avail->auto_add = conn_raw->nrfm_auto_added;
 	}
 }
 

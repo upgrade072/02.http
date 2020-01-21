@@ -63,6 +63,7 @@ static http2_session_data_t * create_http2_session_data()
 	return session_data;
 }
 
+/* caution!!! this func must called by worker */
 void delete_http2_session_data(http2_session_data_t *session_data) 
 {
 	pthread_mutex_lock(&ONLY_CRT_SESS_LOCK);
@@ -1477,16 +1478,6 @@ int initialize()
 	*lOG_FLAG = CLIENT_CONF.log_level;
 	APPLOG(APPLOG_ERR, "\n\n[[[[[ Welcome Process Started ]]]]]");
 
-    if (config_load() < 0) {
-        APPLOG(APPLOG_ERR, "{{{INIT}}} fail to read config file!");
-        return (-1);
-	} else {
-		memset(CONN_STATUS, 0x00, sizeof(CONN_STATUS));
-
-		gather_list(CONN_STATUS);
-		print_list(CONN_STATUS);
-	}
-
 	/* create httpc conn status shm */
     sprintf(fname,"%s/%s", getenv(IV_HOME), SYSCONF_FILE);
 
@@ -1505,6 +1496,15 @@ int initialize()
 		return (-1);
 	}
 
+    if (config_load() < 0) {
+        APPLOG(APPLOG_ERR, "{{{INIT}}} fail to read config file!");
+        return (-1);
+	} else {
+		memset(CONN_STATUS, 0x00, sizeof(CONN_STATUS));
+
+		gather_list(CONN_STATUS);
+		print_list(CONN_STATUS);
+	}
 
 	for ( i = 0; i < CLIENT_CONF.worker_num; i++) {
 		if ( -1 == (THRD_WORKER[i].msg_id = msgget((key_t)(CLIENT_CONF.worker_shmkey + i), IPC_CREAT | 0666))) {

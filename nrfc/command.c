@@ -45,9 +45,12 @@ void message_handle(evutil_socket_t fd, short what, void *arg)
 				adjust_loglevel((TrcLibSetPrintMsgType *)msg);
 				continue;
             // TODO !!! check & broadcast
-            case MSGID_NRF_LIB_NRFC_REQ_PROFILE:
-                handle_appl_req_for_lb_http2(msg->mtype, msg);
-                continue;
+			case MSGID_NRF_LIB_NRFC_REQ_PROFILE:
+				handle_appl_req_with_profile(&MAIN_CTX, (nf_disc_host_info *)msg);
+				continue;
+			case MSGID_NRF_LIB_NRFC_REQ_CALLBACK:
+				handle_appl_req_with_cbinfo(&MAIN_CTX, (http_conn_handle_req_t *)msg);
+				continue;
             default:
                 APPLOG(APPLOG_ERR, "%s() receive unknown msg (mtype:%ld)", __func__, (long)msg->mtype);
                 continue;
@@ -163,7 +166,7 @@ void printf_fep_nfs(nfs_avail_shm_t *SHM_NFS_AVAIL, char *printBuff)
 			char typeSpecStr[1024] = {0,};
             nf_get_specific_info_str(nf_info->nfType, &nf_info->nfTypeInfo, typeSpecStr);
 
-			ft_printf_ln(table, "%d|%s|%s|%s|%s|%s|%s|%s|%d|%d|%d|%s|%d",
+			ft_printf_ln(table, "%d|%s|%s|%s|%s|%s|%s|%s|%d|%d|%d|%s(%d)|%d",
 					index++,
 					nf_info->type,
 					strlen(nf_info->serviceName) ? nf_info->serviceName : "ANY",
@@ -176,7 +179,9 @@ void printf_fep_nfs(nfs_avail_shm_t *SHM_NFS_AVAIL, char *printBuff)
 					nf_info->priority,
 					nf_info->load,
 					nf_info->auto_add == NF_ADD_MML ? "MML" :
-					nf_info->auto_add == NF_ADD_NRF ? "NRF" : "RAW",
+					nf_info->auto_add == NF_ADD_NRF ? "NRF" :
+					nf_info->auto_add == NF_ADD_CALLBACK ? "API" : "RAW",
+					nf_info->auto_add,
 					nf_info->lbId);
 			ft_add_separator(table);
 		}
@@ -210,7 +215,7 @@ int func_dis_nf_status(IxpcQMsgType *rxIxpcMsg)
     if (!strcmp(nf_type, "DUMP"))
         printf_fep_nfs(MAIN_CTX.SHM_NFS_AVAIL, resBuf);
     else 
-        printf_fep_nfs_well_form(MAIN_CTX.SHM_NFS_AVAIL, resBuf, nf_type);
+        printf_fep_nfs_well_form(MAIN_CTX.root_node, resBuf, nf_type);
 
 	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
 	int res = send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
@@ -438,7 +443,9 @@ void send_conn_req_profile(assoc_t *lb_assoc, nf_disc_host_info *nf_host_info)
 
     nf_host_info->mtype = LIBNRF_MSG_ADD_NF_PROFILE;
 
-    isifc_create_pkt(&txIsifMsg, &MAIN_CTX.my_info, lb_assoc, nf_host_info, sizeof(nf_host_info));
+	APPLOG(APPLOG_DEBUG, "{DBG} %s() send request! to node index(%d)", __func__, lb_assoc->index);
+
+    isifc_create_pkt(&txIsifMsg, &MAIN_CTX.my_info, lb_assoc, nf_host_info, sizeof(nf_disc_host_info));
     isifc_send_pkt(MAIN_CTX.my_qid.isifc_tx_qid, &txIsifMsg);
 }
 
@@ -454,28 +461,24 @@ void send_conn_handle_req(assoc_t *lb_assoc, http_conn_handle_req_t *handle_req)
 
 void check_and_send_conn_req(assoc_t *lb_assoc, http_conn_handle_req_t *handle_req)
 {
-	nfs_avail_shm_t *SHM_NFS_AVAIL = MAIN_CTX.SHM_NFS_AVAIL;
-
-	int POS = SHM_NFS_AVAIL->curr_pos;
-	GNode **root_node = &SHM_NFS_AVAIL->root_node[POS];
-
-	if (*root_node == NULL) {
+	if (MAIN_CTX.root_node == NULL) {
 		APPLOG(APPLOG_ERR, "%s() cant handle req, SHM_NFS_AVAIL is null");
 		return;
 	}
 
 	nf_search_key_t key = {0,};
+	memset(&key, 0x00, sizeof(nf_search_key_t));
 	create_cb_depth_key(&key, lb_assoc->index, handle_req); // TODO index mismatch check
 
-	GNode *node_conn = search_node_data(*root_node, &key, NF_NODE_DATA_DEPTH);
+	GNode *node_conn = search_node_data(MAIN_CTX.root_node, &key, NF_NODE_DATA_DEPTH);
 
 	if ((handle_req->command == HTTP_MML_HTTPC_ADD && node_conn == NULL) ||
 			(handle_req->command == HTTP_MML_HTTPC_DEL && node_conn != NULL)) {
-		// if add req & conn not exist => send
-		// if del req & conn exist => send
+		APPLOG(APPLOG_DEBUG, "{DBG} %s() send request! to node index(%d)", __func__, lb_assoc->index);
 		send_conn_handle_req(lb_assoc, handle_req);
+	} else {
+		APPLOG(APPLOG_DEBUG, "{DBG} %s() NOT send(already exist) request! to node index(%d)", __func__, lb_assoc->index);
 	}
-
 }
 
 void handle_appl_req_with_profile(main_ctx_t *MAIN_CTX, nf_disc_host_info *nf_host_info)
@@ -488,18 +491,6 @@ void handle_appl_req_with_cbinfo(main_ctx_t *MAIN_CTX, http_conn_handle_req_t *h
 	g_slist_foreach(MAIN_CTX->lb_assoc_list, (GFunc)check_and_send_conn_req, handle_req);
 }
 
-void handle_appl_req_for_lb_http2(long mtype, GeneralQMsgType *msg)
-{
-    switch (mtype) {
-        case MSGID_NRF_LIB_NRFC_REQ_PROFILE: // suppress library calling count
-            return handle_appl_req_with_profile(&MAIN_CTX, (nf_disc_host_info *)msg);
-        case MSGID_NRF_LIB_NRFC_REQ_CALLBACK:
-            return handle_appl_req_with_cbinfo(&MAIN_CTX, (http_conn_handle_req_t *)msg);
-        default:
-            return;
-    }
-}
-
 void create_cb_depth_key(nf_search_key_t *key, int lb_index, http_conn_handle_req_t *handle_req)
 {
 	key->depth = 0;
@@ -508,8 +499,11 @@ void create_cb_depth_key(nf_search_key_t *key, int lb_index, http_conn_handle_re
 	key->nf_type = handle_req->type;
 	key->nf_host = handle_req->host;
 
+#if 1
 	char empty_ptr[12] = {0,};
+	empty_ptr[0] = '\0';
 	key->nf_svcname = empty_ptr;
+#endif
 
 	sprintf(key->nf_conn_info, "%s%s://%s:%d",
 			handle_req->scheme, !strcmp(handle_req->scheme, "https") ? "" : "-", handle_req->ip, handle_req->port);
@@ -536,17 +530,16 @@ void create_fep_nfs_node_tree(nfs_avail_shm_t *SHM_NFS_AVAIL)
 {
     int prepare_pos = (SHM_NFS_AVAIL->curr_pos + 1) % MAX_NFS_SHM_POS;
     nf_list_shm_t *nf_avail_shm = &SHM_NFS_AVAIL->nfs_avail_shm[prepare_pos];
-    GNode **root_node = &SHM_NFS_AVAIL->root_node[prepare_pos];
 
-    if (*root_node != NULL) {
-    APPLOG(APPLOG_ERR, "{{{DBG}}} %s() remove rootnode pos[%d]", __func__, prepare_pos);
+    if (MAIN_CTX.root_node != NULL) {
+    //APPLOG(APPLOG_ERR, "{{{DBG}}} %s() remove rootnode pos[%d]", __func__, prepare_pos);
         /* free all node data */
-        g_node_traverse(*root_node, G_IN_ORDER, G_TRAVERSE_ALL, -1, node_free_data, NULL);
+        g_node_traverse(MAIN_CTX.root_node, G_IN_ORDER, G_TRAVERSE_ALL, -1, node_free_data, NULL);
         /* remove NODE */
-        g_node_destroy(*root_node);
-        *root_node = NULL;
+        g_node_destroy(MAIN_CTX.root_node);
+        MAIN_CTX.root_node = NULL;
     }
-    *root_node = g_node_new(NULL);
+    MAIN_CTX.root_node = g_node_new(NULL);
 
     for (int i = 0 ; i < NF_MAX_LB_NUM; i++) {
         for (int k = 0; k < NF_MAX_AVAIL_LIST; k++) {
@@ -557,7 +550,7 @@ void create_fep_nfs_node_tree(nfs_avail_shm_t *SHM_NFS_AVAIL)
 
             nf_search_key_t key = {0,};
             create_full_depth_key(&key, nf_info);
-            create_node_data(*root_node, &key, nf_info);
+            create_node_data(MAIN_CTX.root_node, &key, nf_info);
         }
     }
 }

@@ -133,34 +133,6 @@ void print_list(conn_list_status_t conn_status[]) {
 
 /* watch out for buffer size */
 void write_list(conn_list_status_t CONN_STATUS[], char *buff) {
-#if 0
-	int i, j, resLen;
-
-    resLen = sprintf(buff, "\n  ID HOSTNAME                                 TYPE   SCHEME   IP_ADDR                            PORT CONN(max/curr)    STATUS     TOKEN_ID  (AUTO_ADDED)\n");
-    resLen += sprintf(buff + resLen, "----------------------------------------------------------------------------------------------------------------------------------------------------------\n");
-	for ( i = 0; i < MAX_LIST_NUM; i++) {
-		for ( j = 0; j < MAX_CON_NUM; j++) {
-			if (CONN_STATUS[j].occupied != 1)
-				continue;
-			if (CONN_STATUS[j].list_index != i)
-				continue;
-			resLen += sprintf(buff + resLen, "%4d %-40s %-6s %-6s   %-33s %5d (%4d  / %4d)   %10s     %5d        %3s\n",
-					CONN_STATUS[j].list_index,
-					CONN_STATUS[j].host,
-					CONN_STATUS[j].type,
-					CONN_STATUS[j].scheme,
-					CONN_STATUS[j].ip,
-					CONN_STATUS[j].port,
-					CONN_STATUS[j].sess_cnt,
-					CONN_STATUS[j].conn_cnt,
-					(CONN_STATUS[j].conn_cnt > 0) ?  "Connected" : (CONN_STATUS[j].act == 1) ? "Disconnect" : "Deact",
-					CONN_STATUS[j].token_id,
-					CONN_STATUS[j].nrfm_auto_added == NF_ADD_RAW ? " X " : 
-					CONN_STATUS[j].nrfm_auto_added == NF_ADD_NRF ? "NRF" : "CB" );
-		}
-	}
-    sprintf(buff + resLen, "----------------------------------------------------------------------------------------------------------------------------------------------------------\n");
-#else
 	ft_table_t *table = ft_create_table();
 	ft_set_border_style(table, FT_PLAIN_STYLE);
 
@@ -186,14 +158,13 @@ void write_list(conn_list_status_t CONN_STATUS[], char *buff) {
 				(CONN_STATUS[j].conn_cnt > 0) ?  "Connected" : (CONN_STATUS[j].act == 1) ? "Disconnect" : "Deact",
 				CONN_STATUS[j].token_id,
 				CONN_STATUS[j].nrfm_auto_added == NF_ADD_RAW ? " X " : 
-				CONN_STATUS[j].nrfm_auto_added == NF_ADD_NRF ? "NRF" : "CB",
+				CONN_STATUS[j].nrfm_auto_added == NF_ADD_NRF ? "NRF" : "API",
 				CONN_STATUS[j].tombstone_date != 0 ? ctime(&CONN_STATUS[j].tombstone_date) : "");
 		}
 	}
 	ft_add_separator(table);
 	sprintf(buff, "%s", ft_to_string(table));
 	ft_destroy_table(table);
-#endif
 }
 
 /* before gather, must be memset! */

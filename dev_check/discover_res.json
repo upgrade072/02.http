@@ -1,0 +1,300 @@
+{
+        "validityPeriod": 10,
+        "nfInstances": [
+                {
+                        "nfInstanceId": "515b53cc-3b20-11ea-97c6-bf445235f0c0",
+                        "nfType": "AMF",
+                        "nfStatus": "REGISTERED",
+                        "heartBeatTimer": 60,
+                        "plmnList": [
+                                {
+                                        "mcc": "450",
+                                        "mnc": "08"
+                                }
+                        ],
+                        "fqdn": "5g.amf.ariel.01",
+                        "interPlmnFqdn": "kt.5g.amf.ariel.01",
+                        "allowedPlmns": [
+                                {
+                                        "mcc": "450",
+                                        "mnc": "08"
+                                }
+                        ],
+                        "allowedNfTypes": [
+                                "AMF",
+                                "UDM",
+                                "GMLC",
+                                "LMF"
+                        ],
+                        "priority": 0,
+                        "capacity": 65535,
+                        "load": 0,
+                        "amfInfo": {
+                                "amfRegionId": "01",
+                                "amfSetId": "001",
+                                "guamiList": [
+                                        {
+                                                "plmnId": "262-01",
+                                                "amfId": "000001"
+                                        },
+                                        {
+                                                "plmnId": "302-720",
+                                                "amfId": "000002"
+                                        }
+                                ]
+                        },
+                        "recoveryTime": "2019-09-17T10:40:03Z",
+                        "nfServicePersistence": false,
+                        "nfServices": [
+                                {
+                                        "serviceInstanceId": "namf-loc-v1-1.0.0",
+                                        "serviceName": "namf-loc",
+                                        "versions": [
+                                                {
+                                                        "apiVersionInUri": "v1",
+                                                        "apiFullversion": "1.0.0"
+                                                }
+                                        ],
+                                        "scheme": "https",
+                                        "nfServiceStatus": "REGISTERED",
+                                        "ipEndPoints": [
+                                                {
+                                                        "ipv4Address": "192.168.70.238",
+                                                        "port": 10000
+                                                }
+                                        ],
+                                        "priority": 10,
+                                        "capacity": 65535,
+                                        "load": 0,
+                                        "recoveryTime": "2019-09-17T10:40:03Z"
+                                },
+                                {
+                                        "serviceInstanceId": "namf-evts-v1-1.0.0",
+                                        "serviceName": "namf-evts",
+                                        "versions": [
+                                                {
+                                                        "apiVersionInUri": "v1",
+                                                        "apiFullversion": "1.0.0"
+                                                }
+                                        ],
+                                        "scheme": "https",
+                                        "nfServiceStatus": "REGISTERED",
+                                        "ipEndPoints": [
+                                                {
+                                                        "ipv4Address": "192.168.70.238",
+                                                        "port": 10000
+                                                },
+                                                {
+                                                        "ipv4Address": "192.168.70.240",
+                                                        "port": 10000
+                                                }
+                                        ],
+                                        "priority": 10,
+                                        "capacity": 65535,
+                                        "load": 0,
+                                        "recoveryTime": "2019-09-17T10:40:03Z"
+                                },
+                                {
+                                        "serviceInstanceId": "namf-loc-v1-1.0.0",
+                                        "serviceName": "namf-loc",
+                                        "versions": [
+                                                {
+                                                        "apiVersionInUri": "v1",
+                                                        "apiFullversion": "1.0.0"
+                                                }
+                                        ],
+                                        "scheme": "https",
+                                        "nfServiceStatus": "REGISTERED",
+                                        "ipEndPoints": [
+                                                {
+                                                        "ipv4Address": "192.168.70.238",
+                                                        "port": 10000
+                                                },
+                                                {
+                                                        "ipv4Address": "192.168.70.240",
+                                                        "port": 10000
+                                                }
+                                        ],
+                                        "priority": 10,
+                                        "capacity": 65535,
+                                        "load": 0,
+                                        "recoveryTime": "2019-09-17T10:40:03Z"
+                                },
+                                {
+                                        "serviceInstanceId": "namf-mt-v1-1.0.0",
+                                        "serviceName": "namf-mt",
+                                        "versions": [
+                                                {
+                                                        "apiVersionInUri": "v1",
+                                                        "apiFullversion": "1.0.0"
+                                                }
+                                        ],
+                                        "scheme": "https",
+                                        "nfServiceStatus": "REGISTERED",
+                                        "ipEndPoints": [
+                                                {
+                                                        "ipv4Address": "192.168.70.238",
+                                                        "port": 10000
+                                                },
+                                                {
+                                                        "ipv4Address": "192.168.70.240",
+                                                        "port": 10000
+                                                }
+                                        ],
+                                        "priority": 10,
+                                        "capacity": 65535,
+                                        "load": 0,
+                                        "recoveryTime": "2019-09-17T10:40:03Z"
+                                }
+                        ],
+                        "nfProfileChangeSupportInd": false
+                }, {
+                        "nfInstanceId": "515b53cc-3b20-11ea-97c6-bf445235f0d1",
+                        "nfType": "AMF",
+                        "nfStatus": "REGISTERED",
+                        "heartBeatTimer": 60,
+                        "plmnList": [
+                                {
+                                        "mcc": "450",
+                                        "mnc": "08"
+                                }
+                        ],
+                        "fqdn": "5g.amf.ariel.01",
+                        "interPlmnFqdn": "kt.5g.amf.ariel.01",
+                        "allowedPlmns": [
+                                {
+                                        "mcc": "450",
+                                        "mnc": "08"
+                                }
+                        ],
+                        "allowedNfTypes": [
+                                "AMF",
+                                "UDM",
+                                "GMLC",
+                                "LMF"
+                        ],
+                        "priority": 0,
+                        "capacity": 65535,
+                        "load": 0,
+                        "amfInfo": {
+                                "amfRegionId": "01",
+                                "amfSetId": "001",
+                                "guamiList": [
+                                        {
+                                                "plmnId": "262-01",
+                                                "amfId": "000001"
+                                        },
+                                        {
+                                                "plmnId": "302-720",
+                                                "amfId": "000002"
+                                        }
+                                ]
+                        },
+                        "recoveryTime": "2019-09-17T10:40:03Z",
+                        "nfServicePersistence": false,
+                        "nfServices": [
+                                {
+                                        "serviceInstanceId": "namf-loc-v1-1.0.0",
+                                        "serviceName": "namf-loc",
+                                        "versions": [
+                                                {
+                                                        "apiVersionInUri": "v1",
+                                                        "apiFullversion": "1.0.0"
+                                                }
+                                        ],
+                                        "scheme": "https",
+                                        "nfServiceStatus": "REGISTERED",
+                                        "ipEndPoints": [
+                                                {
+                                                        "ipv4Address": "192.168.70.238",
+                                                        "port": 10000
+                                                }
+                                        ],
+                                        "priority": 10,
+                                        "capacity": 65535,
+                                        "load": 0,
+                                        "recoveryTime": "2019-09-17T10:40:03Z"
+                                },
+                                {
+                                        "serviceInstanceId": "namf-evts-v1-1.0.0",
+                                        "serviceName": "namf-evts",
+                                        "versions": [
+                                                {
+                                                        "apiVersionInUri": "v1",
+                                                        "apiFullversion": "1.0.0"
+                                                }
+                                        ],
+                                        "scheme": "https",
+                                        "nfServiceStatus": "REGISTERED",
+                                        "ipEndPoints": [
+                                                {
+                                                        "ipv4Address": "192.168.70.238",
+                                                        "port": 10000
+                                                },
+                                                {
+                                                        "ipv4Address": "192.168.70.240",
+                                                        "port": 10000
+                                                }
+                                        ],
+                                        "priority": 10,
+                                        "capacity": 65535,
+                                        "load": 0,
+                                        "recoveryTime": "2019-09-17T10:40:03Z"
+                                },
+                                {
+                                        "serviceInstanceId": "namf-loc-v1-1.0.0",
+                                        "serviceName": "namf-loc",
+                                        "versions": [
+                                                {
+                                                        "apiVersionInUri": "v1",
+                                                        "apiFullversion": "1.0.0"
+                                                }
+                                        ],
+                                        "scheme": "https",
+                                        "nfServiceStatus": "REGISTERED",
+                                        "ipEndPoints": [
+                                                {
+                                                        "ipv4Address": "192.168.70.238",
+                                                        "port": 10000
+                                                },
+                                                {
+                                                        "ipv4Address": "192.168.70.240",
+                                                        "port": 10000
+                                                }
+                                        ],
+                                        "priority": 10,
+                                        "capacity": 65535,
+                                        "load": 0,
+                                        "recoveryTime": "2019-09-17T10:40:03Z"
+                                },
+                                {
+                                        "serviceInstanceId": "namf-mt-v1-1.0.0",
+                                        "serviceName": "namf-mt",
+                                        "versions": [
+                                                {
+                                                        "apiVersionInUri": "v1",
+                                                        "apiFullversion": "1.0.0"
+                                                }
+                                        ],
+                                        "scheme": "https",
+                                        "nfServiceStatus": "REGISTERED",
+                                        "ipEndPoints": [
+                                                {
+                                                        "ipv4Address": "192.168.70.238",
+                                                        "port": 10000
+                                                },
+                                                {
+                                                        "ipv4Address": "192.168.70.240",
+                                                        "port": 10000
+                                                }
+                                        ],
+                                        "priority": 10,
+                                        "capacity": 65535,
+                                        "load": 0,
+                                        "recoveryTime": "2019-09-17T10:40:03Z"
+                                }
+                        ],
+                        "nfProfileChangeSupportInd": false
+                }
+        ]
+}
