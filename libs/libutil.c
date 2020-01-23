@@ -195,3 +195,28 @@ char *read_file_stream(char *filename)
 
 	return NULL;
 }
+
+int search_c_in_str(char *str, char c)
+{
+    char *res = strchr(str, c);
+    if (res == NULL)
+        return -1;
+    else
+        return 0;
+}
+
+// caution! orin str will replaced 
+int divide_c_in_str(char *str, char c, char **div_a, char **div_b)
+{
+    char *ptr = strchr(str, c);
+
+    if (ptr == NULL)
+        return -1;
+
+    *ptr = '\0'; // divide
+
+    *div_a = str;
+    *div_b = ptr + 1;
+
+    return 0;
+}

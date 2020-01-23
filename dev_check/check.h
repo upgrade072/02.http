@@ -26,10 +26,10 @@ int     main();
 
 /* ------------------------- command.c --------------------------- */
 void    register_command(main_ctx_t *MAIN_CTX);
-int     cmd_common_print(struct cli_def *cli, char *command, char *argv[], int argc);
-int     cmd_load_nrfm_qid(struct cli_def *cli, char *command, char *argv[], int argc);
-int     cmd_load_nfs_shm(struct cli_def *cli, char *command, char *argv[], int argc);
-int     cmd_register_callback(struct cli_def *cli, char *command, char *argv[], int argc);
-int     cmd_discover_show(struct cli_def *cli, char *command, char *argv[], int argc);
-int     cmd_discover_clear(struct cli_def *cli, char *command, char *argv[], int argc);
-int     cmd_discover_search(struct cli_def *cli, char *command, char *argv[], int argc);
+int     cmd_common_print(struct cli_def *cli, const char *command, char *argv[], int argc);
+int     cmd_load_nrfm_qid(struct cli_def *cli, const char *command, char *argv[], int argc);
+int     cmd_load_nfs_shm(struct cli_def *cli, const char *command, char *argv[], int argc);
+int     cmd_register_callback(struct cli_def *cli, const char *command, char *argv[], int argc);
+int     cmd_discover_show(struct cli_def *cli, const char *command, char *argv[], int argc);
+int     cmd_discover_clear(struct cli_def *cli, const char *command, char *argv[], int argc);
+int     cmd_discover_search(struct cli_def *cli, const char *command, char *argv[], int argc);

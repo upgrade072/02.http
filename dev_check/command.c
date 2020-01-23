@@ -10,8 +10,8 @@ void register_command(main_ctx_t *MAIN_CTX)
 			NULL, PRIVILEGE_UNPRIVILEGED, MODE_EXEC, 
 			help_load);
 
-	char help_nrfm_qid[] = "Load NRFM msgq id";
-	cli_register_command(MAIN_CTX->CLI_ROOT, cli_load, "NRFM_QID", 
+	char help_nrfm_qid[] = "Load NRFC msgq id";
+	cli_register_command(MAIN_CTX->CLI_ROOT, cli_load, "NRFC_QID", 
 			cmd_load_nrfm_qid, PRIVILEGE_UNPRIVILEGED, MODE_EXEC, 
 			help_nrfm_qid);
 
@@ -68,7 +68,7 @@ void register_command(main_ctx_t *MAIN_CTX)
 			help_discover_search);
 }
 
-int cmd_common_print(struct cli_def *cli, char *command, char *argv[], int argc)
+int cmd_common_print(struct cli_def *cli, const char *command, char *argv[], int argc)
 {
     cli_print(cli, " => called %s() by [%s]", __func__, command);
     cli_print(cli, "%d arguments:", argc);
@@ -78,7 +78,7 @@ int cmd_common_print(struct cli_def *cli, char *command, char *argv[], int argc)
     return CLI_OK;
 }
 
-int cmd_load_nrfm_qid(struct cli_def *cli, char *command, char *argv[], int argc)
+int cmd_load_nrfm_qid(struct cli_def *cli, const char *command, char *argv[], int argc)
 {
 	cmd_common_print(cli, command, argv, argc);
 
@@ -104,7 +104,7 @@ int cmd_load_nrfm_qid(struct cli_def *cli, char *command, char *argv[], int argc
 	return CLI_OK;
 }
 
-int cmd_load_nfs_shm(struct cli_def *cli, char *command, char *argv[], int argc)
+int cmd_load_nfs_shm(struct cli_def *cli, const char *command, char *argv[], int argc)
 {
 	cmd_common_print(cli, command, argv, argc);
 
@@ -132,7 +132,7 @@ int cmd_load_nfs_shm(struct cli_def *cli, char *command, char *argv[], int argc)
 }
 
 
-int cmd_register_callback(struct cli_def *cli, char *command, char *argv[], int argc)
+int cmd_register_callback(struct cli_def *cli, const char *command, char *argv[], int argc)
 {
 	cmd_common_print(cli, command, argv, argc);
 
@@ -156,7 +156,7 @@ int cmd_register_callback(struct cli_def *cli, char *command, char *argv[], int 
 	return CLI_OK;
 }
 
-int cmd_discover_show(struct cli_def *cli, char *command, char *argv[], int argc)
+int cmd_discover_show(struct cli_def *cli, const char *command, char *argv[], int argc)
 {
 	cmd_common_print(cli, command, argv, argc);
 
@@ -169,7 +169,7 @@ int cmd_discover_show(struct cli_def *cli, char *command, char *argv[], int argc
 	return CLI_OK;
 }
 
-int cmd_discover_clear(struct cli_def *cli, char *command, char *argv[], int argc)
+int cmd_discover_clear(struct cli_def *cli, const char *command, char *argv[], int argc)
 {
 	cmd_common_print(cli, command, argv, argc);
 
@@ -180,7 +180,7 @@ int cmd_discover_clear(struct cli_def *cli, char *command, char *argv[], int arg
 	return CLI_OK;
 }
 
-int cmd_discover_search(struct cli_def *cli, char *command, char *argv[], int argc)
+int cmd_discover_search(struct cli_def *cli, const char *command, char *argv[], int argc)
 {
 	cmd_common_print(cli, command, argv, argc);
 

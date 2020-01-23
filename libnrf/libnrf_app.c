@@ -241,7 +241,7 @@ nf_service_info *nf_discover_result(nf_discover_local_res *result_cache, nf_disc
                     http2_conn_exist_in_lb = 1;
                     if (nf_service->available) {
                         discover_info->sel_count++;
-                        APPLOG(APPLOG_DEBUG, "(%s) select (%s) in lb[%d]", 
+                        APPLOG(APPLOG_DEBUG, "(%s) select (%s) in lb_idx[%d]", 
                                 __func__, nf_service->hostname, lbIndex);
                         return nf_service;
                     }

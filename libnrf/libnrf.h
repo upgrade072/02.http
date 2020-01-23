@@ -51,6 +51,7 @@ typedef struct svr_info {
 
 typedef struct assoc {
 	int index; // 01234 ...
+    int id; // 12345 ...
     char name[1024];
     char type[1024];
     char group[1024];

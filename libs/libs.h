@@ -58,6 +58,8 @@ char    *replaceAll(char *s, const char *olds, const char *news) ;
 char    *strlwr(char *input/* overwrite */, int str_len);
 char    *strupr(char *input/* overwrite */, int str_len);
 char	 *read_file_stream(char *filename);
+int     search_c_in_str(char *str, char c);
+int     divide_c_in_str(char *str, char c, char **div_a, char **div_b);
 
 /* ------------------------- libhdr.c --------------------------- */
 int     set_defined_header(hdr_index_t HDR_INDEX[], char *name, char *val, AhifHttpCSMsgType *appData);

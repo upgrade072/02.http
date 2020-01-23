@@ -14,8 +14,10 @@ void attach_mml_info_into_lb_shm(mml_conf_t *mml_conf, nf_service_info *nf_avail
         if (nf_avail->auto_add != NF_ADD_RAW) continue;
         if (!strcmp(mml_conf->target_hostname, nf_avail->hostname)) {
             find_httpc_host = 1;
-            httpc_host_avail = 1;
-            break;
+            if (nf_avail->available > 0) {
+                httpc_host_avail = 1;
+                break;
+            }
         }
 	}
 
@@ -26,7 +28,7 @@ void attach_mml_info_into_lb_shm(mml_conf_t *mml_conf, nf_service_info *nf_avail
 		if (nf_avail->occupied == 0) {
 			nf_avail->occupied = 1;
 			nf_avail->table_index = i;
-			nf_avail->lbId = lb_id + 1;
+			nf_avail->lbId = lb_id;
 			nf_avail->nfType = svc_mml->nfType;
 			memcpy(&nf_avail->nfTypeInfo, &svc_mml->nfTypeInfo, sizeof(nf_type_info));
 			nf_avail->allowdPlmnsNum = svc_mml->allowdPlmnsNum;
@@ -52,9 +54,12 @@ void attach_mml_info_into_shm(mml_conf_t *mml_conf, main_ctx_t *MAIN_CTX)
 	int prepare_pos = (MAIN_CTX->SHM_NFS_AVAIL->curr_pos + 1) % MAX_NFS_SHM_POS;
 	nf_list_shm_t *nf_avail_shm_prepare = &MAIN_CTX->SHM_NFS_AVAIL->nfs_avail_shm[prepare_pos];
 
-	for(int i = 0; i < NF_MAX_LB_NUM; i++) {
-		attach_mml_info_into_lb_shm(mml_conf, nf_avail_shm_prepare->nf_avail[i], i/* lb_id*/);
-	}
+    int lb_num = g_slist_length(MAIN_CTX->lb_assoc_list);
+    for (int i = 0; i < lb_num; i++) {
+        assoc_t *lb_assoc = g_slist_nth_data(MAIN_CTX->lb_assoc_list, i);
+        if (lb_assoc->id >=  1 && lb_assoc->id <= NF_MAX_LB_NUM)
+            attach_mml_info_into_lb_shm(mml_conf, nf_avail_shm_prepare->nf_avail[lb_assoc->id - 1], lb_assoc->id);
+    }
 }
 
 void add_shm_avail_count(main_ctx_t *MAIN_CTX)

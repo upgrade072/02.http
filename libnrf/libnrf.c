@@ -9,6 +9,19 @@ void def_sigaction()
     sigaction(SIGPIPE, &act, NULL);
 }
 
+int get_id_from_name(char *name)
+{
+    char *temp = strdup(name);
+
+    char *res = strlwr(temp, strlen(temp));
+    char last_char = res[strlen(res) - 1];
+    int num = isdigit(last_char) == 0 ? (last_char - 'a' + 1 ) : (last_char - '1' + 1); 
+
+    free(temp);
+
+	return num;
+}
+
 GSList *get_associate_node(GSList *node_assoc_list, const char *type_str)
 {
     /* remove all fep list (prepare for scale in/out) */
@@ -40,6 +53,8 @@ GSList *get_associate_node(GSList *node_assoc_list, const char *type_str)
             continue;
 
 		node_elem.index = index++; // 01234
+        node_elem.id = get_id_from_name(node_elem.name);
+
         /* re-arrange fep list */
         new_assoc = node_list_add_elem(new_assoc, &node_elem);
     }
@@ -62,6 +77,7 @@ int get_my_info(svr_info_t *my_info, const char *my_proc_name)
 
     /* MY LABEL NUM (FEPA =A=> 1, LB01 =1=> 1) */
 
+#if 0
     char temp_buff[1024] = { 0, };
     sprintf(temp_buff, getenv(MY_SYS_NAME));
 
@@ -69,6 +85,9 @@ int get_my_info(svr_info_t *my_info, const char *my_proc_name)
     char last_char = res[strlen(res) - 1];
 
 	my_info->myLabelNum = isdigit(last_char) == 0 ? (last_char - 'a' + 1 ) : (last_char - '1' + 1);
+#else
+	my_info->myLabelNum = get_id_from_name(getenv(MY_SYS_NAME));
+#endif
 
     /* MY SYS TYPE */
 
@@ -132,7 +151,8 @@ GSList *node_list_add_elem(GSList *node_assoc_list, assoc_t *node_elem)
 
 void node_assoc_log(assoc_t *node_elem)
 {
-    APPLOG(APPLOG_ERR, "{{{CHECK}}} node_elem (%s:%s:%s:%s) exist!",
+    APPLOG(APPLOG_ERR, "{{{CHECK}}} node_elem idx:%d id %d (%s:%s:%s:%s) exist!",
+            node_elem->index, node_elem->id,
             node_elem->name, node_elem->type, node_elem->group, node_elem->ip);
 }
 
