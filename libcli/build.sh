@@ -16,6 +16,8 @@ tar xvf V${VERSION}.tar.gz
 
 cd libcli-${VERSION}
 
+patch -p2 < ../diff.patch
+
 make
 ar -rc ./libcli.a ./libcli.o
 cp ./libcli.h ${ROOTDIR}/../build/include

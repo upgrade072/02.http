@@ -130,6 +130,9 @@ int     nf_search_specific_info(json_object *nf_profile, json_object **js_specif
 void    nf_get_specific_info(int nfType, json_object *js_specific_info, nf_type_info *nf_specific_info);
 void    nf_get_specific_info_udm(json_object *js_specific_info, nf_type_info *nf_specific_info);
 void    nf_get_specific_info_amf(json_object *js_specific_info, nf_type_info *nf_specific_info);
+void    nf_get_specific_info_udr(json_object *js_specific_info, nf_type_info *nf_specific_info);
+void    nf_get_specific_info_bsf(json_object *js_specific_info, nf_type_info *nf_specific_info);
+void    nf_get_specific_info_chf(json_object *js_specific_info, nf_type_info *nf_specific_info);
 int     nf_get_allowd_plmns(json_object *nf_profile, nf_comm_plmn *allowdPlmns);
 char    *nf_type_to_str(int nfType);
 int     nf_type_to_enum(char *type);

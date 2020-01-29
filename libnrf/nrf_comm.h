@@ -61,6 +61,29 @@ typedef struct  {
 	char end[22];
 } nf_comm_supi_range;
 
+// 2020.01.21 for ePCF
+// External Identifier or External Group Identifier or MSISDN
+typedef struct  {
+	char start[22];     //  ^([0-9]+$
+	char end[22];
+} nf_comm_identity_range;
+
+typedef struct  {
+	char start[20];     // e.g 192.168.70.1
+	char end[20];
+} nf_comm_ipv4_addr_range;
+
+typedef struct  {
+	char start[64];     // e.g 2001:db8:abcd:12::0/64
+	char end[64];
+} nf_comm_ipv6_prefix_range;
+
+typedef struct  {
+	char start[8];     // e.g [0-9]{3}[0-9]{2,3}$
+	char end[8];
+} nf_comm_plmn_range;
+
+
 #define NF_MAX_SUPI_RANGES			3
 #define NF_MAX_RI					5
 typedef struct {
@@ -97,9 +120,75 @@ typedef struct {
     // n2InterfaceAmfInfo ? (X)
 } nf_amf_info;
 
+/*
+ * 2020.01.21 for ePCF
+ * UDR
+ */
+#define NF_MAX_GPSI_RANGES				3
+#define NF_MAX_EXTERNAL_GRP_ID_RANGES	3
+typedef struct {
+	char groupId[27 + 1];   // '^[A-Fa-f0-9]{8}-[0-9]{3}-[0-9]{2,3}-([A-Fa-f0-9][A-Fa-f0-9]){1,10}$' 8-3-3-10
+
+	int supiRangesNum;
+	nf_comm_supi_range supiRanges[NF_MAX_SUPI_RANGES];
+
+	int gpsiRangesNum;
+	nf_comm_identity_range gpsiRanges[NF_MAX_GPSI_RANGES];
+
+	int externalGroupIdentifierRangesNum;
+	nf_comm_identity_range externalGrpIdRanges[NF_MAX_EXTERNAL_GRP_ID_RANGES];
+
+	char supportedDataSets[16]; // SUSCRIPTION, POLICY, EXPOSURE, APPLICATION
+} nf_udr_info;
+
+/*
+ * 2020.01.21 for ePCF
+ * BSF
+ */
+#define NF_MAX_IPV4_ADDR_RANGES			3
+#define NF_MAX_IPV6_PREFIX_RANGES		3
+#define NF_MAX_DNN_LIST_NUM				10
+#define NF_MAX_DNN_LEN					32
+#define NF_MAX_IP_DOMAIN_LIST_NUM		10
+#define NF_MAX_IP_DOMAIN_LEN			32
+typedef struct {
+	int ipv4AddressRangesNum;
+	nf_comm_ipv4_addr_range ipv4AddrRanges[NF_MAX_IPV4_ADDR_RANGES];
+
+	int ipv6PrefixRangesNum;
+	nf_comm_ipv6_prefix_range ipv6PrefixRanges[NF_MAX_IPV6_PREFIX_RANGES];
+
+	int dnnListNum;
+	char dnnList[NF_MAX_DNN_LIST_NUM][NF_MAX_DNN_LEN];
+	
+	int ipDomainListNum;
+	char ipDomainList[NF_MAX_IP_DOMAIN_LIST_NUM][NF_MAX_IP_DOMAIN_LEN];
+} nf_bsf_info;
+
+/*
+ * 2020.01.21 for ePCF
+ * CHF
+ */
+#define NF_MAX_PLMN_RANGES       		10
+typedef struct {
+	int supiRangesNum;
+	nf_comm_supi_range supiRanges[NF_MAX_SUPI_RANGES];
+
+	int gpsiRangesNum;
+	nf_comm_identity_range gpsiRanges[NF_MAX_GPSI_RANGES];
+
+	int plmnRangesNum;
+	nf_comm_plmn_range plmnRanges[NF_MAX_PLMN_RANGES];
+} nf_chf_info;
+
+
 typedef union {
 	nf_udm_info udmInfo;
 	nf_amf_info amfInfo;
+	// 2020.01.21 for ePCF
+	nf_udr_info udrInfo;
+	nf_bsf_info bsfInfo;
+	nf_chf_info chfInfo;
 } nf_type_info;
 
 #define NF_MAX_ALLOWD_PLMNS			3

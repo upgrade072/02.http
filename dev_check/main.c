@@ -12,10 +12,16 @@ int initialize(main_ctx_t *MAIN_CTX)
 	cli_set_hostname(MAIN_CTX->CLI_ROOT, "http_check");
 	cli_set_banner(MAIN_CTX->CLI_ROOT, "Welcome.\n This is http/2 dev check cli program");
 
+#ifdef LOG_LIB
+	char log_path[1024] = {0,};
+	sprintf(log_path, "%s/log/ERR_LOG/%s", getenv(IV_HOME), __progname);
+	initlog_for_loglib(__progname, log_path);
+#elif LOG_APP
 	/* log init */
 	char log_path[1024] = {0,};
 	sprintf(log_path, "%s/log", getenv(IV_HOME));
 	LogInit(__progname, log_path);
+#endif
 
 	return 0;
 }

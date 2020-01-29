@@ -1,7 +1,7 @@
 #include <libnrf_app.h>
 
 // handle_req : LB HTTPC 요청할 connection 정보 (자동 broadcasting)
-// NRFC_QID : NRFC 메시키 큐 ID
+// NRFC_QID : NRFC 메시지 큐 ID
 int http2_appl_api_to_httpc(http_conn_handle_req_t *handle_req, int NRFC_QID)
 {
 	int result = 0;
@@ -759,6 +759,19 @@ int nf_search_specific_info(json_object *nf_profile, json_object **js_specific_i
         char key_specific_info[128] = "amfInfo";
         *js_specific_info = search_json_object(nf_profile, key_specific_info);
         return NF_TYPE_AMF;
+	// 2020.01.21 for ePCF
+    } else if (!strcmp(nfType, "UDR")) {
+        char key_specific_info[128] = "udrInfo";
+        *js_specific_info = search_json_object(nf_profile, key_specific_info);
+        return NF_TYPE_UDR;
+    } else if (!strcmp(nfType, "BSF")) {
+        char key_specific_info[128] = "bsfInfo";
+        *js_specific_info = search_json_object(nf_profile, key_specific_info);
+        return NF_TYPE_BSF;
+    } else if (!strcmp(nfType, "CHF")) {
+        char key_specific_info[128] = "csfInfo";
+        *js_specific_info = search_json_object(nf_profile, key_specific_info);
+        return NF_TYPE_BSF;
     } else {
         *js_specific_info = NULL;
         return NF_TYPE_UNKNOWN;
@@ -771,6 +784,13 @@ void nf_get_specific_info(int nfType, json_object *js_specific_info, nf_type_inf
         nf_get_specific_info_udm(js_specific_info, nf_specific_info);
     } else if (nfType == NF_TYPE_AMF) {
         nf_get_specific_info_amf(js_specific_info, nf_specific_info);
+	// 2020.01.21 for ePCF
+    } else if (nfType == NF_TYPE_UDR) {
+        nf_get_specific_info_udr(js_specific_info, nf_specific_info);
+    } else if (nfType == NF_TYPE_BSF) {
+        nf_get_specific_info_bsf(js_specific_info, nf_specific_info);
+    } else if (nfType == NF_TYPE_CHF) {
+        nf_get_specific_info_chf(js_specific_info, nf_specific_info);
     }
 }
 
@@ -880,6 +900,223 @@ void nf_get_specific_info_amf(json_object *js_specific_info, nf_type_info *nf_sp
                 sprintf(amfInfo->nf_guami[i].plmnId, "%.6s", json_object_get_string(js_plmnId));
             if (js_amfId)
                 sprintf(amfInfo->nf_guami[i].amfId, "%.6s", json_object_get_string(js_amfId));
+        }
+    }
+}
+
+// 2020.01.21 for ePCF
+void nf_get_specific_info_udr(json_object *js_specific_info, nf_type_info *nf_specific_info)
+{
+    nf_udr_info *udrInfo = &nf_specific_info->udrInfo;
+        
+    /* group Id */
+    char key_groupId[128] = "groupId";
+    json_object *js_group_id = search_json_object(js_specific_info, key_groupId);
+    if (js_group_id)
+        sprintf(udrInfo->groupId, "%.27s", json_object_get_string(js_group_id));
+
+    /* supiRanges */
+    char key_supi_ranges[128] = "supiRanges";
+    json_object *js_supi_ranges = search_json_object(js_specific_info, key_supi_ranges);
+    if (js_supi_ranges) {
+        udrInfo->supiRangesNum = (json_object_array_length(js_supi_ranges) > NF_MAX_SUPI_RANGES) ?
+            NF_MAX_SUPI_RANGES : json_object_array_length(js_supi_ranges);
+        for (int i = 0; i < udrInfo->supiRangesNum; i++) {
+            json_object *js_supi_elem = json_object_array_get_idx(js_supi_ranges, i);
+            char key_start[128] = "start";
+            char key_end[128] = "end";
+            json_object *js_start = search_json_object(js_supi_elem, key_start);
+            json_object *js_end = search_json_object(js_supi_elem, key_end);
+            if (js_start)
+                sprintf(udrInfo->supiRanges[i].start, "%.21s", json_object_get_string(js_start));
+            if (js_end)
+                sprintf(udrInfo->supiRanges[i].end, "%.21s", json_object_get_string(js_end));
+        }
+    }
+    
+    /* gpsiRanges */
+    char key_gpsi_ranges[128] = "gpsiRanges";
+    json_object *js_gpsi_ranges = search_json_object(js_specific_info, key_gpsi_ranges);
+    if (js_gpsi_ranges) {
+        udrInfo->gpsiRangesNum = (json_object_array_length(js_gpsi_ranges) > NF_MAX_GPSI_RANGES) ?
+            NF_MAX_GPSI_RANGES : json_object_array_length(js_gpsi_ranges);
+        for (int i = 0; i < udrInfo->gpsiRangesNum; i++) {
+            json_object *js_gpsi_elem = json_object_array_get_idx(js_gpsi_ranges, i);
+            char key_start[128] = "start";
+            char key_end[128] = "end";
+            json_object *js_start = search_json_object(js_gpsi_elem, key_start);
+            json_object *js_end = search_json_object(js_gpsi_elem, key_end);
+            if (js_start)
+                sprintf(udrInfo->gpsiRanges[i].start, "%.21s", json_object_get_string(js_start));
+            if (js_end)
+                sprintf(udrInfo->gpsiRanges[i].end, "%.21s", json_object_get_string(js_end));
+        }
+    }
+
+    /* externalGroupIdentifierRanges */
+    char key_external_grp_id_ranges[128] = "externalGroupIdentifiersRanges";
+    json_object *js_external_grp_id_ranges = search_json_object(js_specific_info, key_external_grp_id_ranges);
+    if (js_external_grp_id_ranges) {
+        udrInfo->externalGroupIdentifierRangesNum = (json_object_array_length(js_external_grp_id_ranges) > NF_MAX_EXTERNAL_GRP_ID_RANGES) ?
+            NF_MAX_EXTERNAL_GRP_ID_RANGES : json_object_array_length(js_external_grp_id_ranges);
+        for (int i = 0; i < udrInfo->externalGroupIdentifierRangesNum; i++) {
+            json_object *js_external_grp_id_elem = json_object_array_get_idx(js_external_grp_id_ranges, i);
+            char key_start[128] = "start";
+            char key_end[128] = "end";
+            json_object *js_start = search_json_object(js_external_grp_id_elem, key_start);
+            json_object *js_end = search_json_object(js_external_grp_id_elem, key_end);
+            if (js_start)
+                sprintf(udrInfo->externalGrpIdRanges[i].start, "%.21s", json_object_get_string(js_start));
+            if (js_end)
+                sprintf(udrInfo->externalGrpIdRanges[i].end, "%.21s", json_object_get_string(js_end));
+        }
+    }
+
+    /* supportedDataSets */
+    char key_supportedDataSets[128] = "supportedDataSets";
+    json_object *js_supported_data_set = search_json_object(js_specific_info, key_supportedDataSets);
+    if (js_supported_data_set) {
+        sprintf(udrInfo->supportedDataSets, "%s", json_object_get_string(js_supported_data_set));
+	}
+}
+
+// 2020.01.21 for ePCF
+void nf_get_specific_info_bsf(json_object *js_specific_info, nf_type_info *nf_specific_info)
+{
+    nf_bsf_info *bsfInfo = &nf_specific_info->bsfInfo;
+        
+    /* ipv4AddrRanges */
+    char key_ipv4_addr_ranges[128] = "ipv4AddressRanges";
+    json_object *js_ipv4_addr_ranges = search_json_object(js_specific_info, key_ipv4_addr_ranges);
+    if (js_ipv4_addr_ranges) {
+        bsfInfo->ipv4AddressRangesNum = (json_object_array_length(js_ipv4_addr_ranges) > NF_MAX_IPV4_ADDR_RANGES) ?
+            NF_MAX_IPV4_ADDR_RANGES : json_object_array_length(js_ipv4_addr_ranges);
+        for (int i = 0; i < bsfInfo->ipv4AddressRangesNum; i++) {
+            json_object *js_ipv4_addr_elem = json_object_array_get_idx(js_ipv4_addr_ranges, i);
+            char key_start[128] = "start";
+            char key_end[128] = "end";
+            json_object *js_start = search_json_object(js_ipv4_addr_elem, key_start);
+            json_object *js_end = search_json_object(js_ipv4_addr_elem, key_end);
+            if (js_start)
+                sprintf(bsfInfo->ipv4AddrRanges[i].start, "%s", json_object_get_string(js_start));
+            if (js_end)
+                sprintf(bsfInfo->ipv4AddrRanges[i].end, "%s", json_object_get_string(js_end));
+        }
+    }
+    
+    /* ipv6PrefixRanges */
+    char key_ipv6_prefix_ranges[128] = "ipv6PrefixRanges";
+    json_object *js_ipv6_prefix_ranges = search_json_object(js_specific_info, key_ipv6_prefix_ranges);
+    if (js_ipv6_prefix_ranges) {
+        bsfInfo->ipv6PrefixRangesNum = (json_object_array_length(js_ipv6_prefix_ranges) > NF_MAX_IPV6_PREFIX_RANGES) ?
+            NF_MAX_IPV6_PREFIX_RANGES : json_object_array_length(js_ipv6_prefix_ranges);
+        for (int i = 0; i < bsfInfo->ipv6PrefixRangesNum; i++) {
+            json_object *js_ipv6_prefix_elem = json_object_array_get_idx(js_ipv6_prefix_ranges, i);
+            char key_start[128] = "start";
+            char key_end[128] = "end";
+            json_object *js_start = search_json_object(js_ipv6_prefix_elem, key_start);
+            json_object *js_end = search_json_object(js_ipv6_prefix_elem, key_end);
+            if (js_start)
+                sprintf(bsfInfo->ipv6PrefixRanges[i].start, "%s", json_object_get_string(js_start));
+            if (js_end)
+                sprintf(bsfInfo->ipv6PrefixRanges[i].end, "%s", json_object_get_string(js_end));
+        }
+    }
+    
+#if 0 // please check syntax for dnnList and ipDomainList
+    /* dnnList */
+    char key_dnn_list[128] = "dnnList";
+    json_object *js_dnn_list = search_json_object(js_specific_info, key_dnn_list);
+    if (js_dnn_list) {
+        bsfInfo->dnnListNum = (json_object_array_length(js_dnn_list) > NF_MAX_DNN_LIST_NUM) ?
+            NF_MAX_DNN_LIST_NUM : json_object_array_length(js_dnn_list);
+        for (int i = 0; i < bsfInfo->dnnListNum; i++) {
+            json_object *js_dnn_list_elem = json_object_array_get_idx(js_dnn_list, i);
+            char key_dnn[128] = "dnn";
+            json_object *js_dnn = search_json_object(js_dnn_list_elem, key_dnn);
+            if (js_dnn) {
+                sprintf(bsfInfo->dnnList[i], "%s", json_object_get_string(js_dnn));
+			}
+        }
+    }
+    
+    /* ipDomainList */
+    char key_ip_domain_list[128] = "ipDomainList";
+    json_object *js_ip_domain_list = search_json_object(js_specific_info, key_ip_domain_list);
+    if (js_ip_domain_list) {
+        bsfInfo->ipDomainListNum = (json_object_array_length(js_ip_domain_list) > NF_MAX_IP_DOMAIN_LIST_NUM) ?
+            NF_MAX_IP_DOMAIN_LIST_NUM : json_object_array_length(js_ip_domain_list);
+        for (int i = 0; i < bsfInfo->ipDomainListNum; i++) {
+            json_object *js_ip_domain_list_elem = json_object_array_get_idx(js_ip_domain_list, i);
+            char key_ipDomain[128] = "ipDomain";
+            json_object *js_ipDomain = search_json_object(js_ip_domain_list_elem, key_ipDomain);
+            if (js_ipDomain) {
+                sprintf(bsfInfo->ipDomainList[i], "%s", json_object_get_string(js_ipDomain));
+			}
+        }
+    }
+#endif
+}
+
+// 2020.01.21 for ePCF
+void nf_get_specific_info_chf(json_object *js_specific_info, nf_type_info *nf_specific_info)
+{
+    nf_chf_info *chfInfo = &nf_specific_info->chfInfo;
+        
+    /* supiRanges */
+    char key_supi_ranges[128] = "supiRanges";
+    json_object *js_supi_ranges = search_json_object(js_specific_info, key_supi_ranges);
+    if (js_supi_ranges) {
+        chfInfo->supiRangesNum = (json_object_array_length(js_supi_ranges) > NF_MAX_SUPI_RANGES) ?
+            NF_MAX_SUPI_RANGES : json_object_array_length(js_supi_ranges);
+        for (int i = 0; i < chfInfo->supiRangesNum; i++) {
+            json_object *js_supi_elem = json_object_array_get_idx(js_supi_ranges, i);
+            char key_start[128] = "start";
+            char key_end[128] = "end";
+            json_object *js_start = search_json_object(js_supi_elem, key_start);
+            json_object *js_end = search_json_object(js_supi_elem, key_end);
+            if (js_start)
+                sprintf(chfInfo->supiRanges[i].start, "%.21s", json_object_get_string(js_start));
+            if (js_end)
+                sprintf(chfInfo->supiRanges[i].end, "%.21s", json_object_get_string(js_end));
+        }
+    }
+    
+    /* gpsiRanges */
+    char key_gpsi_ranges[128] = "gpsiRanges";
+    json_object *js_gpsi_ranges = search_json_object(js_specific_info, key_gpsi_ranges);
+    if (js_gpsi_ranges) {
+        chfInfo->gpsiRangesNum = (json_object_array_length(js_gpsi_ranges) > NF_MAX_GPSI_RANGES) ?
+            NF_MAX_GPSI_RANGES : json_object_array_length(js_gpsi_ranges);
+        for (int i = 0; i < chfInfo->gpsiRangesNum; i++) {
+            json_object *js_gpsi_elem = json_object_array_get_idx(js_gpsi_ranges, i);
+            char key_start[128] = "start";
+            char key_end[128] = "end";
+            json_object *js_start = search_json_object(js_gpsi_elem, key_start);
+            json_object *js_end = search_json_object(js_gpsi_elem, key_end);
+            if (js_start)
+                sprintf(chfInfo->gpsiRanges[i].start, "%.21s", json_object_get_string(js_start));
+            if (js_end)
+                sprintf(chfInfo->gpsiRanges[i].end, "%.21s", json_object_get_string(js_end));
+        }
+    }
+
+    /* plmnRanges */
+    char key_plmn_ranges[128] = "plmnRanges";
+    json_object *js_plmn_ranges = search_json_object(js_specific_info, key_plmn_ranges);
+    if (js_plmn_ranges) {
+        chfInfo->plmnRangesNum = (json_object_array_length(js_plmn_ranges) > NF_MAX_PLMN_RANGES) ?
+            NF_MAX_PLMN_RANGES : json_object_array_length(js_plmn_ranges);
+        for (int i = 0; i < chfInfo->plmnRangesNum; i++) {
+            json_object *js_plmn_elem = json_object_array_get_idx(js_plmn_ranges, i);
+            char key_start[128] = "start";
+            char key_end[128] = "end";
+            json_object *js_start = search_json_object(js_plmn_elem, key_start);
+            json_object *js_end = search_json_object(js_plmn_elem, key_end);
+            if (js_start)
+                sprintf(chfInfo->plmnRanges[i].start, "%s", json_object_get_string(js_start));
+            if (js_end)
+                sprintf(chfInfo->plmnRanges[i].end, "%s", json_object_get_string(js_end));
         }
     }
 }
