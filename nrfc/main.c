@@ -299,6 +299,7 @@ int initialize(main_ctx_t *MAIN_CTX)
 	}
 
 	/* create nfs avail shared memory */
+#if 0
 	if (MAIN_CTX->sysconfig.nfs_shm_create == 1 && create_nfs_avail_shm(MAIN_CTX) < 0) {
         APPLOG(APPLOG_ERR, "{{{INIT}}} fail to create nfs avail shared mem, proc down");
         return -1;
@@ -306,6 +307,16 @@ int initialize(main_ctx_t *MAIN_CTX)
         APPLOG(APPLOG_ERR, "{{{INIT}}} clear NFS SHM");
         memset(MAIN_CTX->SHM_NFS_AVAIL, 0x00, sizeof(nfs_avail_shm_t));
     }
+#else
+    if (MAIN_CTX->sysconfig.nfs_shm_create == 1) {
+        if (create_nfs_avail_shm(MAIN_CTX) < 0) {
+            APPLOG(APPLOG_ERR, "{{{INIT}}} fail to create nfs avail shared mem, proc down");
+            return -1;
+        }
+        APPLOG(APPLOG_ERR, "{{{INIT}}} clear NFS SHM");
+        memset(MAIN_CTX->SHM_NFS_AVAIL, 0x00, sizeof(nfs_avail_shm_t));
+    }
+#endif
 
     return 0;
 }

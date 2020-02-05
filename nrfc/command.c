@@ -733,6 +733,9 @@ int func_del_nf_mml(IxpcQMsgType *rxIxpcMsg)
 
 void send_conn_req_profile(assoc_t *lb_assoc, nf_disc_host_info *nf_host_info)
 {
+    if (lb_assoc->index != nf_host_info->lbIndex)
+        return;
+
     IsifMsgType txIsifMsg = {0,};
 
     nf_host_info->mtype = LIBNRF_MSG_ADD_NF_PROFILE;

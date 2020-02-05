@@ -252,6 +252,7 @@ nf_service_info *nf_discover_result(nf_discover_local_res *result_cache, nf_disc
 				nf_disc_host_info *hostInfo = nf_discover_search_node_by_hostname(&DISC_TABLE->root_node, discover_info->hostname);
 
 				if (hostInfo != NULL && hostInfo->requested == 0 && NRFC_QID > 0) {
+                    hostInfo->lbIndex = lbIndex;
 					hostInfo->requested = 1;
 					if (msgsnd(NRFC_QID, hostInfo, NF_DISC_HOSTINFO_LEN(hostInfo), IPC_NOWAIT) < 0) {
 						APPLOG(APPLOG_ERR, "(%s) fail to send nfProfile[%s/%s] to NRFC",
