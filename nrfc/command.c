@@ -759,7 +759,7 @@ void send_conn_handle_req(assoc_t *lb_assoc, http_conn_handle_req_t *handle_req)
 void check_and_send_conn_req(assoc_t *lb_assoc, http_conn_handle_req_t *handle_req)
 {
 	if (MAIN_CTX.root_node == NULL) {
-		APPLOG(APPLOG_ERR, "%s() cant handle req, SHM_NFS_AVAIL is null");
+		APPLOG(APPLOG_ERR, "%s() cant handle req, SHM_NFS_AVAIL is null", __func__);
 		return;
 	}
 

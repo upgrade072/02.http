@@ -441,8 +441,16 @@ void service_status_broadcast(evutil_socket_t fd, short what, void *arg)
 {
 	/* collect each service info */
 	g_slist_foreach(MAIN_CTX.my_service_list, (GFunc)collect_service_status, NULL);
-	/* send service info to each lb */
-	g_slist_foreach(MAIN_CTX.lb_assoc_list, (GFunc)broad_status_to_lb, NULL);
+
+    if (MAIN_CTX.sysconfig.isifcs_mode == 1) {
+		/* send service info to each lb */
+        g_slist_foreach(MAIN_CTX.lb_assoc_list, (GFunc)broad_status_to_lb, NULL);
+    } else {
+		/* send service info to local NRFM */
+        assoc_t lb_assoc = {0,};
+        memset(&lb_assoc, 0x00, sizeof(assoc_t));
+        g_slist_foreach(MAIN_CTX.my_service_list, (GFunc)send_status_to_lb, &lb_assoc);
+    }
 }
 
 void start_loop(main_ctx_t *MAIN_CTX)
@@ -474,7 +482,9 @@ void start_loop(main_ctx_t *MAIN_CTX)
 	event_add(ev_shmq, &tm_milisec);
 
 	/* start watching ~/data directory */
-	start_watching_dir(MAIN_CTX->EVBASE);
+    if (MAIN_CTX->sysconfig.isifcs_mode == 1) {
+        start_watching_dir(MAIN_CTX->EVBASE);
+    }
 
     /* start loop */
     event_base_loop(MAIN_CTX->EVBASE, EVLOOP_NO_EXIT_ON_EMPTY);

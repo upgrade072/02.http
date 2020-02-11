@@ -1265,7 +1265,11 @@ void initialize()
 
 	keepalivelib_init(myProcName);
 
-#ifdef LOG_APP
+#ifdef LOG_LIB
+	char log_path[1024] = {0,};
+	sprintf(log_path, "%s/log/ERR_LOG/%s", getenv(IV_HOME), myProcName);
+	initlog_for_loglib(myProcName, log_path);
+#elif LOG_APP
     char log_path[1024] = {0,};
     sprintf(log_path, "%s/log", getenv(IV_HOME));
     LogInit(myProcName, log_path);
