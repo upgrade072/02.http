@@ -758,14 +758,20 @@ void send_conn_handle_req(assoc_t *lb_assoc, http_conn_handle_req_t *handle_req)
 
 void check_and_send_conn_req(assoc_t *lb_assoc, http_conn_handle_req_t *handle_req)
 {
+	// if shm not exist also there is no node tree, we can't handle
+	if (MAIN_CTX.sysconfig.nfs_shm_create == 0) {
+		send_conn_handle_req(lb_assoc, handle_req);
+		return;
+	}
+
 	if (MAIN_CTX.root_node == NULL) {
 		APPLOG(APPLOG_ERR, "%s() cant handle req, SHM_NFS_AVAIL is null", __func__);
 		return;
 	}
-
 	nf_search_key_t key = {0,};
 	memset(&key, 0x00, sizeof(nf_search_key_t));
-	create_cb_depth_key(&key, lb_assoc->index, handle_req); // TODO index mismatch check
+
+	create_cb_depth_key(&key, lb_assoc->index, handle_req);
 
 	GNode *node_conn = search_node_data(MAIN_CTX.root_node, &key, NF_NODE_DATA_DEPTH);
 
@@ -780,14 +786,27 @@ void check_and_send_conn_req(assoc_t *lb_assoc, http_conn_handle_req_t *handle_r
 
 void handle_appl_req_with_profile(main_ctx_t *MAIN_CTX, nf_disc_host_info *nf_host_info)
 {
-    g_slist_foreach(MAIN_CTX->lb_assoc_list, (GFunc)send_conn_req_profile, nf_host_info);
+	if (MAIN_CTX->sysconfig.isifcs_mode == 1) {
+		g_slist_foreach(MAIN_CTX->lb_assoc_list, (GFunc)send_conn_req_profile, nf_host_info);
+	} else {
+		assoc_t lb_assoc = {0,};
+		memset(&lb_assoc, 0x00, sizeof(assoc_t));
+		send_conn_req_profile(&lb_assoc, nf_host_info);
+	}
 }
 
 void handle_appl_req_with_cbinfo(main_ctx_t *MAIN_CTX, http_conn_handle_req_t *handle_req)
 {
-	g_slist_foreach(MAIN_CTX->lb_assoc_list, (GFunc)check_and_send_conn_req, handle_req);
+	if (MAIN_CTX->sysconfig.isifcs_mode == 1) {
+		g_slist_foreach(MAIN_CTX->lb_assoc_list, (GFunc)check_and_send_conn_req, handle_req);
+	} else {
+		assoc_t lb_assoc = {0,};
+		memset(&lb_assoc, 0x00, sizeof(assoc_t));
+		check_and_send_conn_req(&lb_assoc, handle_req);
+	}
 }
 
+char KEY_EMPTY_PTR[12] = {0,};
 void create_cb_depth_key(nf_search_key_t *key, int lb_index, http_conn_handle_req_t *handle_req)
 {
 	key->depth = 0;
@@ -796,11 +815,8 @@ void create_cb_depth_key(nf_search_key_t *key, int lb_index, http_conn_handle_re
 	key->nf_type = handle_req->type;
 	key->nf_host = handle_req->host;
 
-#if 1
-	char empty_ptr[12] = {0,};
-	empty_ptr[0] = '\0';
-	key->nf_svcname = empty_ptr;
-#endif
+	KEY_EMPTY_PTR[0] = '\0';
+	key->nf_svcname = KEY_EMPTY_PTR;
 
 	sprintf(key->nf_conn_info, "%s%s://%s:%d",
 			handle_req->scheme, !strcmp(handle_req->scheme, "https") ? "" : "-", handle_req->ip, handle_req->port);
