@@ -467,7 +467,7 @@ void start_loop(main_ctx_t *MAIN_CTX)
 	struct event *ev_send_status = event_new(MAIN_CTX->EVBASE, -1, EV_PERSIST, service_status_broadcast, NULL);
     event_add(ev_send_status, &tic_sec);
 
-    if (MAIN_CTX->sysconfig.nfs_shm_create) {
+    if (MAIN_CTX->sysconfig.nfs_shm_create == 1) {
         struct event *ev_clear_status = event_new(MAIN_CTX->EVBASE, -1, EV_PERSIST, clear_fep_nfs, NULL);
         event_add(ev_clear_status, &tic_sec);
     }

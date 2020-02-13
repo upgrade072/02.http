@@ -125,7 +125,13 @@ void nf_manage_broadcast_nfs_to_fep(main_ctx_t *MAIN_CTX, nf_list_pkt_t *my_avai
 		nf_info->lastIndex = (my_avail_nfs->nf_avail_num - 1);
 
 		/* broad cast to fep */
-		g_slist_foreach(MAIN_CTX->fep_assoc_list, (GFunc)nf_manage_send_nfs_status_to_fep, nf_info);
+		if (MAIN_CTX->sysconfig.isifcs_mode == 1) {
+			g_slist_foreach(MAIN_CTX->fep_assoc_list, (GFunc)nf_manage_send_nfs_status_to_fep, nf_info);
+		} else {
+			assoc_t fep_assoc = {0,};
+			memset(&fep_assoc, 0x00, sizeof(assoc_t));
+			nf_manage_send_nfs_status_to_fep(&fep_assoc, nf_info);
+		}
 	}
 }
 
