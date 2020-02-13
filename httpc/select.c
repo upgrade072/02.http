@@ -21,11 +21,24 @@ conn_list_t *find_nrfm_inf_dest(AhifHttpCSMsgType *ahifPkt)
 		if (conn_list->conn != CN_CONNECTED)
 			continue;
 
-		if (!strcmp(conn_list->type, ahifPkt->head.destType) &&
-				!strcmp(conn_list->scheme, ahifPkt->head.scheme)) {
-			LAST_INDEX_FOR_NRFM = (index + 1); //move forward
-			return conn_list;
-		}
+        /* if Regi Request, select HTTPS://(type-NRF) */
+        if (ahifPkt->head.mtype == MTYPE_NRFM_REGI_REQUEST) {
+            if (!strcmp(conn_list->scheme, ahifPkt->head.scheme) &&
+                    !strcmp(conn_list->type, ahifPkt->head.destType)) {
+                LAST_INDEX_FOR_NRFM = (index + 1); //move forward
+                return conn_list;
+            }
+        } else {
+        /* else (after Regi), check full */
+            if (!strcmp(conn_list->scheme, ahifPkt->head.scheme) &&
+                    !strcmp(conn_list->type, ahifPkt->head.destType) &&
+                    !strcmp(conn_list->host, ahifPkt->head.destHost) &&
+                    !strcmp(conn_list->ip, ahifPkt->head.destIp) &&
+                    (conn_list->port ==  ahifPkt->head.destPort)) {
+                LAST_INDEX_FOR_NRFM = (index + 1); //move forward
+                return conn_list;
+            }
+        }
     }
 	return NULL;
 }
