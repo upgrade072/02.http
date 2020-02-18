@@ -5,7 +5,7 @@ extern main_ctx_t MAIN_CTX;
 void write_cfg(main_ctx_t *MAIN_CTX)
 {
 	char conf_path[1024] = {0,};
-	sprintf(conf_path,"%s/data/nrfc.cfg", getenv(IV_HOME));
+	sprintf(conf_path,"%s/data/STACK/HTTP/nrfc.cfg", getenv(IV_HOME));
 
     // save with indent
     config_set_tab_width(&MAIN_CTX->CFG, 4);
