@@ -251,15 +251,24 @@ nf_service_info *nf_discover_result(nf_discover_local_res *result_cache, nf_disc
 				/* if not exist create node */
 				nf_disc_host_info *hostInfo = nf_discover_search_node_by_hostname(&DISC_TABLE->root_node, discover_info->hostname);
 
-				if (hostInfo != NULL && hostInfo->requested == 0 && NRFC_QID > 0) {
+                if (hostInfo == NULL) {
+                    APPLOG(APPLOG_DEBUG, "(%s) fail to request cuz hostInfo == NULL", __func__);
+                } else if (hostInfo->requested[lbIndex] != 0) {
+                    APPLOG(APPLOG_DEBUG, "(%s) fail to request cuz already requested(%d) for lbIndex(%d)", 
+                        __func__, hostInfo->requested[lbIndex], lbIndex);
+                } else if (NRFC_QID <= 0) {
+                    APPLOG(APPLOG_DEBUG, "(%s) fail to request cuz NRFC_QID (%d) <= 0", __func__, NRFC_QID);
+                }
+
+				if (hostInfo != NULL && hostInfo->requested[lbIndex] == 0 && NRFC_QID > 0) {
                     hostInfo->lbIndex = lbIndex;
-					hostInfo->requested = 1;
+					hostInfo->requested[lbIndex] = 1;
 					if (msgsnd(NRFC_QID, hostInfo, NF_DISC_HOSTINFO_LEN(hostInfo), IPC_NOWAIT) < 0) {
 						APPLOG(APPLOG_ERR, "(%s) fail to send nfProfile[%s/%s] to NRFC",
 								__func__, discover_info->serviceName, discover_info->hostname);
 					}
-				}
-			}
+                }
+            }
 		}
 	}
 
@@ -731,7 +740,7 @@ void nf_discover_remove_expired_node(GNode **root)
         nf_disc_host_info *host_info = (nf_disc_host_info *)nth_child->data;
 
         // 2. reset requested info
-        host_info->requested = 0;
+        memset(host_info->requested, 0x00, sizeof(host_info->requested));
 
         // 3. if expired remove node 
         if (host_info->validityPeriod < current) {

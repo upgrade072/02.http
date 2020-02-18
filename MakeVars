@@ -1,6 +1,5 @@
-
 ### TARGET : eir, vgmlc, epcc, lmf
-TARGET      = epcc
+TARGET      = vgmlc
 
 CFLAGS      = -std=gnu99 -g -m64 -Wall -DHOLDSESS  -Wno-unused-label -Wno-missing-braces
 INC_PATH    = -I. -I../../../include -I../../../libsrc/COMM -I../build/include

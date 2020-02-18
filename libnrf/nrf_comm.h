@@ -260,7 +260,7 @@ typedef struct {
 
     //--------- info ---------//
     time_t validityPeriod;                          /* NOW + remain time sec */
-    int requested;                                  /* send request only 1 times per sec */
+    int requested[NF_MAX_LB_NUM];                   /* send request only 1 times per sec */
 } nf_disc_host_info;
 #define NF_DISC_HOSTINFO_LEN(a) (sizeof(a->mtype) + sizeof(a->lbIndex) + sizeof(a->nfType) + sizeof(a->hostname) + sizeof(a->profile_length) + a->profile_length)
 
