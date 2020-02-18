@@ -251,7 +251,7 @@ void fep_service_log(fep_service_t *svc_elem)
 int init_cfg(config_t *CFG)
 {
 	char conf_path[1024] = {0,};
-	sprintf(conf_path,"%s/data/nrfm.cfg", getenv(IV_HOME));
+	sprintf(conf_path,"%s/data/STACK/HTTP/nrfm.cfg", getenv(IV_HOME));
 	if (!config_read_file(CFG, conf_path)) {
 		fprintf(stderr, "config read fail! (%s|%d - %s)\n",
 				config_error_file(CFG),

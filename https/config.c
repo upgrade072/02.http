@@ -18,7 +18,7 @@ int init_cfg()
     if ((env = getenv(IV_HOME)) == NULL) {
         sprintf(CONFIG_PATH, "./%s",  CF_SERVER_CONF);
     } else {
-        sprintf(CONFIG_PATH, "%s/data/%s", env, CF_SERVER_CONF);
+        sprintf(CONFIG_PATH, "%s/data/STACK/HTTP/%s", env, CF_SERVER_CONF);
     }
     
     /* read config file */
@@ -373,7 +373,7 @@ int config_load()
 		APPLOG(APPLOG_ERR, "{{{CFG}}} cert file cfg not exist!");
         goto CF_LOAD_ERR;
     } else {
-		sprintf(SERVER_CONF.cert_file, "%s/data/%s", getenv(IV_HOME), str);
+		sprintf(SERVER_CONF.cert_file, "%s/data/STACK/HTTP/%s", getenv(IV_HOME), str);
 		if (access(SERVER_CONF.cert_file, F_OK) < 0) {
 			APPLOG(APPLOG_ERR, "{{{CFG}}} cert file[%s] is not exist!", SERVER_CONF.cert_file);
 			goto CF_LOAD_ERR;
@@ -386,7 +386,7 @@ int config_load()
 		APPLOG(APPLOG_ERR, "{{{CFG}}} key file cfg not exist!");
         goto CF_LOAD_ERR;
     } else {
-		sprintf(SERVER_CONF.key_file, "%s/data/%s", getenv(IV_HOME), str);
+		sprintf(SERVER_CONF.key_file, "%s/data/STACK/HTTP/%s", getenv(IV_HOME), str);
 		if (access(SERVER_CONF.key_file, F_OK) < 0) {
 			APPLOG(APPLOG_ERR, "{{{CFG}}} key file[%s] is not exist!", SERVER_CONF.key_file);
 			goto CF_LOAD_ERR;

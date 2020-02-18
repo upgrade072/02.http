@@ -20,7 +20,7 @@ int init_cfg()
     if ((env = getenv(IV_HOME)) == NULL) {
         sprintf(CONFIG_PATH, "./%s",  CF_CLIENT_CONF);
     } else {
-        sprintf(CONFIG_PATH, "%s/data/%s", env, CF_CLIENT_CONF);
+        sprintf(CONFIG_PATH, "%s/data/STACK/HTTP/%s", env, CF_CLIENT_CONF);
     }
 
     /* read config file */
