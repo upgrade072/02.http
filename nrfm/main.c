@@ -513,7 +513,9 @@ void start_loop(main_ctx_t *MAIN_CTX)
 	event_add(ev_shmq, &tm_milisec);
 
 	/* start watching ~/data directory */
-	start_watching_dir(MAIN_CTX->EVBASE);
+	if (MAIN_CTX->sysconfig.isifcs_mode == 1) {
+		start_watching_dir(MAIN_CTX->EVBASE);
+	}
 
 	/* start trigger */
 	nf_regi_init_proc(MAIN_CTX);
