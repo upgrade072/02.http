@@ -21,10 +21,14 @@ conn_list_t *find_nrfm_inf_dest(AhifHttpCSMsgType *ahifPkt)
 		if (conn_list->conn != CN_CONNECTED)
 			continue;
 
-        /* if Regi Request, select HTTPS://(type-NRF) */
         if (ahifPkt->head.mtype == MTYPE_NRFM_REGI_REQUEST) {
+#if 0
+            /* if Regi Request, select HTTPS://(type-NRF) */
             if (!strcmp(conn_list->scheme, ahifPkt->head.scheme) &&
                     !strcmp(conn_list->type, ahifPkt->head.destType)) {
+#else
+            if (!strcmp(conn_list->type, ahifPkt->head.destType)) {
+#endif
                 LAST_INDEX_FOR_NRFM = (index + 1); //move forward
                 return conn_list;
             }
