@@ -1058,6 +1058,7 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 					/* legacy session expired and new one already created case */
 					APPLOG(APPLOG_DEBUG, "%s():%d timeout case) get_session(id:%d) fail", __func__, __LINE__, session_id);
 				} else {
+                    log_pkt_httpc_reset(httpc_ctx);
 					/* it's same session and alive, send reset */
 					nghttp2_submit_rst_stream(session_data->session, NGHTTP2_FLAG_NONE,
 							httpc_ctx->stream.stream_id,

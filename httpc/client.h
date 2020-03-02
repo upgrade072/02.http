@@ -298,6 +298,7 @@ void    log_pkt_send(char *prefix, nghttp2_nv *hdrs, int hdrs_len, char *body, i
 void    log_pkt_head_recv(httpc_ctx_t *httpc_ctx, const uint8_t *name, size_t namelen, const uint8_t *value, size_t valuelen);
 void    log_pkt_end_stream(int stream_id, httpc_ctx_t *httpc_ctx);
 void	log_pkt_httpc_error_reply(httpc_ctx_t *httpc_ctx, int resp_code);
+void    log_pkt_httpc_reset(httpc_ctx_t *httpc_ctx);
 
 /* ------------------------- client.c --------------------------- */
 int     send_request(http2_session_data_t *session_data, int thrd_index, int ctx_id);

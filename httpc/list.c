@@ -347,3 +347,17 @@ void log_pkt_httpc_error_reply(httpc_ctx_t *httpc_ctx, int resp_code)
 ==================================================================================================\n",
 	httpc_ctx->user_ctx.head.ahifCid, resp_code);
 }
+
+void log_pkt_httpc_reset(httpc_ctx_t *httpc_ctx)
+{
+	if (CLIENT_CONF.pkt_log != 1)
+		return;
+
+	APPLOG(APPLOG_ERR, "{{{PKT}}} HTTPC RESET STREAM http sess/stream(%d:%d) ahifCid(%d)]\n\
+--------------------------------------------------------------------------------------------------\n\
+STREAM RESET SENDED\n\
+==================================================================================================\n",
+	httpc_ctx->session_id, 
+	httpc_ctx->stream.stream_id, 
+	httpc_ctx->user_ctx.head.ahifCid);
+}
