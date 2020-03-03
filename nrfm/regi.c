@@ -32,7 +32,7 @@ void nf_regi_create_pkt(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ahifPkt)
 			__func__, head->ahifCid, MAIN_CTX->regi_ctx.seqNo);
 
 	/* scheme / method / rsrcUri */
-	sprintf(head->scheme, "%s", "https"); // WE MUST USE TLS
+	//sprintf(head->scheme, "%s", "https"); // WE MUST USE TLS
 	sprintf(head->httpMethod, "%s", "PUT");
 
 	/* path */

@@ -233,36 +233,34 @@ int config_load()
 		struct sockaddr_in6 sa6;
 
 		APPLOG(APPLOG_ERR, "{{{CFG}}} connect lists are ... (%d)", count);
-		for (i = 0; i < count; i++) {
-			config_setting_t *list = config_setting_get_elem(setting, i);
-			APPLOG(APPLOG_ERR, "%3d) %-12s", i, list->name);
-		}
 
 		for (i = 0; i < count; i++) {
 			config_setting_t *group;
 			config_setting_t *list;
 			int list_count;
+			const char *type, *host;
 			const char *scheme, *ip, *act;
-			const char *type;
 			int port;
 			int cnt;
 
-			group = config_setting_get_elem(setting, i);
-			if (group == NULL)
+			if ((group = config_setting_get_elem(setting, i)) == NULL)
 				continue;
 			if (config_setting_lookup_string (group, "type", &type) == CONFIG_FALSE) {
-				APPLOG(APPLOG_ERR, "{{{CFG}}} group name (%s) member type is null!", group->name);
+				APPLOG(APPLOG_ERR, "{{{CFG}}} group index (%d) member type is null!", i);
 				continue;
 			}
-			list = config_setting_get_member(group, "list");
-			if (list == NULL) {
-				APPLOG(APPLOG_ERR, "{{{CFG}}} group name (%s) member list is null!", group->name);
+			if (config_setting_lookup_string (group, "host", &host) == CONFIG_FALSE) {
+				APPLOG(APPLOG_ERR, "{{{CFG}}} group index (%d) member host is null!", i);
+				continue;
+			}
+			if ((list = config_setting_get_member(group, "list")) == NULL) {
+				APPLOG(APPLOG_ERR, "{{{CFG}}} group index (%d) member list is null!", i);
 				continue;
 			}
 			list_count = config_setting_length(list);
-			list_index = new_list(group->name);
+			list_index = new_list(host);
 
-			APPLOG(APPLOG_DEBUG, "{{{CFG}}} %s have %d item", group->name, list_count);
+			APPLOG(APPLOG_DEBUG, "{{{CFG}}} %s have %d item", host, list_count);
 
 			if (list_count == 0) {
 				index ++;
@@ -272,7 +270,7 @@ int config_load()
 				CONN_LIST[index].used = 1;
 				CONN_LIST[index].conn = 0;
 				sprintf(CONN_LIST[index].type, "%s", type);
-				sprintf(CONN_LIST[index].host, "%s", group->name);
+				sprintf(CONN_LIST[index].host, "%s", host);
 				continue;
 			}
 
@@ -323,7 +321,7 @@ int config_load()
 					CONN_LIST[index].item_index = item_index;
 					CONN_LIST[index].used = 1;
 					CONN_LIST[index].conn = 0;
-					sprintf(CONN_LIST[index].host, "%s", group->name);
+					sprintf(CONN_LIST[index].host, "%s", host);
 					sprintf(CONN_LIST[index].scheme, "%s", scheme);
 					sprintf(CONN_LIST[index].type, "%s", type);
 					sprintf(CONN_LIST[index].ip, "%s", ip);
@@ -356,6 +354,25 @@ CF_LOAD_ERR:
     return (-1);
 }
 
+config_setting_t *conf_group_get_by_hostname(config_setting_t *setting, char *hostname)
+{
+    int count = config_setting_length(setting);
+
+    for (int i = 0; i < count; i++) {
+        config_setting_t *group;
+        const char *host;
+
+        if ((group = config_setting_get_elem(setting, i)) == NULL)
+            continue;
+        if (config_setting_lookup_string(group, "host", &host) == CONFIG_FALSE) {
+            continue;
+        }
+        if (!strcmp(hostname, host)) {
+            return group;
+        }
+    }
+    return NULL;
+}
 /*
 	get connect list
 	(x) check raw num (it will be checked when insert ip)
@@ -371,19 +388,31 @@ int addcfg_server_hostname(char *hostname, char *type)
         APPLOG(APPLOG_ERR, "connect list cfg not exist");
 		goto CF_ADD_SVR_HOSTNAME_ERR;
 	} else {
+		if (conf_group_get_by_hostname(setting, hostname) != NULL) {
+			APPLOG(APPLOG_ERR, "hostname=(%s) already exist", hostname);
+			goto CF_ADD_SVR_HOSTNAME_ERR;
+		}
 		config_setting_t *group;
 		config_setting_t *val;
 		int list_index;
 
-		if ((group = config_setting_add(setting, hostname, CONFIG_TYPE_GROUP)) == NULL)
+		if ((group = config_setting_add(setting, NULL, CONFIG_TYPE_GROUP)) == NULL)
 			goto CF_ADD_SVR_HOSTNAME_ERR;
+
 		if ((val = config_setting_add(group, "type", CONFIG_TYPE_STRING)) == NULL)
 			goto CF_ADD_SVR_HOSTNAME_ERR;
-		config_setting_set_string(val, type);
+		else
+			config_setting_set_string(val, type);
+
+		if ((val = config_setting_add(group, "host", CONFIG_TYPE_STRING)) == NULL)
+			goto CF_ADD_SVR_HOSTNAME_ERR;
+		else
+			config_setting_set_string(val, hostname);
+
 		if ((val = config_setting_add(group, "list", CONFIG_TYPE_LIST)) == NULL)
 			goto CF_ADD_SVR_HOSTNAME_ERR;
 
-		if ((list_index = new_list(group->name)) < 0)
+		if ((list_index = new_list(hostname)) < 0)
 			goto CF_ADD_SVR_HOSTNAME_ERR;
 
 		for (i = 1; i < MAX_SVR_NUM; i++) {
@@ -414,6 +443,7 @@ CF_ADD_SVR_HOSTNAME_ERR:
 
 int addcfg_server_ipaddr(int id, char *scheme, char *ipaddr, int port, int conn_cnt, int token_id)
 {
+	char *hostname = get_list_name(id);
     config_setting_t *setting;
 
     if ((setting = config_lookup(&CFG, CF_CONNECT_LIST)) == NULL) {
@@ -425,10 +455,10 @@ int addcfg_server_ipaddr(int id, char *scheme, char *ipaddr, int port, int conn_
 		config_setting_t *list;
 		int list_count, list_index, item_index, i, cnt = 0;
 
-        if (get_list_name(id) == NULL) {
+        if (hostname == NULL) {
             goto CF_ADD_SVR_IPADDR_ERR;
         }
-		if ((group = config_setting_get_member(setting, get_list_name(id))) == NULL)
+		if ((group = conf_group_get_by_hostname(setting, hostname)) == NULL)
 			goto CF_ADD_SVR_IPADDR_ERR;
 		if (config_setting_lookup_string (group, "type", &type) == CONFIG_FALSE)
 			goto CF_ADD_SVR_IPADDR_ERR;
@@ -439,10 +469,10 @@ int addcfg_server_ipaddr(int id, char *scheme, char *ipaddr, int port, int conn_
 		/* if first add, delete null row from raw-table */
 		list_count = config_setting_length(list);
 		if (list_count == 0) {
-		 	APPLOG(APPLOG_DEBUG, "%s() check, %s have %d item", __func__, group->name, list_count);
+		 	APPLOG(APPLOG_DEBUG, "%s() check, %s have %d item", __func__, hostname, list_count);
 		}
 
-		if ((list_index = get_list(group->name)) < 0)
+		if ((list_index = get_list(hostname)) < 0)
 			goto CF_ADD_SVR_IPADDR_ERR;
 		if ((item_index = new_item(list_index, ipaddr, port)) < 0)
 			goto CF_ADD_SVR_IPADDR_ERR;
@@ -487,7 +517,7 @@ int addcfg_server_ipaddr(int id, char *scheme, char *ipaddr, int port, int conn_
 				CONN_LIST[i].item_index = item_index;
 				CONN_LIST[i].used = 1;
 				CONN_LIST[i].conn = 0;
-				sprintf(CONN_LIST[i].host, "%s", group->name);
+				sprintf(CONN_LIST[i].host, "%s", hostname);
 				sprintf(CONN_LIST[i].type, "%s", type);
 				sprintf(CONN_LIST[i].scheme, "%s", scheme);
 				sprintf(CONN_LIST[i].ip, "%s", ipaddr);
@@ -510,6 +540,7 @@ CF_ADD_SVR_IPADDR_ERR:
 
 int actcfg_http_server(int id, int ip_exist, char *ipaddr, int port, int change_to_act)
 { 
+	char *hostname = get_list_name(id);
     config_setting_t *setting;
 
     if ((setting = config_lookup(&CFG, CF_CONNECT_LIST)) == NULL) {
@@ -522,10 +553,10 @@ int actcfg_http_server(int id, int ip_exist, char *ipaddr, int port, int change_
 		int found = 0;
 
 		/* if id param receive, but not exist */
-        if (get_list_name(id) == NULL) {
+        if (hostname == NULL) {
             goto CF_ACT_SERVER_ERR;
         }
-		if ((group = config_setting_get_member(setting, get_list_name(id))) == NULL) {
+		if ((group = conf_group_get_by_hostname(setting, hostname)) == NULL) {
             goto CF_ACT_SERVER_ERR;
 		} else {
 			/* if only id case */
@@ -533,7 +564,7 @@ int actcfg_http_server(int id, int ip_exist, char *ipaddr, int port, int change_
 				found = 1;
 			}
 		}
-		list_index = get_list(group->name);
+		list_index = get_list(hostname);
 
 		if ((list = config_setting_get_member(group, "list")) == NULL)
             goto CF_ACT_SERVER_ERR;
@@ -618,6 +649,7 @@ CF_ACT_SERVER_ERR:
 
 int chgcfg_server_conn_cnt(int id, char *scheme, char *ipaddr, int port, int conn_cnt, int token_id)
 {
+	char *hostname = get_list_name(id);
     config_setting_t *setting;
 
     if ((setting = config_lookup(&CFG, CF_CONNECT_LIST)) == NULL) {
@@ -638,14 +670,14 @@ int chgcfg_server_conn_cnt(int id, char *scheme, char *ipaddr, int port, int con
 		const char *cf_act;
 
 		/* if id param receive, but not exist */
-        if (get_list_name(id) == NULL) {
+        if (hostname == NULL) {
             goto CF_CHG_SERVER_CONN_ERR;
         }
-		if ((group = config_setting_get_member(setting, get_list_name(id))) == NULL)
+		if ((group = conf_group_get_by_hostname(setting, hostname)) == NULL)
 			goto CF_CHG_SERVER_CONN_ERR;
 		if (config_setting_lookup_string (group, "type", &type) == CONFIG_FALSE)
 			goto CF_CHG_SERVER_CONN_ERR;
-		list_index = get_list(group->name);
+		list_index = get_list(hostname);
 
 		if ((list = config_setting_get_member(group, "list")) == NULL)
 			goto CF_CHG_SERVER_CONN_ERR;
@@ -705,7 +737,7 @@ int chgcfg_server_conn_cnt(int id, char *scheme, char *ipaddr, int port, int con
 					CONN_LIST[i].item_index = item_index;
 					CONN_LIST[i].used = 1;
 					CONN_LIST[i].conn = 0;
-					sprintf(CONN_LIST[i].host, "%s", group->name);
+					sprintf(CONN_LIST[i].host, "%s", hostname);
 					sprintf(CONN_LIST[i].type, "%s", type);
 					sprintf(CONN_LIST[i].scheme, "%s", scheme);
 					sprintf(CONN_LIST[i].ip, "%s", ipaddr);
@@ -756,6 +788,7 @@ CF_CHG_SERVER_CONN_ERR:
 
 int delcfg_server_ipaddr(int id, char *ipaddr, int port)
 {
+	char *hostname = get_list_name(id);
     config_setting_t *setting;
 
     if ((setting = config_lookup(&CFG, CF_CONNECT_LIST)) == NULL) {
@@ -771,14 +804,14 @@ int delcfg_server_ipaddr(int id, char *ipaddr, int port)
 		int cf_port;
 		const char *type;
 
-        if (get_list_name(id) == NULL) {
+        if (hostname == NULL) {
             goto CF_DEL_SVR_IPADDR_ERR;
         }
-		if ((group = config_setting_get_member(setting, get_list_name(id))) == NULL)
+		if ((group = conf_group_get_by_hostname(setting, hostname)) == NULL)
 			goto CF_DEL_SVR_IPADDR_ERR;
 		if (config_setting_lookup_string (group, "type", &type) == CONFIG_FALSE)
 			goto CF_DEL_SVR_IPADDR_ERR;
-		list_index = get_list(group->name);
+		list_index = get_list(hostname);
 
 		if ((list = config_setting_get_member(group, "list")) == NULL)
 			goto CF_DEL_SVR_IPADDR_ERR;
@@ -825,7 +858,7 @@ int delcfg_server_ipaddr(int id, char *ipaddr, int port)
 
 		/* if all ipaddr withdraw */
 		list_count = config_setting_length(list); {
-			APPLOG(APPLOG_DEBUG, "%s() check, name (%s) have item (%d)", __func__, group->name, list_count);
+			APPLOG(APPLOG_DEBUG, "%s() check, name (%s) have item (%d)", __func__, hostname, list_count);
 		}
 		if (list_count == 0) {
 			for (i = 1; i < MAX_SVR_NUM; i++) {
@@ -836,7 +869,7 @@ int delcfg_server_ipaddr(int id, char *ipaddr, int port)
 					CONN_LIST[i].item_index = -1;
 					CONN_LIST[i].used = 1;
 					CONN_LIST[i].conn = 0;
-					sprintf(CONN_LIST[i].host, "%s", group->name);
+					sprintf(CONN_LIST[i].host, "%s", hostname);
 					sprintf(CONN_LIST[i].type, "%s", type);
 					break;
 				}
@@ -855,6 +888,7 @@ CF_DEL_SVR_IPADDR_ERR:
 
 int delcfg_server_hostname(int id)
 {
+	char *hostname = get_list_name(id);
     config_setting_t *setting;
 
     if ((setting = config_lookup(&CFG, CF_CONNECT_LIST)) == NULL) {
@@ -865,24 +899,24 @@ int delcfg_server_hostname(int id)
 		config_setting_t *list;
 		int list_count, list_index, i;
 
-        if (get_list_name(id) == NULL) {
+        if (hostname == NULL) {
             goto CF_DEL_SVR_HOSTNAME_ERR;
         }
-		if ((group = config_setting_get_member(setting, get_list_name(id))) == NULL)
+		if ((group = conf_group_get_by_hostname(setting, hostname)) == NULL)
 			goto CF_DEL_SVR_HOSTNAME_ERR;
-		list_index = get_list(group->name);
+		list_index = get_list(hostname);
 
 		if ((list = config_setting_get_member(group, "list")) == NULL)
 			goto CF_DEL_SVR_HOSTNAME_ERR;
 		list_count = config_setting_length(list);
 		if (list_count!= 0) {
-		 	APPLOG(APPLOG_DEBUG, "%s() check, %s have %d item\n", __func__, group->name, list_count);
+		 	APPLOG(APPLOG_DEBUG, "%s() check, %s have %d item\n", __func__, hostname, list_count);
 			goto CF_DEL_SVR_HOSTNAME_ERR;
 		}
 
 		/* remove list from cfg */
-		del_list(group->name);
-		config_setting_remove(setting, group->name);
+		del_list(hostname);
+		config_setting_remove_elem(setting, config_setting_index(group));
 
 		/* remove item from raw list */
 		for (i = 0; i < MAX_SVR_NUM; i++) {

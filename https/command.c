@@ -51,18 +51,23 @@ void handle_nrfm_request(GeneralQMsgType *msg)
     nrfm_https_remove_conn_t *remove_direct = (nrfm_https_remove_conn_t *)msg->body;
     int list_index = remove_direct->list_index;
     int item_index = remove_direct->item_index;
-    const char *host = remove_direct->host;
+    const char *ip = remove_direct->host;
 
     for (int i = 0; i < MAX_LIST_NUM; i++) {
         if (ALLOW_LIST[i].used == 0 || ALLOW_LIST[i].auto_added != 1 || ALLOW_LIST[i].curr > 0)
             continue;
         if (ALLOW_LIST[i].list_index == list_index && ALLOW_LIST[i].item_index == item_index) {
-            if (!strcmp(ALLOW_LIST[i].host, host)) {
-                APPLOG(APPLOG_ERR, "%s() remove old tombstone https conn host (%s)", __func__, host);
+            if (!strcmp(ALLOW_LIST[i].ip, ip)) {
+                APPLOG(APPLOG_ERR, "%s() remove old tombstone https conn host (%s)", __func__, ip);
                 memset(&ALLOW_LIST[i], 0x00, sizeof(allow_list_t));
             }
         }
     }
+
+    if (list_index > 0)
+        del_list(ip);
+    if (item_index > 0)
+        del_item(list_index, ip, 0);
 }
 
 void handle_nrfm_response(GeneralQMsgType *msg)
