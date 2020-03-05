@@ -159,11 +159,13 @@ int func_chg_nf_status(IxpcQMsgType *rxIxpcMsg)
 
     if (!strcasecmp(apply_value, "REGI")) {
         MAIN_CTX.prefer_undiscover_set = 0;
-        sprintf(resBuf, "\n\n[ change NF STATUS as REGISTERED, after next HEARTBEAT to NRF ]\n\n");
+        sprintf(resBuf, "\n\n[ change NF STATUS as REGISTERED, with HEARTBEAT to NRF ]\n\n");
     } else {
         MAIN_CTX.prefer_undiscover_set = 1;
-        sprintf(resBuf, "\n\n[ change NF STATUS is UNDISCOVERABLE, after next HEARTBEAT to NRF ]\n\n");
+        sprintf(resBuf, "\n\n[ change NF STATUS is UNDISCOVERABLE, with HEARTBEAT to NRF ]\n\n");
     }
+
+	event_base_once(MAIN_CTX.EVBASE, -1, EV_TIMEOUT, nf_heartbeat_send_proc, NULL, NULL);
 
 	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
 

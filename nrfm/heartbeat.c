@@ -38,10 +38,10 @@ json_object_array_add(js_heartbeat_body, js_temp);
 */
 #define JS_HB_INSTANCE_STATUS_REGI "{ \"op\": \"replace\", \"path\": \"/nfStatus\", \"value\": \"REGISTERED\" }"
 #define JS_HB_INSTANCE_STATUS_UNDISCOVER "{ \"op\": \"replace\", \"path\": \"/nfStatus\", \"value\": \"UNDISCOVERABLE\" }"
-#define JS_HB_SERVICE_STATUS_REGI "{ \"op\": \"replace\", \"path\": \"/nfServiceStatus/%d/nfStatus\", \"value\": \"REGISTERED\" }"
-#define JS_HB_SERVICE_STATUS_UNDISCOVER "{ \"op\": \"replace\", \"path\": \"/nfServiceStatus/%d/nfStatus\", \"value\": \"UNDISCOVERABLE\" }"
-#define JS_HB_SERVICE_CAPACITY "{ \"op\": \"replace\", \"path\": \"/nfServiceStatus/%d/capacity\", \"value\": %d }"
-#define JS_HB_SERVICE_LOAD "{ \"op\": \"replace\", \"path\": \"/nfServiceStatus/%d/load\", \"value\": %d }"
+#define JS_HB_SERVICE_STATUS_REGI "{ \"op\": \"replace\", \"path\": \"/nfServices/%d/nfServiceStatus\", \"value\": \"REGISTERED\" }"
+#define JS_HB_SERVICE_STATUS_UNDISCOVER "{ \"op\": \"replace\", \"path\": \"/nfServices/%d/nfServiceStatus\", \"value\": \"UNDISCOVERABLE\" }"
+#define JS_HB_SERVICE_CAPACITY "{ \"op\": \"replace\", \"path\": \"/nfServices/%d/capacity\", \"value\": %d }"
+#define JS_HB_SERVICE_LOAD "{ \"op\": \"replace\", \"path\": \"/nfServices/%d/load\", \"value\": %d }"
 int nf_heartbeat_create_body(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ahifPkt)
 {
 	json_object *js_heartbeat_body = json_object_new_array();
@@ -173,8 +173,6 @@ void nf_heartbeat_handle_resp_proc(AhifHttpCSMsgType *ahifPkt)
 			if (nf_regi_save_recv_heartbeat_timer(&MAIN_CTX) < 0)
 				return nf_regi_retry_after_while();
 			if (nf_regi_save_location_header(&MAIN_CTX, ahifPkt) < 0)
-				return nf_regi_retry_after_while();
-			if (nf_regi_check_registered_status(&MAIN_CTX) < 0)
 				return nf_regi_retry_after_while();
 
 			nf_heartbeat_start_process(&MAIN_CTX);

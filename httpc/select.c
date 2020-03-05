@@ -36,9 +36,13 @@ conn_list_t *find_nrfm_inf_dest(AhifHttpCSMsgType *ahifPkt)
         /* else (after Regi), check full */
             if (!strcmp(conn_list->scheme, ahifPkt->head.scheme) &&
                     !strcmp(conn_list->type, ahifPkt->head.destType) &&
+#if 0
                     !strcmp(conn_list->host, ahifPkt->head.destHost) &&
                     !strcmp(conn_list->ip, ahifPkt->head.destIp) &&
                     (conn_list->port ==  ahifPkt->head.destPort)) {
+#else
+                    !strcmp(conn_list->host, ahifPkt->head.destHost)) {
+#endif
                 LAST_INDEX_FOR_NRFM = (index + 1); //move forward
                 return conn_list;
             }

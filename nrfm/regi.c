@@ -159,8 +159,14 @@ void nf_regi_restore_httpc_info(main_ctx_t *MAIN_CTX, AhifHttpCSMsgHeadType *hea
     sprintf(head->scheme, MAIN_CTX->nrf_selection_info.scheme);
     sprintf(head->destType, MAIN_CTX->nrf_selection_info.type);
     sprintf(head->destHost, MAIN_CTX->nrf_selection_info.host);
+#if 0
+	// nrf dual
     sprintf(head->destIp, MAIN_CTX->nrf_selection_info.ip);
     head->destPort = MAIN_CTX->nrf_selection_info.port;
+#else
+	memset(head->destIp, 0x00, sizeof(head->destIp));
+	head->destPort = 0;
+#endif
 }
 
 void nf_regi_init_proc(main_ctx_t *MAIN_CTX)
@@ -219,6 +225,7 @@ int nf_regi_save_location_header(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ahifPk
 {
 	AhifHttpCSMsgHeadType *head = &ahifPkt->head;
 
+	// NRF consider as NF Register
 	for (int i = 0; i < head->vheaderCnt; i++) {
 		if (ahifPkt->vheader[i].vheader_id == VH_LOCATION) {
 			sprintf(MAIN_CTX->location_uri, "%s", ahifPkt->vheader[i].vheader_body);
@@ -226,7 +233,12 @@ int nf_regi_save_location_header(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ahifPk
 			return 0;
 		}
 	}
-	return -1;
+	// else NRF consider as NF Update
+	char *my_uuid = cfg_get_my_uuid(MAIN_CTX); //free
+	sprintf(MAIN_CTX->location_uri, "/nnrf-nfm/v1/nf-innstances/%s", my_uuid);
+	free(my_uuid);
+	APPLOG(APPLOG_ERR, "{{{DBG}}} %s set location header myself [%s]", __func__, MAIN_CTX->location_uri);
+	return 0;
 }
 
 int nf_regi_save_recv_heartbeat_timer(main_ctx_t *MAIN_CTX)
