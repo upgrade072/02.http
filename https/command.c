@@ -197,6 +197,7 @@ int func_dis_http_client(IxpcQMsgType *rxIxpcMsg)
 	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
     return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
 }
+
 int func_add_http_client(IxpcQMsgType *rxIxpcMsg)
 {
 	APPLOG(APPLOG_DEBUG, "%s() called", __func__);
@@ -206,23 +207,25 @@ int func_add_http_client(IxpcQMsgType *rxIxpcMsg)
     char *resBuf=respMsg;
     char HOSTNAME[64];
     char TYPE[64];
+    const char *error_reason = NULL;
 
     memset(HOSTNAME, 0x00, sizeof(HOSTNAME));
     memset(TYPE, 0x00, sizeof(TYPE));
 
     if (get_mml_para_str(mmlReq, "HOSTNAME", HOSTNAME) < 0)
-        return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(HOSTNAME)");
+        return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [HOSTNAME]");
     if (get_mml_para_str(mmlReq, "TYPE", TYPE) < 0)
-        return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(TYPE)");
+        return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [TYPE]");
 
-    if (addcfg_client_hostname(HOSTNAME, TYPE) < 0)
-        return send_mml_res_failMsg(rxIxpcMsg, "HOSTNAME ADD FAIL");
+    if (addcfg_client_hostname(HOSTNAME, TYPE, &error_reason) < 0)
+        return send_mml_res_failMsg(rxIxpcMsg, error_reason);
 
     write_list(resBuf);
 
 	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
     return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
 }
+
 int func_add_http_cli_ip(IxpcQMsgType *rxIxpcMsg)
 {
 	APPLOG(APPLOG_DEBUG, "%s() called", __func__);
@@ -236,17 +239,18 @@ int func_add_http_cli_ip(IxpcQMsgType *rxIxpcMsg)
     int AUTH_ACT = -1;
     struct sockaddr_in sa;
     struct sockaddr_in6 sa6;
+    const char *error_reason = NULL;
     
     memset(IPADDR, 0x00, sizeof(IPADDR));
     
     if ((ID = get_mml_para_int(mmlReq, "ID")) < 0)
-        return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(ID)");
+        return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [ID]");
     if (get_mml_para_str(mmlReq, "IPADDR", IPADDR) < 0)
-        return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(IPADDR)");
+        return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [IPADDR]");
     if ((MAX = get_mml_para_int(mmlReq, "MAX")) < 0)
-        return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(MAX)");
+        return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [MAX]");
     if ((AUTH_ACT = get_mml_para_int(mmlReq, "AUTH_ACT")) < 0)
-        return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(AUTH_ACT)");
+        return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [AUTH_ACT]");
     
     if (ID >= HTTP_MAX_HOST)
         return send_mml_res_failMsg(rxIxpcMsg, "INVALID ID");
@@ -258,24 +262,27 @@ int func_add_http_cli_ip(IxpcQMsgType *rxIxpcMsg)
     if (MAX <= 0 || MAX >= 65535)
         return send_mml_res_failMsg(rxIxpcMsg, "INVALID MAX");
     if (AUTH_ACT != 0 && AUTH_ACT != 1)
-        return send_mml_res_failMsg(rxIxpcMsg, "INVALID AUTH_ACT (0 or 1 avail)");
+        return send_mml_res_failMsg(rxIxpcMsg, "INVALID AUTH_ACT [0 or 1 avail]");
     
-    if (addcfg_client_ipaddr(ID, IPADDR, MAX, AUTH_ACT) < 0)
-        return send_mml_res_failMsg(rxIxpcMsg, "IPADDR ADD FAIL");
+    if (addcfg_client_ipaddr(ID, IPADDR, MAX, AUTH_ACT, &error_reason) < 0)
+        return send_mml_res_failMsg(rxIxpcMsg, error_reason);
     
     write_list(resBuf);
     
 	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
     return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
 }
+
 int func_act_http_client(IxpcQMsgType *rxIxpcMsg)
 {
 	return func_chg_http_client_act(rxIxpcMsg, 1);
 }
+
 int func_dact_http_client(IxpcQMsgType *rxIxpcMsg)
 {
 	return func_chg_http_client_act(rxIxpcMsg, 0);
 }
+
 int func_chg_http_client_act(IxpcQMsgType *rxIxpcMsg, int change_to_act)
 {
 	APPLOG(APPLOG_DEBUG, "%s() called", __func__);
@@ -288,11 +295,12 @@ int func_chg_http_client_act(IxpcQMsgType *rxIxpcMsg, int change_to_act)
     int ip_exist = -1;
     struct sockaddr_in sa;
     struct sockaddr_in6 sa6;
+    const char *error_reason = NULL;
     
     memset(IPADDR, 0x00, sizeof(IPADDR));
     
     if ((ID = get_mml_para_int(mmlReq, "ID")) < 0)
-        return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(ID)");
+        return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [ID]");
     
     ip_exist = get_mml_para_str(mmlReq, "IPADDR", IPADDR);
     
@@ -306,8 +314,8 @@ int func_chg_http_client_act(IxpcQMsgType *rxIxpcMsg, int change_to_act)
 		}
     }
     
-    if (actcfg_http_client(ID, ip_exist, IPADDR, change_to_act) < 0)
-        return send_mml_res_failMsg(rxIxpcMsg, "(D)ACT HTTP CLIENT FAIL");
+    if (actcfg_http_client(ID, ip_exist, IPADDR, change_to_act, &error_reason) < 0)
+        return send_mml_res_failMsg(rxIxpcMsg, error_reason);
 
 
 	sprintf(resBuf, "\n[INPUT PARAM]\n\
@@ -318,6 +326,7 @@ int func_chg_http_client_act(IxpcQMsgType *rxIxpcMsg, int change_to_act)
 	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
     return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
 }
+
 int func_chg_http_client(IxpcQMsgType *rxIxpcMsg)
 {
 	APPLOG(APPLOG_DEBUG, "%s() called", __func__);
@@ -332,19 +341,20 @@ int func_chg_http_client(IxpcQMsgType *rxIxpcMsg)
 	int AUTH_ACT = -1;
     struct sockaddr_in sa;
     struct sockaddr_in6 sa6;
+    const char *error_reason = NULL;
 
     memset(IPADDR, 0x00, sizeof(IPADDR));
 
     if ((ID = get_mml_para_int(mmlReq, "ID")) < 0)
-        return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(ID)");
+        return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [ID]");
     if (get_mml_para_str(mmlReq, "IPADDR", IPADDR) < 0)
-        return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(IPADDR)");
+        return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [IPADDR]");
     if ((MAX = get_mml_para_int(mmlReq, "MAX")) < 0)
-        return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(MAX)");
+        return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [MAX]");
     if ((LIMIT = get_mml_para_int(mmlReq, "LIMIT")) < 0)
-        return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(LIMIT)");
+        return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [LIMIT]");
     if ((AUTH_ACT = get_mml_para_int(mmlReq, "AUTH_ACT")) < 0)
-        return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(AUTH_ACT)");
+        return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [AUTH_ACT]");
 
     if (ID >= HTTP_MAX_HOST)
         return send_mml_res_failMsg(rxIxpcMsg, "INVALID ID");
@@ -360,14 +370,15 @@ int func_chg_http_client(IxpcQMsgType *rxIxpcMsg)
 	if (AUTH_ACT != 0 && AUTH_ACT != 1)
         return send_mml_res_failMsg(rxIxpcMsg, "INVALID AUTH_ACT");
 
-    if (chgcfg_client_max_cnt_with_auth_act_and_limit(ID, IPADDR, MAX, AUTH_ACT, LIMIT) < 0)
-        return send_mml_res_failMsg(rxIxpcMsg, "MAX CHG FAIL");
+    if (chgcfg_client_max_cnt_with_auth_act_and_limit(ID, IPADDR, MAX, AUTH_ACT, LIMIT, &error_reason) < 0)
+        return send_mml_res_failMsg(rxIxpcMsg, error_reason);
 
     write_list(resBuf);
 
 	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
     return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
 }
+
 int func_del_http_cli_ip(IxpcQMsgType *rxIxpcMsg)
 {
 	APPLOG(APPLOG_DEBUG, "%s() called", __func__);
@@ -379,13 +390,14 @@ int func_del_http_cli_ip(IxpcQMsgType *rxIxpcMsg)
     char IPADDR[64];
     struct sockaddr_in sa;
     struct sockaddr_in6 sa6;
+    const char *error_reason = NULL;
 
     memset(IPADDR, 0x00, sizeof(IPADDR));
 
     if ((ID = get_mml_para_int(mmlReq, "ID")) < 0)
-        return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(ID)");
+        return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [ID]");
     if (get_mml_para_str(mmlReq, "IPADDR", IPADDR) < 0)
-        return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(IPADDR)");
+        return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [IPADDR]");
 
     if (ID >= HTTP_MAX_HOST)
         return send_mml_res_failMsg(rxIxpcMsg, "INVALID ID");
@@ -395,14 +407,15 @@ int func_del_http_cli_ip(IxpcQMsgType *rxIxpcMsg)
 		return send_mml_res_failMsg(rxIxpcMsg, "INVALID IPADDR");
 	}
 
-    if (delcfg_client_ipaddr(ID, IPADDR) < 0)
-        return send_mml_res_failMsg(rxIxpcMsg, "IPADDR DEL FAIL");
+    if (delcfg_client_ipaddr(ID, IPADDR, &error_reason) < 0)
+        return send_mml_res_failMsg(rxIxpcMsg, error_reason);
 
     write_list(resBuf);
 
 	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
     return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
 }
+
 int func_del_http_client(IxpcQMsgType *rxIxpcMsg)
 {
 	APPLOG(APPLOG_DEBUG, "%s() called", __func__);
@@ -411,15 +424,16 @@ int func_del_http_client(IxpcQMsgType *rxIxpcMsg)
 
     char *resBuf=respMsg;
     int ID = -1;
+    const char *error_reason = NULL;
 
     if ((ID = get_mml_para_int(mmlReq, "ID")) < 0)
-        return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(ID)");
+        return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [ID]");
 
     if (ID >= HTTP_MAX_HOST)
         return send_mml_res_failMsg(rxIxpcMsg, "INVALID ID");
 
-    if (delcfg_client_hostname(ID) < 0)
-        return send_mml_res_failMsg(rxIxpcMsg, "HOSTNAME DEL FAIL");
+    if (delcfg_client_hostname(ID, &error_reason) < 0)
+        return send_mml_res_failMsg(rxIxpcMsg, error_reason);
 
     write_list(resBuf);
 
@@ -440,7 +454,6 @@ int func_dis_https_config(IxpcQMsgType *rxIxpcMsg)
     else
         return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
 }
-
 
 void relaod_http_config(char *conf_name, int conf_val)
 {

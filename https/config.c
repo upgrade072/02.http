@@ -548,29 +548,42 @@ CF_LOAD_ERR:
     config_destroy(&CFG);
     return (-1);
 }
-int addcfg_client_hostname(char *hostname, char *type)
+
+int addcfg_client_hostname(char *hostname, char *type, const char **error_reason)
 {
+    static char err_internal_cfg[] = "[internal error .cfg]";
+    static char err_host_already_exist[] = "[hostname already exist]";
+    static char err_internal_assign[] = "[internal error assign fail]";
+
     config_setting_t *setting;
     int i, found = 0;
 
     if ((setting = config_lookup(&CFG, CF_ALLOW_LIST)) == NULL) {
-        APPLOG(APPLOG_ERR, "%s() allow list cfg not exist!", __func__);
+        *error_reason = err_internal_cfg;
         goto CF_ADD_CLI_HOSTNAME_ERR;
     } else {
         config_setting_t *group;
 		config_setting_t *val;
         int list_index;
 
-        if ((group = config_setting_add(setting, hostname, CONFIG_TYPE_GROUP)) == NULL)
+        if ((group = config_setting_add(setting, hostname, CONFIG_TYPE_GROUP)) == NULL) {
+            *error_reason = err_host_already_exist;
             goto CF_ADD_CLI_HOSTNAME_ERR;
-        if ((val = config_setting_add(group, "type", CONFIG_TYPE_STRING)) == NULL)
+        }
+        if ((val = config_setting_add(group, "type", CONFIG_TYPE_STRING)) == NULL) {
+            *error_reason = err_internal_cfg;
             goto CF_ADD_CLI_HOSTNAME_ERR;
+        }
         config_setting_set_string(val, type);
-        if ((val = config_setting_add(group, "list", CONFIG_TYPE_LIST)) == NULL)
+        if ((val = config_setting_add(group, "list", CONFIG_TYPE_LIST)) == NULL) {
+            *error_reason = err_internal_cfg;
             goto CF_ADD_CLI_HOSTNAME_ERR;
+        }
 
-        if ((list_index = new_list(group->name)) < 0)
+        if ((list_index = new_list(group->name)) < 0) {
+            *error_reason = err_internal_assign;
             goto CF_ADD_CLI_HOSTNAME_ERR;
+        }
 
         for (i = 1; i < MAX_LIST_NUM; i++) {
             if (ALLOW_LIST[i].used == 0) {
@@ -588,8 +601,10 @@ int addcfg_client_hostname(char *hostname, char *type)
             }
         }
     }
-    if (!found)
+    if (!found) {
+        *error_reason = err_internal_assign;
         goto CF_ADD_CLI_HOSTNAME_ERR;
+    }
 
     config_set_tab_width(&CFG, 4);
     config_write_file(&CFG, CONFIG_PATH);
@@ -597,15 +612,21 @@ int addcfg_client_hostname(char *hostname, char *type)
     return (0);
 
 CF_ADD_CLI_HOSTNAME_ERR:
+    APPLOG(APPLOG_ERR, "(%s) fail to run with [%s]", __func__, *error_reason);
     return (-1);
 }
 
-int addcfg_client_ipaddr(int id, char *ipaddr, int max, int auth_act)
+int addcfg_client_ipaddr(int id, char *ipaddr, int max, int auth_act, const char **error_reason)
 {
+    static char err_internal_cfg[] = "[internal error .cfg]";
+    static char err_host_not_exist[] = "[hostname not exist (wrong ID) ]";
+    static char err_ip_port_already_exist[] = "[ip/port already exist]";
+    static char err_internal_assign[] = "[internal error assign fail]";
+
     config_setting_t *setting;
 
     if ((setting = config_lookup(&CFG, CF_ALLOW_LIST)) == NULL) {
-        APPLOG(APPLOG_ERR, "%s() allow list cfg not exist!", __func__);
+        *error_reason = err_internal_cfg;
 		goto CF_ADD_CLI_IPADDR_ERR;
 	} else {
 		config_setting_t *group;
@@ -615,15 +636,22 @@ int addcfg_client_ipaddr(int id, char *ipaddr, int max, int auth_act)
 
 		/* if id param receive, but not exist */
         if (get_list_name(id) == NULL) {
+            *error_reason = err_host_not_exist;
 			goto CF_ADD_CLI_IPADDR_ERR;
         }
-		if ((group = config_setting_get_member(setting, get_list_name(id))) == NULL)
+		if ((group = config_setting_get_member(setting, get_list_name(id))) == NULL) {
+            *error_reason = err_internal_cfg;
 			goto CF_ADD_CLI_IPADDR_ERR;
-		if (config_setting_lookup_string (group, "type", &type) == CONFIG_FALSE)
+        }
+		if (config_setting_lookup_string (group, "type", &type) == CONFIG_FALSE) {
+            *error_reason = err_internal_cfg;
 			goto CF_ADD_CLI_IPADDR_ERR;
+        }
 
-		if ((list = config_setting_get_member(group, "list")) == NULL)
+		if ((list = config_setting_get_member(group, "list")) == NULL) {
+            *error_reason = err_internal_cfg;
 			goto CF_ADD_CLI_IPADDR_ERR;
+        }
 
 		/* if first add, delete null row from raw-table */
 		list_count = config_setting_length(list);
@@ -631,10 +659,14 @@ int addcfg_client_ipaddr(int id, char *ipaddr, int max, int auth_act)
 		 	APPLOG(APPLOG_DEBUG, "%s() check, %s have %d item", __func__, group->name, list_count);
 		}
 
-		if ((list_index = get_list(group->name)) < 0)
+		if ((list_index = get_list(group->name)) < 0) {
+            *error_reason = err_internal_assign;
 			goto CF_ADD_CLI_IPADDR_ERR;
-		if ((item_index = new_item(list_index, ipaddr, 0)) < 0)
+        }
+		if ((item_index = new_item(list_index, ipaddr, 0)) < 0) {
+            *error_reason = err_internal_assign;
 			goto CF_ADD_CLI_IPADDR_ERR;
+        }
 
 		/* first insert, delete null row */
 		if (!list_count) {
@@ -647,8 +679,10 @@ int addcfg_client_ipaddr(int id, char *ipaddr, int max, int auth_act)
 		} else {
 			for (i = 1; i < MAX_LIST_NUM; i++) {
 				if (ALLOW_LIST[i].used == 1 && ALLOW_LIST[i].list_index == list_index && ALLOW_LIST[i].auto_added == 0) {
-					if (!strcmp(ALLOW_LIST[i].ip, ipaddr))
+					if (!strcmp(ALLOW_LIST[i].ip, ipaddr)) {
+                        *error_reason = err_ip_port_already_exist;
 						goto CF_ADD_CLI_IPADDR_ERR;
+                    }
 				}
 			}
 		}
@@ -691,15 +725,21 @@ int addcfg_client_ipaddr(int id, char *ipaddr, int max, int auth_act)
     return (0);
 
 CF_ADD_CLI_IPADDR_ERR:
+    APPLOG(APPLOG_ERR, "(%s) fail to run with [%s]", __func__, *error_reason);
     return (-1);
 }
 
-int actcfg_http_client(int id, int ip_exist, char *ipaddr, int change_to_act)
+int actcfg_http_client(int id, int ip_exist, char *ipaddr, int change_to_act, const char **error_reason)
 { 
+    static char err_internal_cfg[] = "[internal error .cfg]";
+    static char err_host_not_exist[] = "[hostname not exist (wrong ID)]";
+    static char err_ip_port_not_exist[] = "[ip/port not exist]";
+    static char err_internal_assign[] = "[internal error assign fail]";
+
     config_setting_t *setting;
 
     if ((setting = config_lookup(&CFG, CF_ALLOW_LIST)) == NULL) {
-        APPLOG(APPLOG_ERR, "%s() allow list cfg not exist", __func__);
+        *error_reason = err_internal_cfg;
         goto CF_ACT_CLIENT_ERR;
     } else {
         config_setting_t *group;
@@ -709,9 +749,11 @@ int actcfg_http_client(int id, int ip_exist, char *ipaddr, int change_to_act)
 
 		/* if id param receive, but not exist */
         if (get_list_name(id) == NULL) {
+            *error_reason = err_host_not_exist;
 			goto CF_ACT_CLIENT_ERR;
         }
 		if ((group = config_setting_get_member(setting, get_list_name(id))) == NULL) {
+            *error_reason = err_host_not_exist;
             goto CF_ACT_CLIENT_ERR;
 		} else {
 			/* if only id case */
@@ -721,8 +763,10 @@ int actcfg_http_client(int id, int ip_exist, char *ipaddr, int change_to_act)
 		}
 		list_index = get_list(group->name);
 
-		if ((list = config_setting_get_member(group, "list")) == NULL)
+		if ((list = config_setting_get_member(group, "list")) == NULL) {
+            *error_reason = err_internal_assign;
 			goto CF_ACT_CLIENT_ERR;
+        }
 		list_count = config_setting_length(list);
 
 		for (i = 0; i < list_count; i++) {
@@ -756,6 +800,7 @@ int actcfg_http_client(int id, int ip_exist, char *ipaddr, int change_to_act)
 
 		/* not found case */
 		if (!found) {
+            *error_reason = err_ip_port_not_exist;
 			goto CF_ACT_CLIENT_ERR;
 		}
 
@@ -785,15 +830,20 @@ int actcfg_http_client(int id, int ip_exist, char *ipaddr, int change_to_act)
     return (0);
 
 CF_ACT_CLIENT_ERR:
+    APPLOG(APPLOG_ERR, "(%s) fail to run with [%s]", __func__, *error_reason);
     return (-1);
 }
 
-int chgcfg_client_max_cnt_with_auth_act_and_limit(int id, char *ipaddr, int max, int auth_act, int limit)
+int chgcfg_client_max_cnt_with_auth_act_and_limit(int id, char *ipaddr, int max, int auth_act, int limit, const char **error_reason)
 {
+    static char err_internal_cfg[] = "[internal error .cfg]";
+    static char err_host_not_exist[] = "[hostname not exist (wrong ID)]";
+    static char err_ip_port_not_exist[] = "[ip/port not exist]";
+
     config_setting_t *setting;
 
     if ((setting = config_lookup(&CFG, CF_ALLOW_LIST)) == NULL) {
-        APPLOG(APPLOG_ERR, "%s() allow list cfg not exist", __func__);
+        *error_reason = err_internal_cfg;
         goto CF_CHG_CLIENT_MAX_ERR;
     } else {
 		config_setting_t *group;
@@ -812,16 +862,23 @@ int chgcfg_client_max_cnt_with_auth_act_and_limit(int id, char *ipaddr, int max,
 
 		/* if id param receive, but not exist */
         if (get_list_name(id) == NULL) {
+            *error_reason = err_host_not_exist;
 			goto CF_CHG_CLIENT_MAX_ERR;
         }
-		if ((group = config_setting_get_member(setting, get_list_name(id))) == NULL)
+		if ((group = config_setting_get_member(setting, get_list_name(id))) == NULL) {
+            *error_reason = err_host_not_exist;
 			goto CF_CHG_CLIENT_MAX_ERR;
-		if (config_setting_lookup_string (group, "type", &type) == CONFIG_FALSE)
+        }
+		if (config_setting_lookup_string (group, "type", &type) == CONFIG_FALSE) {
+            *error_reason = err_internal_cfg;
 			goto CF_CHG_CLIENT_MAX_ERR;
+        }
 		list_index = get_list(group->name);
 
-		if ((list = config_setting_get_member(group, "list")) == NULL)
+		if ((list = config_setting_get_member(group, "list")) == NULL) {
+            *error_reason = err_internal_cfg;
 			goto CF_CHG_CLIENT_MAX_ERR;
+        }
 		list_count = config_setting_length(list);
 
 		for (i = 0; i < list_count; i++) {
@@ -843,22 +900,32 @@ int chgcfg_client_max_cnt_with_auth_act_and_limit(int id, char *ipaddr, int max,
 				continue;
 			}
 			if (!strcmp(cf_ip, ipaddr)) {
-				if (!strcmp(cf_act, "ACT"))
+				if (!strcmp(cf_act, "ACT")) {
+                    *error_reason = err_internal_cfg;
 					goto CF_CHG_CLIENT_MAX_ERR;
-				if ((item_max = config_setting_get_member(item, "max")) == NULL)
+                }
+				if ((item_max = config_setting_get_member(item, "max")) == NULL) {
+                    *error_reason = err_internal_cfg;
 					goto CF_CHG_CLIENT_MAX_ERR;
-				if ((item_limit = config_setting_get_member(item, "ovld_limit")) == NULL)
+                }
+				if ((item_limit = config_setting_get_member(item, "ovld_limit")) == NULL) {
+                    *error_reason = err_internal_cfg;
 					goto CF_CHG_CLIENT_MAX_ERR;
-				if ((item_auth_act = config_setting_get_member(item, "auth_act")) == NULL)
+                }
+				if ((item_auth_act = config_setting_get_member(item, "auth_act")) == NULL) {
+                    *error_reason = err_internal_cfg;
 					goto CF_CHG_CLIENT_MAX_ERR;
+                }
 				found = 1;
 				item_index = get_item(list_index, ipaddr, 0);
 				break;
 			}
 		}
 		/* not found case */
-		if (!found)
+		if (!found) {
+            *error_reason = err_ip_port_not_exist;
 			goto CF_CHG_CLIENT_MAX_ERR;
+        }
 
 		/* save setting with auth_act */
 		config_setting_set_int(item_max, max);
@@ -884,16 +951,21 @@ int chgcfg_client_max_cnt_with_auth_act_and_limit(int id, char *ipaddr, int max,
     return (0);
 
 CF_CHG_CLIENT_MAX_ERR:
+    APPLOG(APPLOG_ERR, "(%s) fail to run with [%s]", __func__, *error_reason);
     return (-1);
 }
 
-int delcfg_client_ipaddr(int id, char *ipaddr)
+int delcfg_client_ipaddr(int id, char *ipaddr, const char **error_reason)
 {
+    static char err_internal_cfg[] = "[internal error .cfg]";
+    static char err_host_not_exist[] = "[hostname not exist (wrong ID)]";
+    static char err_ip_port_not_exist[] = "[ip/port not exist]";
+    static char err_dact_first[] = "[conf state ACT, DACT first]";
+
     config_setting_t *setting;
-    //const char *str;
 
     if ((setting = config_lookup(&CFG, CF_ALLOW_LIST)) == NULL) {
-        APPLOG(APPLOG_ERR, "%s() allow list cfg not exist", __func__);
+        *error_reason = err_internal_cfg;
         goto CF_DEL_CLI_IPADDR_ERR;
     } else {
 		config_setting_t *group;
@@ -904,16 +976,23 @@ int delcfg_client_ipaddr(int id, char *ipaddr)
 		const char *type;
 
         if (get_list_name(id) == NULL) {
+            *error_reason = err_host_not_exist;
 			goto CF_DEL_CLI_IPADDR_ERR;
         }
-		if ((group = config_setting_get_member(setting, get_list_name(id))) == NULL)
+		if ((group = config_setting_get_member(setting, get_list_name(id))) == NULL) {
+            *error_reason = err_host_not_exist;
 			goto CF_DEL_CLI_IPADDR_ERR;
-		if (config_setting_lookup_string (group, "type", &type) == CONFIG_FALSE)
+        }
+		if (config_setting_lookup_string (group, "type", &type) == CONFIG_FALSE) {
+            *error_reason = err_internal_cfg;
 			goto CF_DEL_CLI_IPADDR_ERR;
+        }
 		list_index = get_list(group->name);
 
-		if ((list = config_setting_get_member(group, "list")) == NULL)
+		if ((list = config_setting_get_member(group, "list")) == NULL) {
+            *error_reason = err_internal_cfg;
 			goto CF_DEL_CLI_IPADDR_ERR;
+        }
 		list_count = config_setting_length(list);
 
 		for (i = 0; i < list_count; i++) {
@@ -926,8 +1005,10 @@ int delcfg_client_ipaddr(int id, char *ipaddr)
 				continue;
 			}
 			if (!strcmp(cf_ip, ipaddr)) {
-				if (!strcmp(cf_act, "ACT"))
+				if (!strcmp(cf_act, "ACT")) {
+                    *error_reason = err_dact_first;
 					goto CF_DEL_CLI_IPADDR_ERR;
+                }
 				found = 1;
 				idx = i;
 				item_index = get_item(list_index, ipaddr, 0);
@@ -935,8 +1016,10 @@ int delcfg_client_ipaddr(int id, char *ipaddr)
 			}
 		}
 		/* not found case */
-		if (!found)
+		if (!found) {
+            *error_reason = err_ip_port_not_exist;
 			goto CF_DEL_CLI_IPADDR_ERR;
+        }
 
 		/* remove item from cfg*/
 		del_item(list_index, ipaddr, 0);
@@ -982,15 +1065,20 @@ int delcfg_client_ipaddr(int id, char *ipaddr)
     return (0);
 
 CF_DEL_CLI_IPADDR_ERR:
+    APPLOG(APPLOG_ERR, "(%s) fail to run with [%s]", __func__, *error_reason);
     return (-1);
 }
 
-int delcfg_client_hostname(int id)
+int delcfg_client_hostname(int id, const char **error_reason)
 {
+    static char err_internal_cfg[] = "[internal error .cfg]";
+    static char err_host_not_exist[] = "[hostname not exist (wrong ID)]";
+    static char err_iplist_remain[] = "[ipaddr remain, del-nf-cli-ip first]";
+
     config_setting_t *setting;
 
     if ((setting = config_lookup(&CFG, CF_ALLOW_LIST)) == NULL) {
-        APPLOG(APPLOG_ERR, "%s() allow list cfg not exist", __func__);
+        *error_reason = err_internal_cfg;
         goto CF_DEL_CLI_HOSTNAME_ERR;
     } else {
         config_setting_t *group;
@@ -998,17 +1086,22 @@ int delcfg_client_hostname(int id)
         int list_count, list_index, i;
 
         if (get_list_name(id) == NULL) {
+            *error_reason = err_host_not_exist;
 			goto CF_DEL_CLI_HOSTNAME_ERR;
         }
-        if ((group = config_setting_get_member(setting, get_list_name(id))) == NULL)
+        if ((group = config_setting_get_member(setting, get_list_name(id))) == NULL) {
+            *error_reason = err_host_not_exist;
             goto CF_DEL_CLI_HOSTNAME_ERR;
+        }
         list_index = get_list(group->name);
 
-		if ((list = config_setting_get_member(group, "list")) == NULL)
+		if ((list = config_setting_get_member(group, "list")) == NULL) {
+            *error_reason = err_internal_cfg;
             goto CF_DEL_CLI_HOSTNAME_ERR;
+        }
         list_count = config_setting_length(list);
         if (list_count != 0) {
-            APPLOG(APPLOG_DEBUG, "%s() check, %s have %d item", __func__, group->name, list_count);
+            *error_reason = err_iplist_remain;
             goto CF_DEL_CLI_HOSTNAME_ERR;
         }
 
@@ -1032,5 +1125,6 @@ int delcfg_client_hostname(int id)
     return (0);
 
 CF_DEL_CLI_HOSTNAME_ERR:
+    APPLOG(APPLOG_ERR, "(%s) fail to run with [%s]", __func__, *error_reason);
     return (-1);
 }

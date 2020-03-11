@@ -273,12 +273,13 @@ typedef enum select_node_depth {
 int     init_cfg();
 int     config_load_just_log();
 int     config_load();
-int     addcfg_server_hostname(char *hostname, char *type);
-int     addcfg_server_ipaddr(int id, char *scheme, char *ipaddr, int port, int conn_cnt, int token_id);
-int     actcfg_http_server(int id, int ip_exist, char *ipaddr, int port, int change_to_act);
-int     chgcfg_server_conn_cnt(int id, char *scheme, char *ipaddr, int port, int conn_cnt, int token_id);
-int     delcfg_server_ipaddr(int id, char *ipaddr, int port);
-int     delcfg_server_hostname(int id);
+config_setting_t        *conf_group_get_by_hostname(config_setting_t *setting, char *hostname);
+int     addcfg_server_hostname(char *hostname, char *type, const char **error_reason);
+int     addcfg_server_ipaddr(int id, char *scheme, char *ipaddr, int port, int conn_cnt, int token_id, const char **error_reason);
+int     actcfg_http_server(int id, int ip_exist, char *ipaddr, int port, int change_to_act, const char **error_reason);
+int     chgcfg_server_conn_cnt(int id, char *scheme, char *ipaddr, int port, int conn_cnt, int token_id, const char **error_reason);
+int     delcfg_server_ipaddr(int id, char *ipaddr, int port, const char **error_reason);
+int     delcfg_server_hostname(int id, const char **error_reason);
 
 /* ------------------------- list.c --------------------------- */
 httpc_ctx_t     *get_context(int thrd_idx, int ctx_idx, int used);

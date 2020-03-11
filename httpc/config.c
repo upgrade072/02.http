@@ -379,41 +379,55 @@ config_setting_t *conf_group_get_by_hostname(config_setting_t *setting, char *ho
 	try add to empty slot
 	return result
 */
-int addcfg_server_hostname(char *hostname, char *type)
+int addcfg_server_hostname(char *hostname, char *type, const char **error_reason)
 {
+    static char err_internal_cfg[] = "[internal error .cfg]";
+    static char err_host_already_exist[] = "[hostname already exist]";
+    static char err_internal_assign[] = "[internal error assign fail]";
+
     config_setting_t *setting;
 	int i, found = 0;
 
     if ((setting = config_lookup(&CFG, CF_CONNECT_LIST)) == NULL) {
-        APPLOG(APPLOG_ERR, "connect list cfg not exist");
+        *error_reason = err_internal_cfg;
 		goto CF_ADD_SVR_HOSTNAME_ERR;
 	} else {
 		if (conf_group_get_by_hostname(setting, hostname) != NULL) {
-			APPLOG(APPLOG_ERR, "hostname=(%s) already exist", hostname);
+            *error_reason = err_host_already_exist;
 			goto CF_ADD_SVR_HOSTNAME_ERR;
 		}
 		config_setting_t *group;
 		config_setting_t *val;
 		int list_index;
 
-		if ((group = config_setting_add(setting, NULL, CONFIG_TYPE_GROUP)) == NULL)
+		if ((group = config_setting_add(setting, NULL, CONFIG_TYPE_GROUP)) == NULL) {
+            *error_reason = err_internal_cfg;
 			goto CF_ADD_SVR_HOSTNAME_ERR;
+        }
 
-		if ((val = config_setting_add(group, "type", CONFIG_TYPE_STRING)) == NULL)
+		if ((val = config_setting_add(group, "type", CONFIG_TYPE_STRING)) == NULL) {
+            *error_reason = err_internal_cfg;
 			goto CF_ADD_SVR_HOSTNAME_ERR;
-		else
+        } else {
 			config_setting_set_string(val, type);
+        }
 
-		if ((val = config_setting_add(group, "host", CONFIG_TYPE_STRING)) == NULL)
+		if ((val = config_setting_add(group, "host", CONFIG_TYPE_STRING)) == NULL) {
+            *error_reason = err_internal_cfg;
 			goto CF_ADD_SVR_HOSTNAME_ERR;
-		else
+        } else {
 			config_setting_set_string(val, hostname);
+        }
 
-		if ((val = config_setting_add(group, "list", CONFIG_TYPE_LIST)) == NULL)
+		if ((val = config_setting_add(group, "list", CONFIG_TYPE_LIST)) == NULL) {
+            *error_reason = err_internal_cfg;
 			goto CF_ADD_SVR_HOSTNAME_ERR;
+        }
 
-		if ((list_index = new_list(hostname)) < 0)
+		if ((list_index = new_list(hostname)) < 0) {
+            *error_reason = err_internal_assign;
 			goto CF_ADD_SVR_HOSTNAME_ERR;
+        }
 
 		for (i = 1; i < MAX_SVR_NUM; i++) {
 			if (CONN_LIST[i].used == 0) {
@@ -429,8 +443,10 @@ int addcfg_server_hostname(char *hostname, char *type)
 			}
 		}
 	}
-	if (!found)
+	if (!found) {
+        *error_reason = err_internal_assign;
 		goto CF_ADD_SVR_HOSTNAME_ERR;
+    }
 
     config_set_tab_width(&CFG, 4);
     config_write_file(&CFG, CONFIG_PATH);
@@ -438,16 +454,22 @@ int addcfg_server_hostname(char *hostname, char *type)
     return (0);
 
 CF_ADD_SVR_HOSTNAME_ERR:
+    APPLOG(APPLOG_ERR, "(%s) fail to run with [%s]", __func__, *error_reason);
     return (-1);
 }
 
-int addcfg_server_ipaddr(int id, char *scheme, char *ipaddr, int port, int conn_cnt, int token_id)
+int addcfg_server_ipaddr(int id, char *scheme, char *ipaddr, int port, int conn_cnt, int token_id, const char **error_reason)
 {
+    static char err_internal_cfg[] = "[internal error .cfg]";
+    static char err_host_not_exist[] = "[hostname not exist (wrong ID) ]";
+    static char err_ip_port_already_exist[] = "[ip/port already exist]";
+    static char err_internal_assign[] = "[internal error assign fail]";
+
 	char *hostname = get_list_name(id);
     config_setting_t *setting;
 
     if ((setting = config_lookup(&CFG, CF_CONNECT_LIST)) == NULL) {
-        APPLOG(APPLOG_ERR, "%s() connect list cfg not exist", __func__);
+        *error_reason = err_internal_cfg;
 		goto CF_ADD_SVR_IPADDR_ERR;
 	} else {
 		config_setting_t *group;
@@ -456,15 +478,22 @@ int addcfg_server_ipaddr(int id, char *scheme, char *ipaddr, int port, int conn_
 		int list_count, list_index, item_index, i, cnt = 0;
 
         if (hostname == NULL) {
+            *error_reason = err_host_not_exist;
             goto CF_ADD_SVR_IPADDR_ERR;
         }
-		if ((group = conf_group_get_by_hostname(setting, hostname)) == NULL)
+		if ((group = conf_group_get_by_hostname(setting, hostname)) == NULL) {
+            *error_reason = err_host_not_exist;
 			goto CF_ADD_SVR_IPADDR_ERR;
-		if (config_setting_lookup_string (group, "type", &type) == CONFIG_FALSE)
+        }
+		if (config_setting_lookup_string (group, "type", &type) == CONFIG_FALSE) {
+            *error_reason = err_internal_cfg;
 			goto CF_ADD_SVR_IPADDR_ERR;
+        }
 
-		if ((list = config_setting_get_member(group, "list")) == NULL)
+		if ((list = config_setting_get_member(group, "list")) == NULL) {
+            *error_reason = err_internal_cfg;
 			goto CF_ADD_SVR_IPADDR_ERR;
+        }
 
 		/* if first add, delete null row from raw-table */
 		list_count = config_setting_length(list);
@@ -472,10 +501,14 @@ int addcfg_server_ipaddr(int id, char *scheme, char *ipaddr, int port, int conn_
 		 	APPLOG(APPLOG_DEBUG, "%s() check, %s have %d item", __func__, hostname, list_count);
 		}
 
-		if ((list_index = get_list(hostname)) < 0)
+		if ((list_index = get_list(hostname)) < 0) {
+            *error_reason = err_internal_assign;
 			goto CF_ADD_SVR_IPADDR_ERR;
-		if ((item_index = new_item(list_index, ipaddr, port)) < 0)
+        }
+		if ((item_index = new_item(list_index, ipaddr, port)) < 0) {
+            *error_reason = err_internal_assign;
 			goto CF_ADD_SVR_IPADDR_ERR;
+        }
 
 		/* first insert, delete null row */
 		if (!list_count) {
@@ -488,8 +521,10 @@ int addcfg_server_ipaddr(int id, char *scheme, char *ipaddr, int port, int conn_
 		} else {
 			for (i = 1; i < MAX_SVR_NUM; i++) {
 				if (CONN_LIST[i].used == 1 && CONN_LIST[i].list_index == list_index) {
-					if ((!strcmp(CONN_LIST[i].ip, ipaddr)) && (CONN_LIST[i].port == port))
+					if ((!strcmp(CONN_LIST[i].ip, ipaddr)) && (CONN_LIST[i].port == port)) {
+                        *error_reason = err_ip_port_already_exist;
 						goto CF_ADD_SVR_IPADDR_ERR;
+                    }
 				}
 			}
 		}
@@ -535,16 +570,22 @@ int addcfg_server_ipaddr(int id, char *scheme, char *ipaddr, int port, int conn_
     return (0);
 
 CF_ADD_SVR_IPADDR_ERR:
+    APPLOG(APPLOG_ERR, "(%s) fail to run with [%s]", __func__, *error_reason);
     return (-1);
 }
 
-int actcfg_http_server(int id, int ip_exist, char *ipaddr, int port, int change_to_act)
+int actcfg_http_server(int id, int ip_exist, char *ipaddr, int port, int change_to_act, const char **error_reason)
 { 
+    static char err_internal_cfg[] = "[internal error .cfg]";
+    static char err_host_not_exist[] = "[hostname not exist (wrong ID)]";
+    static char err_ip_port_not_exist[] = "[ip/port not exist]";
+    static char err_internal_assign[] = "[internal error assign fail]";
+
 	char *hostname = get_list_name(id);
     config_setting_t *setting;
 
     if ((setting = config_lookup(&CFG, CF_CONNECT_LIST)) == NULL) {
-        APPLOG(APPLOG_ERR, "%s() connect list cfg not exist", __func__);
+        *error_reason = err_internal_cfg;
         goto CF_ACT_SERVER_ERR;
     } else {
         config_setting_t *group;
@@ -554,9 +595,11 @@ int actcfg_http_server(int id, int ip_exist, char *ipaddr, int port, int change_
 
 		/* if id param receive, but not exist */
         if (hostname == NULL) {
+            *error_reason = err_host_not_exist;
             goto CF_ACT_SERVER_ERR;
         }
 		if ((group = conf_group_get_by_hostname(setting, hostname)) == NULL) {
+            *error_reason = err_host_not_exist;
             goto CF_ACT_SERVER_ERR;
 		} else {
 			/* if only id case */
@@ -566,8 +609,10 @@ int actcfg_http_server(int id, int ip_exist, char *ipaddr, int port, int change_
 		}
 		list_index = get_list(hostname);
 
-		if ((list = config_setting_get_member(group, "list")) == NULL)
+		if ((list = config_setting_get_member(group, "list")) == NULL) {
+            *error_reason = err_internal_assign;
             goto CF_ACT_SERVER_ERR;
+        }
 		list_count = config_setting_length(list);
 
 		for (i = 0; i < list_count; i++) {
@@ -605,6 +650,7 @@ int actcfg_http_server(int id, int ip_exist, char *ipaddr, int port, int change_
 
 		/* not found case */
 		if (!found) {
+            *error_reason = err_ip_port_not_exist;
 			goto CF_ACT_SERVER_ERR;
 		}
 
@@ -644,16 +690,21 @@ int actcfg_http_server(int id, int ip_exist, char *ipaddr, int port, int change_
     return (0);
 
 CF_ACT_SERVER_ERR:
+    APPLOG(APPLOG_ERR, "(%s) fail to run with [%s]", __func__, *error_reason);
     return (-1);
 }
 
-int chgcfg_server_conn_cnt(int id, char *scheme, char *ipaddr, int port, int conn_cnt, int token_id)
+int chgcfg_server_conn_cnt(int id, char *scheme, char *ipaddr, int port, int conn_cnt, int token_id, const char **error_reason)
 {
+    static char err_internal_cfg[] = "[internal error .cfg]";
+    static char err_host_not_exist[] = "[hostname not exist (wrong ID)]";
+    static char err_ip_port_not_exist[] = "[ip/port not exist]";
+
 	char *hostname = get_list_name(id);
     config_setting_t *setting;
 
     if ((setting = config_lookup(&CFG, CF_CONNECT_LIST)) == NULL) {
-        APPLOG(APPLOG_ERR, "%s() connect list cfg not exist", __func__);
+        *error_reason = err_internal_cfg;
         goto CF_CHG_SERVER_CONN_ERR;
     } else {
         config_setting_t *group;
@@ -671,16 +722,23 @@ int chgcfg_server_conn_cnt(int id, char *scheme, char *ipaddr, int port, int con
 
 		/* if id param receive, but not exist */
         if (hostname == NULL) {
+            *error_reason = err_host_not_exist;
             goto CF_CHG_SERVER_CONN_ERR;
         }
-		if ((group = conf_group_get_by_hostname(setting, hostname)) == NULL)
+		if ((group = conf_group_get_by_hostname(setting, hostname)) == NULL) {
+            *error_reason = err_host_not_exist;
 			goto CF_CHG_SERVER_CONN_ERR;
-		if (config_setting_lookup_string (group, "type", &type) == CONFIG_FALSE)
+        }
+		if (config_setting_lookup_string (group, "type", &type) == CONFIG_FALSE) {
+            *error_reason = err_internal_cfg;
 			goto CF_CHG_SERVER_CONN_ERR;
+        }
 		list_index = get_list(hostname);
 
-		if ((list = config_setting_get_member(group, "list")) == NULL)
+		if ((list = config_setting_get_member(group, "list")) == NULL) {
+            *error_reason = err_internal_cfg;
 			goto CF_CHG_SERVER_CONN_ERR;
+        }
 		list_count = config_setting_length(list);
 
 		for (i = 0; i < list_count; i++) {
@@ -702,20 +760,28 @@ int chgcfg_server_conn_cnt(int id, char *scheme, char *ipaddr, int port, int con
 				continue;
 			}
 			if (!strcmp(cf_ip, ipaddr) && (cf_port == port)) {
-				if (!strcmp(cf_act, "ACT"))
+				if (!strcmp(cf_act, "ACT")) {
+                    *error_reason = err_internal_cfg;
 					goto CF_CHG_SERVER_CONN_ERR;
-				if ((item_cnt = config_setting_get_member(item, "cnt")) == NULL)
+                }
+				if ((item_cnt = config_setting_get_member(item, "cnt")) == NULL) {
+                    *error_reason = err_internal_cfg;
 					goto CF_CHG_SERVER_CONN_ERR;
-				if ((item_token = config_setting_get_member(item, "token_id")) == NULL)
+                }
+				if ((item_token = config_setting_get_member(item, "token_id")) == NULL) {
+                    *error_reason = err_internal_cfg;
 					goto CF_CHG_SERVER_CONN_ERR;
+                }
 				found = 1;
 				item_index = get_item(list_index, ipaddr, port);
 				break;
 			}
 		}
 		/* not found case */
-		if (!found)
+		if (!found) {
+            *error_reason = err_ip_port_not_exist;
 			goto CF_CHG_SERVER_CONN_ERR;
+        }
 
 		/* save setting connection count*/
 		config_setting_set_int(item_cnt, conn_cnt);
@@ -783,16 +849,22 @@ int chgcfg_server_conn_cnt(int id, char *scheme, char *ipaddr, int port, int con
     return (0);
 
 CF_CHG_SERVER_CONN_ERR:
+    APPLOG(APPLOG_ERR, "(%s) fail to run with [%s]", __func__, *error_reason);
     return (-1);
 }
 
-int delcfg_server_ipaddr(int id, char *ipaddr, int port)
+int delcfg_server_ipaddr(int id, char *ipaddr, int port, const char **error_reason)
 {
+    static char err_internal_cfg[] = "[internal error .cfg]";
+    static char err_host_not_exist[] = "[hostname not exist (wrong ID)]";
+    static char err_ip_port_not_exist[] = "[ip/port not exist]";
+    static char err_dact_first[] = "[conf state ACT, DACT first]";
+
 	char *hostname = get_list_name(id);
     config_setting_t *setting;
 
     if ((setting = config_lookup(&CFG, CF_CONNECT_LIST)) == NULL) {
-        APPLOG(APPLOG_ERR, "%s() connect list cfg not exist", __func__);
+        *error_reason = err_internal_cfg;
         goto CF_DEL_SVR_IPADDR_ERR;
     } else {
         config_setting_t *group;
@@ -805,16 +877,23 @@ int delcfg_server_ipaddr(int id, char *ipaddr, int port)
 		const char *type;
 
         if (hostname == NULL) {
+            *error_reason = err_host_not_exist;
             goto CF_DEL_SVR_IPADDR_ERR;
         }
-		if ((group = conf_group_get_by_hostname(setting, hostname)) == NULL)
+		if ((group = conf_group_get_by_hostname(setting, hostname)) == NULL) {
+            *error_reason = err_host_not_exist;
 			goto CF_DEL_SVR_IPADDR_ERR;
-		if (config_setting_lookup_string (group, "type", &type) == CONFIG_FALSE)
+        }
+		if (config_setting_lookup_string (group, "type", &type) == CONFIG_FALSE) {
+            *error_reason = err_internal_cfg;
 			goto CF_DEL_SVR_IPADDR_ERR;
+        }
 		list_index = get_list(hostname);
 
-		if ((list = config_setting_get_member(group, "list")) == NULL)
+		if ((list = config_setting_get_member(group, "list")) == NULL) {
+            *error_reason = err_internal_cfg;
 			goto CF_DEL_SVR_IPADDR_ERR;
+        }
 		list_count = config_setting_length(list);
 
 		for (i = 0; i < list_count; i++) {
@@ -830,8 +909,10 @@ int delcfg_server_ipaddr(int id, char *ipaddr, int port)
 				continue;
 			}
 			if (!strcmp(cf_ip, ipaddr) && (cf_port == port)) {
-				if (!strcmp(cf_act, "ACT"))
+				if (!strcmp(cf_act, "ACT")) {
+                    *error_reason = err_dact_first;
 					goto CF_DEL_SVR_IPADDR_ERR;
+                }
 				found = 1;
 				idx = i;
 				item_index = get_item(list_index, ipaddr, port);
@@ -839,8 +920,10 @@ int delcfg_server_ipaddr(int id, char *ipaddr, int port)
 			}
 		}
 		/* not found case */
-		if (!found)
+		if (!found) {
+            *error_reason = err_ip_port_not_exist;
 			goto CF_DEL_SVR_IPADDR_ERR;
+        }
 
 		/* remove item from cfg*/
 		del_item(list_index, ipaddr, port);
@@ -883,16 +966,21 @@ int delcfg_server_ipaddr(int id, char *ipaddr, int port)
     return (0);
 
 CF_DEL_SVR_IPADDR_ERR:
+    APPLOG(APPLOG_ERR, "(%s) fail to run with [%s]", __func__, *error_reason);
     return (-1);
 }
 
-int delcfg_server_hostname(int id)
+int delcfg_server_hostname(int id, const char **error_reason)
 {
+    static char err_internal_cfg[] = "[internal error .cfg]";
+    static char err_host_not_exist[] = "[hostname not exist (wrong ID)]";
+    static char err_iplist_remain[] = "[ipaddr remain, del-nf-svr-ip first]";
+
 	char *hostname = get_list_name(id);
     config_setting_t *setting;
 
     if ((setting = config_lookup(&CFG, CF_CONNECT_LIST)) == NULL) {
-        APPLOG(APPLOG_ERR, "%s() connect list cfg not exist", __func__);
+        *error_reason = err_internal_cfg;
 		goto CF_DEL_SVR_HOSTNAME_ERR;
 	} else {
 		config_setting_t *group;
@@ -900,17 +988,22 @@ int delcfg_server_hostname(int id)
 		int list_count, list_index, i;
 
         if (hostname == NULL) {
+            *error_reason = err_host_not_exist;
             goto CF_DEL_SVR_HOSTNAME_ERR;
         }
-		if ((group = conf_group_get_by_hostname(setting, hostname)) == NULL)
+		if ((group = conf_group_get_by_hostname(setting, hostname)) == NULL) {
+            *error_reason = err_host_not_exist;
 			goto CF_DEL_SVR_HOSTNAME_ERR;
+        }
 		list_index = get_list(hostname);
 
-		if ((list = config_setting_get_member(group, "list")) == NULL)
+		if ((list = config_setting_get_member(group, "list")) == NULL) {
+            *error_reason = err_internal_cfg;
 			goto CF_DEL_SVR_HOSTNAME_ERR;
+        }
 		list_count = config_setting_length(list);
 		if (list_count!= 0) {
-		 	APPLOG(APPLOG_DEBUG, "%s() check, %s have %d item\n", __func__, hostname, list_count);
+            *error_reason = err_iplist_remain;;
 			goto CF_DEL_SVR_HOSTNAME_ERR;
 		}
 
@@ -934,5 +1027,6 @@ int delcfg_server_hostname(int id)
     return (0);
 
 CF_DEL_SVR_HOSTNAME_ERR:
+    APPLOG(APPLOG_ERR, "(%s) fail to run with [%s]", __func__, *error_reason);
     return (-1);
 }

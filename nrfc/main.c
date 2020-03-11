@@ -224,10 +224,10 @@ void init_log(main_ctx_t *MAIN_CTX)
 {
     char log_path[1024] = {0,};
 #ifdef LOG_LIB
-    sprintf(log_path, "%s/log/ERR_LOG/%s", getenv(IV_HOME), MAIN_CTX->my_info.myProcName);
+    sprintf(log_path, "%s/log/STACK/%s", getenv(IV_HOME), MAIN_CTX->my_info.myProcName);
     initlog_for_loglib(MAIN_CTX->my_info.myProcName, log_path);
 #elif LOG_APP
-    sprintf(log_path, "%s/log", getenv(IV_HOME));
+    sprintf(log_path, "%s/log/STACK", getenv(IV_HOME));
     LogInit(MAIN_CTX->my_info.myProcName, log_path);
 #endif
     

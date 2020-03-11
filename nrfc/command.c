@@ -686,11 +686,11 @@ int func_add_nf_mml(IxpcQMsgType *rxIxpcMsg)
 
     /* error handle */
 	if (get_mml_para_str(mmlReq, "CONF_NAME", CONF_NAME) < 0)
-		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(CONF_NAME)");
+		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [CONF_NAME]");
 	if (get_mml_para_str(mmlReq, "TARGET_HOST", TARGET_HOST) < 0)
-		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(TARGET_HOST)");
+		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [TARGET_HOST]");
 	if (get_mml_para_str(mmlReq, "NF_TYPE", NF_TYPE) < 0)
-		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(NF_TYPE)");
+		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [NF_TYPE]");
 
     /* malloc - send & free */
     char *resBuf=malloc(1024 * 1024);
@@ -716,7 +716,7 @@ int func_del_nf_mml(IxpcQMsgType *rxIxpcMsg)
 
     /* error handle */
 	if ((ID = get_mml_para_int(mmlReq, "ID")) < 0)
-		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(ID)");
+		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [ID]");
 
     /* malloc - send & free */
     char *resBuf=malloc(1024 * 1024);

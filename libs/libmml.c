@@ -80,7 +80,7 @@ int get_mml_para_strMax (MMLReqMsgType *msg, char *paraName, char *buff, int max
 	return -1;
 }
 
-int send_mml_res_failMsg(IxpcQMsgType *rxIxpcMsg, char *rltMsg)
+int send_mml_res_failMsg(IxpcQMsgType *rxIxpcMsg, const char *rltMsg)
 {
 	int		len=0;
 	char	*txBuff=respBuff;

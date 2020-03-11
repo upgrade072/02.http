@@ -307,12 +307,12 @@ typedef struct lb_global {
 int     init_cfg();
 int     config_load_just_log();
 int     config_load();
-int     addcfg_client_hostname(char *hostname, char *type);
-int     addcfg_client_ipaddr(int id, char *ipaddr, int max, int auth_act);
-int     actcfg_http_client(int id, int ip_exist, char *ipaddr, int change_to_act);
-int     chgcfg_client_max_cnt_with_auth_act_and_limit(int id, char *ipaddr, int max, int auth_act, int limit);
-int     delcfg_client_ipaddr(int id, char *ipaddr);
-int     delcfg_client_hostname(int id);
+int     addcfg_client_hostname(char *hostname, char *type, const char **error_reason);
+int     addcfg_client_ipaddr(int id, char *ipaddr, int max, int auth_act, const char **error_reason);
+int     actcfg_http_client(int id, int ip_exist, char *ipaddr, int change_to_act, const char **error_reason);
+int     chgcfg_client_max_cnt_with_auth_act_and_limit(int id, char *ipaddr, int max, int auth_act, int limit, const char **error_reason);
+int     delcfg_client_ipaddr(int id, char *ipaddr, const char **error_reason);
+int     delcfg_client_hostname(int id, const char **error_reason);
 
 /* ------------------------- list.c --------------------------- */
 https_ctx_t     *get_context(int thrd_idx, int ctx_idx, int used);

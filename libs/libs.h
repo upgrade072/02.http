@@ -18,7 +18,7 @@
 int     get_mml_para_int (MMLReqMsgType *msg, char *paraName);
 int     get_mml_para_str (MMLReqMsgType *msg, char *paraName, char *buff);
 int     get_mml_para_strMax (MMLReqMsgType *msg, char *paraName, char *buff, int maxSize);
-int     send_mml_res_failMsg(IxpcQMsgType *rxIxpcMsg, char *rltMsg);
+int     send_mml_res_failMsg(IxpcQMsgType *rxIxpcMsg, const char *rltMsg);
 int     send_mml_res_succMsg(IxpcQMsgType *rxIxpcMsg, char *rltMsg, char contFlag, unsigned short extendTime, char seqNo);
 int     send_response_mml(IxpcQMsgType *rxIxpcMsg, char *resbuf, char resCode, char contFlag, unsigned short extendTime, char seqNo);
 

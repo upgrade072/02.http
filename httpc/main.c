@@ -1466,10 +1466,10 @@ int initialize()
 	}
 #ifdef LOG_LIB
 	char log_path[1024] = {0,};
-	sprintf(log_path, "%s/log/ERR_LOG/%s", getenv(IV_HOME), myProcName);
+	sprintf(log_path, "%s/log/STACK/%s", getenv(IV_HOME), myProcName);
 	initlog_for_loglib(myProcName, log_path);
 #elif LOG_APP
-	sprintf(fname, "%s/log", getenv(IV_HOME));
+	sprintf(fname, "%s/log/STACK", getenv(IV_HOME));
 	LogInit(myProcName, fname);
 #endif
     if (config_load_just_log() < 0) {
