@@ -95,19 +95,14 @@ nf_service_info *nf_discover_search_amf(nf_discover_key *search_info, nf_discove
         if (search_info->amf_set_id != NULL && strcmp(search_info->amf_set_id, amfInfo->amfSetId))
             continue;
 
-#if 0
-        if (search_info->plmnId_in_guami != NULL && search_info->amfId_in_guami) {
-#else
-        if (search_info->amfId_in_guami != NULL) {
-#endif
+        if (search_info->plmnId_in_guami != NULL || search_info->amfId_in_guami != NULL) {
             for (int k = 0; k < amfInfo->guamiListNum; k++) {
                 nf_guami_info *nf_guami = &amfInfo->nf_guami[k];
-#if 0
-                if (!strcmp(search_info->plmnId_in_guami, nf_guami->plmnId) &&
-                        !strcmp(search_info->amfId_in_guami, nf_guami->amfId))  {
-#else
-                if (!strcmp(search_info->amfId_in_guami, nf_guami->amfId)) {
-#endif
+
+                int res_plmn_id = search_info->plmnId_in_guami == NULL ? 1 : !strcmp(search_info->plmnId_in_guami, nf_guami->plmnId);
+                int res_amf_id = search_info->amfId_in_guami == NULL ? 1 : !strcmp(search_info->amfId_in_guami, nf_guami->amfId);
+
+                if (res_plmn_id > 0 && res_amf_id > 0) {
                     nf_discover_order_local_res(disc_raw, &result_cache, search_info->selectionType);
                 }
             }

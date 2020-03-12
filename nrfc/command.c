@@ -689,8 +689,18 @@ int func_add_nf_mml(IxpcQMsgType *rxIxpcMsg)
 		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [CONF_NAME]");
 	if (get_mml_para_str(mmlReq, "TARGET_HOST", TARGET_HOST) < 0)
 		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [TARGET_HOST]");
-	if (get_mml_para_str(mmlReq, "NF_TYPE", NF_TYPE) < 0)
-		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [NF_TYPE]");
+#if 0
+    if (get_mml_para_str(mmlReq, "NF_TYPE", NF_TYPE) < 0)
+        return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [NF_TYPE]");
+#else
+    if (!strcasecmp(mmlReq->head.cmdName, "ADD-NF-MML-AMF")) {
+        sprintf(NF_TYPE, "AMF");
+    } else if (!strcasecmp(mmlReq->head.cmdName, "ADD-NF-MML-UDM")) {
+        sprintf(NF_TYPE, "UDM");
+    } else {
+        return send_mml_res_failMsg(rxIxpcMsg, "INVALID CMD NAME");
+    }
+#endif
 
     /* malloc - send & free */
     char *resBuf=malloc(1024 * 1024);
