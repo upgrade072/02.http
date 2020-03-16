@@ -301,13 +301,13 @@ int initialize(main_ctx_t *MAIN_CTX)
 		return -1;
 	}
 
-#if 0 // VNF INS ISSUE
 	/* load fep assoc list */
     if ((MAIN_CTX->fep_assoc_list = get_associate_node(MAIN_CTX->fep_assoc_list, "FEP")) == NULL) {
-        APPLOG(APPLOG_ERR, "{{{INIT}}} fail to get associate_fep, proc down");
+        APPLOG(APPLOG_ERR, "{{{INIT}}} fail to get associate_fep, go on");
+#if 0 // VNF INS ISSUE
         return -1;
-    }
 #endif
+    }
 
 	/* I'm alive */
 	if (keepalivelib_init(MAIN_CTX->my_info.myProcName) < 0) {
