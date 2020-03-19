@@ -256,13 +256,13 @@ static http2_session_data *create_http2_session_data(app_context *app_ctx,
 		sprintf(session_data->scheme, "%s", "https");
 		session_data->bev = bufferevent_openssl_socket_new(
 				THRD_WORKER[index].evbase, fd, ssl, BUFFEREVENT_SSL_ACCEPTING,
-				BEV_OPT_CLOSE_ON_FREE | BEV_OPT_DEFER_CALLBACKS);
+				BEV_OPT_CLOSE_ON_FREE | BEV_OPT_THREADSAFE| BEV_OPT_DEFER_CALLBACKS);
 	} else {
 		APPLOG(APPLOG_DETAIL, "DBG}}} TCP CONNECTED !");
 		sprintf(session_data->scheme, "%s", "http");
 		session_data->bev = bufferevent_socket_new(
 				THRD_WORKER[index].evbase, fd,
-				BEV_OPT_CLOSE_ON_FREE | BEV_OPT_DEFER_CALLBACKS);
+				BEV_OPT_CLOSE_ON_FREE | BEV_OPT_THREADSAFE| BEV_OPT_DEFER_CALLBACKS);
 	}
 
 	session_data->client_addr = strdup(host);
