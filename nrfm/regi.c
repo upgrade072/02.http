@@ -96,17 +96,24 @@ void nf_regi_handle_resp_proc(AhifHttpCSMsgType *ahifPkt)
     nf_regi_handle_save_footprint(&MAIN_CTX, head->respCode);
 
 	switch (head->respCode) {
+		case 200:
 		case 201: // SUCCESS
 			NRF_STAT_INC(MAIN_CTX.NRF_STAT, head->destHost, NFRegister, NRFS_SUCCESS);
 
 			nf_regi_save_recv_nf_profile(&MAIN_CTX, ahifPkt);
 
-			if (nf_regi_save_recv_heartbeat_timer(&MAIN_CTX) < 0)
+            if (nf_regi_save_recv_heartbeat_timer(&MAIN_CTX) < 0) {
+                APPLOG(APPLOG_ERR, "%s() receive invalid heartbeat timer", __func__);
+                return nf_regi_retry_after_while();
+            }
+			if (nf_regi_save_location_header(&MAIN_CTX, ahifPkt) < 0) {
+                APPLOG(APPLOG_ERR, "%s() receive invalid location header", __func__);
 				return nf_regi_retry_after_while();
-			if (nf_regi_save_location_header(&MAIN_CTX, ahifPkt) < 0)
+            }
+			if (nf_regi_check_registered_status(&MAIN_CTX) < 0)  {
+                APPLOG(APPLOG_ERR, "%s() receive invalid register status", __func__);
 				return nf_regi_retry_after_while();
-			if (nf_regi_check_registered_status(&MAIN_CTX) < 0) 
-				return nf_regi_retry_after_while();
+            }
 
             /* SAVE REGI SUCCESS NRF-HTTP info, after all proc() use this */
             nf_regi_save_httpc_info(&MAIN_CTX, head);
@@ -225,7 +232,11 @@ int nf_regi_save_location_header(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ahifPk
 {
 	AhifHttpCSMsgHeadType *head = &ahifPkt->head;
 
+<<<<<<< Updated upstream
 	// NRF consider as NF Register
+=======
+    // NRF consider as NF Register 
+>>>>>>> Stashed changes
 	for (int i = 0; i < head->vheaderCnt; i++) {
 		if (ahifPkt->vheader[i].vheader_id == VH_LOCATION) {
 			sprintf(MAIN_CTX->location_uri, "%s", ahifPkt->vheader[i].vheader_body);
@@ -233,11 +244,19 @@ int nf_regi_save_location_header(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ahifPk
 			return 0;
 		}
 	}
+<<<<<<< Updated upstream
 	// else NRF consider as NF Update
 	char *my_uuid = cfg_get_my_uuid(MAIN_CTX); //free
 	sprintf(MAIN_CTX->location_uri, "/nnrf-nfm/v1/nf-innstances/%s", my_uuid);
 	free(my_uuid);
 	APPLOG(APPLOG_ERR, "{{{DBG}}} %s set location header myself [%s]", __func__, MAIN_CTX->location_uri);
+=======
+    // else NRF consider as NF Update
+    char *my_uuid = cfg_get_my_uuid(MAIN_CTX); //free
+    sprintf(MAIN_CTX->location_uri, "/nnrf-nfm/v1/nf-innstances/%s", my_uuid);
+    free(my_uuid);
+    APPLOG(APPLOG_ERR, "{{{DBG}}} %s set location header myself [%s]", __func__, MAIN_CTX->location_uri);
+>>>>>>> Stashed changes
 	return 0;
 }
 
