@@ -32,17 +32,7 @@ httpc_ctx_t *get_assembled_ctx(tcp_ctx_t *tcp_ctx, char *ptr)
 
 	char *vheader = ptr + sizeof(AhifHttpCSMsgHeadType);
 	int vheaderCnt = head->vheaderCnt;
-#if 0
-	char *body = ptr + sizeof(AhifHttpCSMsgHeadType) + (sizeof(hdr_relay) * vheaderCnt);
-	int bodyLen = head->bodyLen;
 
-	if((recv_ctx = get_null_recv_ctx(tcp_ctx)) == NULL)
-		return NULL;
-
-	memcpy(&recv_ctx->user_ctx.head, ptr, sizeof(AhifHttpCSMsgHeadType));
-	memcpy(&recv_ctx->user_ctx.vheader, vheader, (sizeof(hdr_relay) * vheaderCnt));
-	memcpy(&recv_ctx->user_ctx.body, body, bodyLen);
-#else
 	char *data = ptr + sizeof(AhifHttpCSMsgHeadType) + (sizeof(hdr_relay) * vheaderCnt);
 	int dataLen = head->queryLen + head->bodyLen;
 
@@ -52,7 +42,6 @@ httpc_ctx_t *get_assembled_ctx(tcp_ctx_t *tcp_ctx, char *ptr)
 	memcpy(&recv_ctx->user_ctx.head, ptr, sizeof(AhifHttpCSMsgHeadType));
 	memcpy(&recv_ctx->user_ctx.vheader, vheader, (sizeof(hdr_relay) * vheaderCnt));
 	memcpy(&recv_ctx->user_ctx.data, data, dataLen);
-#endif
 
 	return recv_ctx;
 }
@@ -232,7 +221,7 @@ void stp_err_to_fep(tcp_ctx_t *fep_tcp_ctx, httpc_ctx_t *recv_ctx)
 	recv_ctx->user_ctx.head.respCode = HTTP_RESP_CODE_NOT_FOUND;
 	
 	/* for error debuging */
-	log_pkt_httpc_error_reply(recv_ctx, HTTP_RESP_CODE_NOT_FOUND);
+	log_pkt_httpc_error_reply(recv_ctx, -HTTP_RESP_CODE_NOT_FOUND);
 
 	/* response only header */
 	recv_ctx->user_ctx.head.vheaderCnt = 0;

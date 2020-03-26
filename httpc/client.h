@@ -64,6 +64,7 @@
 #define CF_PING_EVENT_MS    "client_cfg.http_config.ping_event_ms"
 #define CF_PING_EVENT_CODE  "client_cfg.http_config.ping_event_code"
 #define CF_PKT_LOG          "client_cfg.http_config.pkt_log"
+#define CF_TRACE_ENABLE     "client_cfg.http_config.trace_enable"
 #define CF_LB_CONFIG        "client_cfg.lb_config"
 #define CF_CONNECT_LIST     "connect_list"
 #define CF_HTTP_OPT_HDR_TABLE_SIZE  "client_cfg.http_option.setting_header_table_size"
@@ -83,6 +84,7 @@ typedef struct client_conf {
 	int ping_event_ms;
 	int ping_event_code;
 	int pkt_log;
+    int trace_enable;
 	config_setting_t *lb_config;
 
 	int http_opt_header_table_size;
@@ -172,10 +174,15 @@ typedef struct httpc_ctx {
 	// if iovec pushed into tcp queue, worker can't cancel this
 	char tcp_wait;
 
-	/* for recv log */
+	FILE *send_log_file;
+	size_t send_file_size;
+	char *send_log_ptr;
+    char send_time[128];
+
 	FILE *recv_log_file;
-	size_t file_size;
-	char *log_ptr;
+	size_t recv_file_size;
+	char *recv_log_ptr;
+    char recv_time[128];
 
 	/* for NRFM CTX */
 	char for_nrfm_ctx;
@@ -286,19 +293,16 @@ httpc_ctx_t     *get_context(int thrd_idx, int ctx_idx, int used);
 void    clear_send_ctx(httpc_ctx_t *httpc_ctx);
 void    clear_and_free_ctx(httpc_ctx_t *httpc_ctx);
 void    set_intl_req_msg(intl_req_t *intl_req, int thrd_idx, int ctx_idx, int sess_idx, int session_id, int stream_id, int msg_type);
-http2_session_data_t      *get_session(int thrd_idx, int sess_idx, int session_id);
+http2_session_data_t    *get_session(int thrd_idx, int sess_idx, int session_id);
 void    save_session_info(httpc_ctx_t *httpc_ctx, int thrd_idx, int sess_idx, int session_id, int ctx_idx, conn_list_t *conn_list);
-int		find_least_conn_worker();
+int     find_least_conn_worker();
 void    print_list(conn_list_status_t conn_status[]);
-void    print_raw_list();
 void    write_list(conn_list_status_t CONN_STATUS[], char *buff);
 void    gather_list(conn_list_status_t CONN_STATUS[]);
-void    prepare_order(int list_index);
-void    order_list();
-void    log_pkt_send(char *prefix, nghttp2_nv *hdrs, int hdrs_len, char *body, int body_len);
+void    log_pkt_send(httpc_ctx_t *httpc_ctx, nghttp2_nv *hdrs, int hdrs_len, const char *body, int body_len);
 void    log_pkt_head_recv(httpc_ctx_t *httpc_ctx, const uint8_t *name, size_t namelen, const uint8_t *value, size_t valuelen);
-void    log_pkt_end_stream(int stream_id, httpc_ctx_t *httpc_ctx);
-void	log_pkt_httpc_error_reply(httpc_ctx_t *httpc_ctx, int resp_code);
+void    log_pkt_end_stream(httpc_ctx_t *httpc_ctx);
+void    log_pkt_httpc_error_reply(httpc_ctx_t *httpc_ctx, int resp_code);
 void    log_pkt_httpc_reset(httpc_ctx_t *httpc_ctx);
 
 /* ------------------------- client.c --------------------------- */

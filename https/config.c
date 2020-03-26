@@ -358,6 +358,16 @@ int config_load()
         APPLOG(APPLOG_ERR, "{{{CFG}}} pkt log is [%s]", SERVER_CONF.pkt_log == 1 ? "ON" : "OFF");
     }
 
+    /* trace_enable */
+    int trace_enable = 0;
+    if (config_lookup_int(&CFG, CF_TRACE_ENABLE, &trace_enable) == CONFIG_FALSE) {
+        APPLOG(APPLOG_ERR, "{{{CFG}}} trace_enable cfg not exist!");
+        goto CF_LOAD_ERR;
+    } else {
+        SERVER_CONF.trace_enable = trace_enable;
+        APPLOG(APPLOG_ERR, "{{{CFG}}} trace_enable is [%s]", SERVER_CONF.trace_enable == 1 ? "ON" : "OFF");
+    }
+
 	/* http/2 option setting header table size */
 	int setting_header_table_size = 0;
 	if (config_lookup_int(&CFG, CF_HTTP_OPT_HDR_TABLE_SIZE, &setting_header_table_size) == CONFIG_FALSE) {

@@ -31,17 +31,6 @@ https_ctx_t *get_assembled_ctx(tcp_ctx_t *tcp_ctx, char *ptr)
     char *vheader = ptr + sizeof(AhifHttpCSMsgHeadType);
     int vheaderCnt = head->vheaderCnt;
 
-#if 0
-    char *body = ptr + sizeof(AhifHttpCSMsgHeadType) + (sizeof(hdr_relay) * vheaderCnt);
-    int bodyLen = head->bodyLen;
-
-    if((recv_ctx = get_null_recv_ctx(tcp_ctx)) == NULL)
-        return NULL;
-
-    memcpy(&recv_ctx->user_ctx.head, ptr, sizeof(AhifHttpCSMsgHeadType));
-    memcpy(&recv_ctx->user_ctx.vheader, vheader, (sizeof(hdr_relay) * vheaderCnt));
-    memcpy(&recv_ctx->user_ctx.body, body, bodyLen);
-#else
     char *data = ptr + sizeof(AhifHttpCSMsgHeadType) + (sizeof(hdr_relay) * vheaderCnt);
     int dataLen = head->queryLen + head->bodyLen;
 
@@ -51,7 +40,6 @@ https_ctx_t *get_assembled_ctx(tcp_ctx_t *tcp_ctx, char *ptr)
     memcpy(&recv_ctx->user_ctx.head, ptr, sizeof(AhifHttpCSMsgHeadType));
     memcpy(&recv_ctx->user_ctx.vheader, vheader, (sizeof(hdr_relay) * vheaderCnt));
     memcpy(&recv_ctx->user_ctx.data, data, dataLen);
-#endif
 
     return recv_ctx;
 }

@@ -472,6 +472,8 @@ void relaod_http_config(char *conf_name, int conf_val)
         SERVER_CONF.allow_any_client = conf_val;
     else if (!strcmp(conf_name, CF_ANY_CLIENT_DEFAULT_MAX))
         SERVER_CONF.any_client_default_max = conf_val;
+    else if (!strcmp(conf_name, CF_TRACE_ENABLE))
+        SERVER_CONF.trace_enable = conf_val;
 
 /* hook */
     if (!strcmp(conf_name, CF_ALLOW_ANY_CLIENT) && conf_val == 0 ) {

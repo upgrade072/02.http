@@ -79,6 +79,7 @@
 #define CF_ANY_CLIENT_DEFAULT_MAX   "server_cfg.http_config.any_cli_def_max"
 #define CF_HTTP_OPT_HDR_TABLE_SIZE  "server_cfg.http_option.setting_header_table_size"
 #define CF_PKT_LOG          "server_cfg.http_config.pkt_log"
+#define CF_TRACE_ENABLE     "server_cfg.http_config.trace_enable"
 #define CF_CERT_FILE        "server_cfg.oauth_config.cert_file"
 #define CF_KEY_FILE         "server_cfg.oauth_config.key_file"
 #define CF_CREDENTIAL       "server_cfg.oauth_config.credential"
@@ -118,6 +119,7 @@ typedef struct server_conf {
 	int ping_event_code;
 	int cert_event_code;
 	int pkt_log;
+	int trace_enable;
     config_setting_t *lb_config;
 
 	int http_opt_header_table_size;
@@ -265,10 +267,15 @@ typedef struct https_ctx {
 	// if iovec pushed into tcp queue, worker can't cancel this
 	char tcp_wait;
 
-	/* for recv log */
-	FILE *recv_log_file;
-	size_t file_size;
-	char *log_ptr;
+    FILE *recv_log_file;
+    size_t recv_file_size;
+    char *recv_log_ptr;
+    char recv_time[128];
+
+    FILE *send_log_file;
+    size_t send_file_size;
+    char *send_log_ptr;
+    char send_time[128];
 
 	/* for NRFM CTX (notify from NRF) */
 	char for_nrfm_ctx;
@@ -323,13 +330,15 @@ void    clear_and_free_ctx(https_ctx_t *https_ctx);
 void    set_intl_req_msg(intl_req_t *intl_req, int thrd_idx, int ctx_idx, int sess_idx, int session_id, int stream_id, int msg_type);
 http2_session_data      *get_session(int thrd_idx, int sess_idx, int session_id);
 void    save_session_info(https_ctx_t *https_ctx, int thrd_idx, int sess_idx, int session_id, char *ipaddr);
+int     accept_with_anyclient(char *ip);
 int     check_allow(char *ip, int allow_any_client);
 int     add_to_allowlist(int list_idx, int thrd_idx, int sess_idx, int session_id);
 int     del_from_allowlist(int list_idx, int thrd_idx, int sess_idx);
 void    disconnect_all_client_in_allow_list(allow_list_t *allow_list);
 void    print_list();
 void    write_list(char *buff);
-void    log_pkt_send(char *prefix, nghttp2_nv *hdrs, int hdrs_len, char *body, int body_len);
+void    send_trace_to_omp(https_ctx_t *https_ctx);
+void    log_pkt_send(https_ctx_t *https_ctx, nghttp2_nv *hdrs, int hdrs_len, const char *body, int body_len);
 void    log_pkt_head_recv(https_ctx_t *https_ctx, const uint8_t *name, size_t namelen, const uint8_t *value, size_t valuelen);
 void    log_pkt_end_stream(int stream_id, https_ctx_t *https_ctx);
 int     get_uuid_from_associate(uuid_list_t *uuid_list);

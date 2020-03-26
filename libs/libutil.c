@@ -220,3 +220,16 @@ int divide_c_in_str(char *str, char c, char **div_a, char **div_b)
 
     return 0;
 }
+
+int get_time_str(char *time_string)
+{
+    time_t  now=time((time_t*)0);
+    char    tmp[128];
+    struct tm tms;
+    struct timeval  curr;
+
+    localtime_r(&now, &tms);
+    gettimeofday(&curr, NULL);
+    strftime(tmp, 128, "%Y-%m-%d %T", &tms);
+    return sprintf(time_string, "%s.%03d", tmp, (uint)(curr.tv_usec/1000));
+}

@@ -437,14 +437,7 @@ static int send_response_by_ctx(nghttp2_session *session, int32_t stream_id,
 
 	rv = nghttp2_submit_response(session, stream_id, nva, nvlen, &data_prd);
 
-	char log_pfx[1024] = {0,};
-	sprintf(log_pfx, "HTTPS ctx(%d:%d) http sess/stream(%d:%d) ahifCid(%d)",
-			https_ctx->user_ctx.head.thrd_index,
-			https_ctx->user_ctx.head.ctx_id,
-			https_ctx->session_id,
-			stream_id,
-			https_ctx->user_ctx.head.ahifCid);
-	log_pkt_send(log_pfx, nva, nvlen, 
+	log_pkt_send(https_ctx, nva, nvlen, 
 			https_ctx->user_ctx.data + https_ctx->user_ctx.head.queryLen, 
 			https_ctx->user_ctx.head.bodyLen);
 
@@ -513,10 +506,9 @@ static int error_reply(http2_session_data *session_data, nghttp2_session *sessio
 	api_ovld_add_fail(session_data->thrd_index, API_PROTO_HTTPS, 0);
 #endif
 
-	char log_pfx[1024] = {0,};
-	sprintf(log_pfx, "HTTPS ctx(N/A) http sess/stream(-:%d) [internal error]",
-			stream_data->stream_id);
-	log_pkt_send(log_pfx, hdrs, 2, error_body, strlen(error_body));
+    https_ctx_t https_ctx_tmp = {0,};
+    memset(&https_ctx_tmp, 0x00, sizeof(https_ctx_t));
+	log_pkt_send(&https_ctx_tmp, hdrs, 2, error_body, strlen(error_body));
 
 	switch (stat_enum) {
 		case HTTP_S_INVLD_API:

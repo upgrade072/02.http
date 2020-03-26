@@ -881,6 +881,8 @@ void relaod_http_config(char *conf_name, int conf_val)
         CLIENT_CONF.ping_timeout = conf_val;
     else if (!strcmp(conf_name, CF_PING_EVENT_MS))
         CLIENT_CONF.ping_event_ms = conf_val;
+    else if (!strcmp(conf_name, CF_TRACE_ENABLE))
+        CLIENT_CONF.trace_enable = conf_val;
 }
 
 int func_chg_httpc_config(IxpcQMsgType *rxIxpcMsg)

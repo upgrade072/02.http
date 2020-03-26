@@ -1,5 +1,9 @@
 #include "server.h"
 
+extern int ixpcQid;
+extern char mySysName[COMM_MAX_NAME_LEN];
+extern char myProcName[COMM_MAX_NAME_LEN];
+
 extern thrd_context THRD_WORKER[MAX_THRD_NUM];
 extern allow_list_t  ALLOW_LIST[MAX_LIST_NUM];
 extern https_ctx_t *HttpsCtx[MAX_THRD_NUM];
@@ -49,6 +53,7 @@ void assign_new_ctx_info(https_ctx_t *https_ctx, http2_session_data *session_dat
 
 void assign_rcv_ctx_info(https_ctx_t *https_ctx, AhifHttpCSMsgType *ResMsg)
 {
+	https_ctx->user_ctx.head.subsTraceFlag = ResMsg->head.subsTraceFlag;
 	https_ctx->user_ctx.head.respCode = ResMsg->head.respCode;
 	https_ctx->user_ctx.head.vheaderCnt = ResMsg->head.vheaderCnt;
 	memcpy(&https_ctx->user_ctx.vheader, ResMsg->vheader, sizeof(hdr_relay) * ResMsg->head.vheaderCnt);
@@ -58,8 +63,30 @@ void assign_rcv_ctx_info(https_ctx_t *https_ctx, AhifHttpCSMsgType *ResMsg)
 			ResMsg->head.queryLen + ResMsg->head.bodyLen);
 }
 
+static void clear_trace_resource(https_ctx_t *https_ctx)
+{
+    if (https_ctx->recv_log_file) {
+        fclose(https_ctx->recv_log_file);
+        https_ctx->recv_log_file = NULL;
+    }
+    if (https_ctx->send_log_file) {
+        fclose(https_ctx->send_log_file);
+        https_ctx->send_log_file = NULL;
+    }
+    if (https_ctx->recv_log_ptr) {
+        free(https_ctx->recv_log_ptr);
+        https_ctx->recv_log_ptr = NULL;
+    }
+    if (https_ctx->send_log_ptr) {
+        free(https_ctx->send_log_ptr);
+        https_ctx->send_log_ptr = NULL;
+    }
+}
+
 void clear_and_free_ctx(https_ctx_t *https_ctx)
 {
+    clear_trace_resource(https_ctx);
+	https_ctx->user_ctx.head.subsTraceFlag = 0;
 	https_ctx->inflight_ref_cnt = 0;
 	https_ctx->user_ctx.head.bodyLen = 0;
 	https_ctx->user_ctx.head.queryLen = 0;
@@ -290,49 +317,108 @@ void write_list(char *buff) {
 	ft_destroy_table(table);
 }
 
+void send_trace_to_omp(https_ctx_t *https_ctx)
+{
+    int msg_len = 0;
+    GeneralQMsgType GeneralMsg = {0,};
+
+    IxpcQMsgType *ixpcMsg = (IxpcQMsgType *)&GeneralMsg.body;
+    TraceMsgInfo *trcMsgInfo = (TraceMsgInfo *)(ixpcMsg->body);
+
+    GeneralMsg.mtype = MTYPE_TRACE_NOTIFICATION;
+    strcpy(ixpcMsg->head.srcSysName, mySysName);
+    strcpy(ixpcMsg->head.srcAppName, myProcName);
+    strcpy(ixpcMsg->head.dstSysName, "OMP");
+    strcpy(ixpcMsg->head.dstAppName, "COND");
+    ixpcMsg->head.segFlag = 0;
+    ixpcMsg->head.seqNo = 0;
+    ixpcMsg->head.byteOrderFlag = 0x1234;
+    trcMsgInfo->trcMsgType  = TRCMSG_INIT_MSG;
+
+    // fflush
+    if (https_ctx->recv_log_file) {
+        fflush(https_ctx->recv_log_file);
+    } else {
+        https_ctx->recv_log_ptr = NULL;
+        https_ctx->recv_time[0] = '\0';
+    }
+    if (https_ctx->send_log_file) {
+        fflush(https_ctx->send_log_file);
+    } else {
+        https_ctx->send_log_ptr = NULL;
+        https_ctx->send_time[0] = '\0';
+    }
+
+    // info
+    char currTmStr[128] = {0,}; get_time_str(currTmStr);
+    msg_len = sprintf(trcMsgInfo->trcMsg, "[%s] [%s]\n", mySysName, currTmStr);
+    // slogan
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "S4000 HTTP/2 RECV SEND PACKET\n");
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "  OPERATION  : HTTP/2 STACK Recv Request / Send Response\n");
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "  STRM_INFO  : SESS=(%d) STRM=(%d) ACID=(%d)\n", 
+            https_ctx->session_id, https_ctx->user_ctx.head.stream_id, https_ctx->user_ctx.head.ahifCid);
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "  RCV_TM     : %s\n", https_ctx->recv_time);
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "  SND_TM     : %s\n", https_ctx->send_time);
+    // rcv msg trace
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "[Recv_Request]\n");
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "%s", https_ctx->recv_log_ptr);
+    // snd msg trace
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "[Send_Response]\n");
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "%s", https_ctx->send_log_ptr);
+    // trace end
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "COMPLETE\n");
+
+    ixpcMsg->head.bodyLen = sizeof(TraceMsgInfo)-TRC_MSG_BODY_MAX_LEN + msg_len + 8;
+    if (SERVER_CONF.pkt_log == 1) {
+        APPLOG(APPLOG_ERR, "\n\n%s", trcMsgInfo->trcMsg);
+    }
+    if (SERVER_CONF.trace_enable == 1 && https_ctx->user_ctx.head.subsTraceFlag == 1) {
+        if (msgsnd(ixpcQid, (char *)&GeneralMsg, ixpcMsg->head.bodyLen + sizeof(long) + sizeof(ixpcMsg->head), IPC_NOWAIT) < 0) {
+            APPLOG(APPLOG_ERR, "{{{DBG}}} %s fail to send send trace, errno(%d), (%s)", __func__, errno, strerror(errno));
+        }
+    }
+
+}
 
 // https outbound, log write with in 1step
-void log_pkt_send(char *prefix, nghttp2_nv *hdrs, int hdrs_len, char *body, int body_len)
+void log_pkt_send(https_ctx_t *https_ctx, nghttp2_nv *hdrs, int hdrs_len, const char *body, int body_len)
 {
-    FILE *temp_file = NULL;
-    size_t file_size = 0;
-    char *ptr = NULL;
-
-    if (SERVER_CONF.pkt_log != 1)
+    if (SERVER_CONF.pkt_log != 1 && SERVER_CONF.trace_enable != 1)
         return;
 
-    temp_file = open_memstream(&ptr, &file_size); // buff size auto-grow
-    if (temp_file == NULL) {
+    https_ctx->send_log_file = open_memstream(&https_ctx->send_log_ptr, &https_ctx->send_file_size);
+    if (https_ctx->send_log_file == NULL) {
         APPLOG(APPLOG_ERR, "{{{PKT}}} in %s fail to call open_memstream!", __func__);
         return;
+    } else {
+        get_time_str(https_ctx->send_time);
     }
-    print_headers(temp_file, hdrs, hdrs_len);
-    util_dumphex(temp_file, body, body_len);
 
-    // 1) close file
-    fclose(temp_file);
-    // 2) use ptr
-    APPLOG(APPLOG_ERR, "{{{PKT}}} HTTPS SEND %s\n\
---------------------------------------------------------------------------------------------------\n\
-%s\
-==================================================================================================\n",
-    prefix, ptr);
-    // 3) free ptr
-    free(ptr);
+    print_headers(https_ctx->send_log_file, hdrs, hdrs_len);
+    if (body_len > 0) {
+        fprintf(https_ctx->send_log_file, DUMPHEX_GUIDE_STR, body_len);
+        util_dumphex(https_ctx->send_log_file, body, body_len);
+    }
+
+    send_trace_to_omp(https_ctx);
+
+    return;
 }
 
 // https inbound, logwrite step 1 of 2 (headres receive)
 void log_pkt_head_recv(https_ctx_t *https_ctx, const uint8_t *name, size_t namelen, const uint8_t *value, size_t valuelen)
 {
-    if (SERVER_CONF.pkt_log != 1)
+    if (SERVER_CONF.pkt_log != 1 && SERVER_CONF.trace_enable != 1)
         return;
 
     if (https_ctx->recv_log_file == NULL) {
-        https_ctx->recv_log_file = open_memstream(&https_ctx->log_ptr, &https_ctx->file_size);
+        https_ctx->recv_log_file = open_memstream(&https_ctx->recv_log_ptr, &https_ctx->recv_file_size);
 		if (https_ctx->recv_log_file == NULL) {
 			APPLOG(APPLOG_ERR, "{{{PKT}}} in %s fail to call open_memstream!", __func__);
 			return;
-		}
+		} else {
+            get_time_str(https_ctx->recv_time);
+        }
     }
     print_header(https_ctx->recv_log_file, name, namelen, value, valuelen);
 }
@@ -344,39 +430,20 @@ void log_pkt_end_stream(int stream_id, https_ctx_t *https_ctx)
         return;
 
     if (https_ctx->recv_log_file == NULL) {
-        https_ctx->recv_log_file = open_memstream(&https_ctx->log_ptr, &https_ctx->file_size);
+        https_ctx->recv_log_file = open_memstream(&https_ctx->recv_log_ptr, &https_ctx->recv_file_size);
 		if (https_ctx->recv_log_file == NULL) {
 			APPLOG(APPLOG_ERR, "{{{PKT}}} in %s fail to call open_memstream!", __func__);
 			return;
-		}
+		} else {
+            get_time_str(https_ctx->recv_time);
+        }
     }
 	if (https_ctx->user_ctx.head.bodyLen > 0) {
-#if 0
-		util_dumphex(https_ctx->recv_log_file, https_ctx->user_ctx.body, https_ctx->user_ctx.head.bodyLen);
-#else
-		// dump only body
+        fprintf(https_ctx->recv_log_file, DUMPHEX_GUIDE_STR, https_ctx->user_ctx.head.bodyLen);
 		util_dumphex(https_ctx->recv_log_file, 
 				https_ctx->user_ctx.data + https_ctx->user_ctx.head.queryLen,
 				https_ctx->user_ctx.head.bodyLen);
-#endif
 	}
-
-    // 1) close file
-    fclose(https_ctx->recv_log_file);
-	https_ctx->recv_log_file = NULL;
-    // 2) use ptr
-   APPLOG(APPLOG_ERR, "{{{PKT}}} HTTPS RECV http sess/stream(%d:%d) ctx(%d:%d)\n\
---------------------------------------------------------------------------------------------------\n\
-%s\
-==================================================================================================\n",
-    https_ctx->session_id,
-	stream_id,
-	https_ctx->user_ctx.head.thrd_index,
-	https_ctx->user_ctx.head.ctx_id,
-	https_ctx->log_ptr);
-    // 3) free ptr
-    free(https_ctx->log_ptr);
-	https_ctx->log_ptr = NULL;
 }
 
 int get_uuid_from_associate(uuid_list_t *uuid_list)

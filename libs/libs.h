@@ -14,6 +14,7 @@
 #include <stm_msgtypes.h>
 #include <sfm_msgtypes.h>
 
+#define DUMPHEX_GUIDE_STR   "|- body dump / len : %05d bytes --------------|     |- text cnvt --|\n"
 /* ------------------------- libmml.c --------------------------- */
 int     get_mml_para_int (MMLReqMsgType *msg, char *paraName);
 int     get_mml_para_str (MMLReqMsgType *msg, char *paraName, char *buff);
@@ -60,6 +61,7 @@ char    *strupr(char *input/* overwrite */, int str_len);
 char	 *read_file_stream(char *filename);
 int     search_c_in_str(char *str, char c);
 int     divide_c_in_str(char *str, char c, char **div_a, char **div_b);
+int     get_time_str(char *time_string);
 
 /* ------------------------- libhdr.c --------------------------- */
 int     set_defined_header(hdr_index_t HDR_INDEX[], char *name, char *val, AhifHttpCSMsgType *appData);

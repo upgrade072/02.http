@@ -1,5 +1,9 @@
 #include "client.h"
 
+extern int ixpcQid;
+extern char mySysName[COMM_MAX_NAME_LEN];
+extern char myProcName[COMM_MAX_NAME_LEN];
+
 extern client_conf_t CLIENT_CONF;
 extern httpc_ctx_t *HttpcCtx[MAX_THRD_NUM];
 extern conn_list_t CONN_LIST[MAX_SVR_NUM];
@@ -19,6 +23,7 @@ httpc_ctx_t *get_context(int thrd_idx, int ctx_idx, int used)
 
 	return &HttpcCtx[thrd_idx][ctx_idx];
 }
+
 void clear_send_ctx(httpc_ctx_t *httpc_ctx)
 {
 	httpc_ctx->inflight_ref_cnt = 0;
@@ -28,8 +33,30 @@ void clear_send_ctx(httpc_ctx_t *httpc_ctx)
 	memset(httpc_ctx->user_ctx.vheader, 0x00, sizeof(hdr_relay) * MAX_HDR_RELAY_CNT);
 }
 
+static void clear_trace_resource(httpc_ctx_t *httpc_ctx)
+{
+    if (httpc_ctx->send_log_file) {
+        fclose(httpc_ctx->send_log_file);
+        httpc_ctx->send_log_file = NULL;
+    }
+    if (httpc_ctx->recv_log_file) {
+        fclose(httpc_ctx->recv_log_file);
+        httpc_ctx->recv_log_file = NULL;
+    }
+    if (httpc_ctx->send_log_ptr) {
+        free(httpc_ctx->send_log_ptr);
+        httpc_ctx->send_log_ptr = NULL;
+    }
+    if (httpc_ctx->recv_log_ptr) {
+        free(httpc_ctx->recv_log_ptr);
+        httpc_ctx->recv_log_ptr = NULL;
+    }
+}
+
 void clear_and_free_ctx(httpc_ctx_t *httpc_ctx)
 {
+    clear_trace_resource(httpc_ctx);
+    httpc_ctx->user_ctx.head.subsTraceFlag = 0;
 	httpc_ctx->tcp_wait = 0;
 	httpc_ctx->inflight_ref_cnt = 0;
 	httpc_ctx->user_ctx.head.bodyLen = 0;
@@ -248,116 +275,150 @@ void gather_list(conn_list_status_t CONN_STATUS[]) {
 }
 
 // httpc outbound, log write with in 1step
-void log_pkt_send(char *prefix, nghttp2_nv *hdrs, int hdrs_len, char *body, int body_len)
+void log_pkt_send(httpc_ctx_t *httpc_ctx, nghttp2_nv *hdrs, int hdrs_len, const char *body, int body_len)
 {
-	FILE *temp_file = NULL;
-	size_t file_size = 0;
-	char *ptr = NULL;
-
-	if (CLIENT_CONF.pkt_log != 1)
+	if (CLIENT_CONF.pkt_log != 1 && CLIENT_CONF.trace_enable != 1)
 		return;
 
-	temp_file = open_memstream(&ptr, &file_size); // buff size auto-grow
-	if (temp_file == NULL) {
+    httpc_ctx->send_log_file = open_memstream(&httpc_ctx->send_log_ptr, &httpc_ctx->send_file_size);
+    if (httpc_ctx->send_log_file == NULL) {
 		APPLOG(APPLOG_ERR, "{{{PKT}}} in %s fail to call open_memstream!", __func__);
 		return;
-	}
-	print_headers(temp_file, hdrs, hdrs_len);
-	if (body_len > 0)
-		util_dumphex(temp_file, body, body_len);
+    } else {
+        get_time_str(httpc_ctx->recv_time);
+    }
 
-	// 1) close file
-	fclose(temp_file);
-	// 2) use ptr
-	APPLOG(APPLOG_ERR, "{{{PKT}}} %s\n\
---------------------------------------------------------------------------------------------------\n\
-%s\
-==================================================================================================\n",
-	prefix, ptr);
-	// 3) free ptr
-	free(ptr);
+	print_headers(httpc_ctx->send_log_file, hdrs, hdrs_len);
+	if (body_len > 0) {
+        fprintf(httpc_ctx->send_log_file, DUMPHEX_GUIDE_STR, httpc_ctx->user_ctx.head.bodyLen);
+		util_dumphex(httpc_ctx->send_log_file, body, body_len);
+    }
 }
 
 // httpc inbound, logwrite step 1 of 2 (headres receive)
 void log_pkt_head_recv(httpc_ctx_t *httpc_ctx, const uint8_t *name, size_t namelen, const uint8_t *value, size_t valuelen)
 {
-	if (CLIENT_CONF.pkt_log != 1)
+	if (CLIENT_CONF.pkt_log != 1 && CLIENT_CONF.trace_enable != 1)
 		return;
 
 	if (httpc_ctx->recv_log_file == NULL) {
-		httpc_ctx->recv_log_file = open_memstream(&httpc_ctx->log_ptr, &httpc_ctx->file_size);
+		httpc_ctx->recv_log_file = open_memstream(&httpc_ctx->recv_log_ptr, &httpc_ctx->recv_file_size);
 		if (httpc_ctx->recv_log_file == NULL) {
 			APPLOG(APPLOG_ERR, "{{{PKT}}} in %s fail to call open_memstream!", __func__);
-			// TODO fclose (*httpc/s ...)
 			return;
-		}
-	}
+		} else {
+            get_time_str(httpc_ctx->recv_time);
+        }
+    }
 	print_header(httpc_ctx->recv_log_file, name, namelen, value, valuelen);
 }
 
-// httpc inbound, logwrite step 2 of 2 (all of body received or stream closed)
-void log_pkt_end_stream(int stream_id, httpc_ctx_t *httpc_ctx)
+void send_trace_to_omp(httpc_ctx_t *httpc_ctx)
 {
-	if (CLIENT_CONF.pkt_log != 1)
-		return;
+    int msg_len = 0;
+    GeneralQMsgType GeneralMsg = {0,};
+
+    IxpcQMsgType *ixpcMsg = (IxpcQMsgType *)&GeneralMsg.body;
+    TraceMsgInfo *trcMsgInfo = (TraceMsgInfo *)(ixpcMsg->body);
+
+    GeneralMsg.mtype = MTYPE_TRACE_NOTIFICATION;
+    strcpy(ixpcMsg->head.srcSysName, mySysName);
+    strcpy(ixpcMsg->head.srcAppName, myProcName);
+    strcpy(ixpcMsg->head.dstSysName, "OMP");
+    strcpy(ixpcMsg->head.dstAppName, "COND");
+    ixpcMsg->head.segFlag = 0;
+    ixpcMsg->head.seqNo = 0;
+    ixpcMsg->head.byteOrderFlag = 0x1234;
+    trcMsgInfo->trcMsgType  = TRCMSG_INIT_MSG;
+
+    // fflush
+    if (httpc_ctx->send_log_file) {
+        fflush(httpc_ctx->send_log_file);
+    } else {
+        httpc_ctx->send_log_ptr = NULL;
+        httpc_ctx->send_time[0] = '\0';
+    }
+    if (httpc_ctx->recv_log_file) {
+        fflush(httpc_ctx->recv_log_file);
+    } else {
+        httpc_ctx->recv_log_ptr = NULL;
+        httpc_ctx->recv_time[0] = '\0';
+    }
+
+    // info
+    char currTmStr[128] = {0,}; get_time_str(currTmStr);
+    msg_len = sprintf(trcMsgInfo->trcMsg, "[%s] [%s]\n", mySysName, currTmStr);
+    // slogan
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "S4000 HTTP/2 SEND RECV PACKET\n");
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "  OPERATION  : HTTP/2 STACK Send Request / Recv Response\n");
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "  STRM_INFO  : SESS=(%d) STRM=(%d) ACID=(%d)\n",
+            httpc_ctx->session_id, httpc_ctx->stream.stream_id, httpc_ctx->user_ctx.head.ahifCid);
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "  SND_TM     : %s\n", httpc_ctx->send_time);
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "  RCV_TM     : %s\n", httpc_ctx->recv_time);
+    // snd msg trace
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "[Send_Response]\n");
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "%s", httpc_ctx->send_log_ptr);
+    // rcv msg trace
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "[Recv_Request]\n");
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "%s", httpc_ctx->recv_log_ptr);
+    // trace end
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "COMPLETE\n");
+
+    ixpcMsg->head.bodyLen = sizeof(TraceMsgInfo)-TRC_MSG_BODY_MAX_LEN + msg_len + 8;
+    if (CLIENT_CONF.pkt_log == 1) {
+        APPLOG(APPLOG_ERR, "\n\n%s", trcMsgInfo->trcMsg);
+    }
+    if (CLIENT_CONF.trace_enable == 1 && httpc_ctx->user_ctx.head.subsTraceFlag == 1) {
+        if (msgsnd(ixpcQid, (char *)&GeneralMsg, ixpcMsg->head.bodyLen + sizeof(long) + sizeof(ixpcMsg->head), IPC_NOWAIT) < 0) {
+            APPLOG(APPLOG_ERR, "{{{DBG}}} %s fail to send send trace, errno(%d), (%s)", __func__, errno, strerror(errno));
+        }
+    }
+}
+
+// httpc inbound, logwrite step 2 of 2 (all of body received or stream closed)
+void log_pkt_end_stream(httpc_ctx_t *httpc_ctx)
+{
+	if (CLIENT_CONF.pkt_log != 1 && CLIENT_CONF.trace_enable != 1) {
+        return;
+    }
 
 	if (httpc_ctx->recv_log_file == NULL) {
-		httpc_ctx->recv_log_file = open_memstream(&httpc_ctx->log_ptr, &httpc_ctx->file_size);
+		httpc_ctx->recv_log_file = open_memstream(&httpc_ctx->recv_log_ptr, &httpc_ctx->recv_file_size);
 		if (httpc_ctx->recv_log_file == NULL) {
 			APPLOG(APPLOG_ERR, "{{{PKT}}} in %s fail to call open_memstream!", __func__);
-			return;
-		}
+			return clear_trace_resource(httpc_ctx);
+        } else {
+            get_time_str(httpc_ctx->recv_time);
+        }
 	}
+
 	// print body to log
 	if (httpc_ctx->user_ctx.head.bodyLen > 0) {
-#if 0
-		util_dumphex(httpc_ctx->recv_log_file, httpc_ctx->user_ctx.body, httpc_ctx->user_ctx.head.bodyLen);
-#else
+        fprintf(httpc_ctx->recv_log_file, DUMPHEX_GUIDE_STR, httpc_ctx->user_ctx.head.bodyLen);
 		util_dumphex(httpc_ctx->recv_log_file, 
 				httpc_ctx->user_ctx.data + httpc_ctx->user_ctx.head.queryLen,
 				httpc_ctx->user_ctx.head.bodyLen);
-#endif
 	}
 
-	// 1) close file
-	fclose(httpc_ctx->recv_log_file);
-	httpc_ctx->recv_log_file = NULL;
-	// 2) use ptr
-	APPLOG(APPLOG_ERR, "{{{PKT}}} HTTPC RECV http sess/stream(%d:%d) ahifCid(%d)]\n\
---------------------------------------------------------------------------------------------------\n\
-%s\
-==================================================================================================\n",
-	httpc_ctx->session_id, 
-	stream_id, 
-	httpc_ctx->user_ctx.head.ahifCid,
-	httpc_ctx->log_ptr);
-	// 3) free ptr
-	free(httpc_ctx->log_ptr);
-	httpc_ctx->log_ptr = NULL;
+    send_trace_to_omp(httpc_ctx);
+
+    return;
 }
 
 void log_pkt_httpc_error_reply(httpc_ctx_t *httpc_ctx, int resp_code)
 {
-	if (CLIENT_CONF.pkt_log != 1)
-		return;
+    if (CLIENT_CONF.pkt_log != 1)
+        return;
 
-	APPLOG(APPLOG_ERR, "{{{PKT}}} HTTPC INTERNAL ERROR http sess/stream(N/A:N/A) ahifCid(%d)]\n\
---------------------------------------------------------------------------------------------------\n\
-:status:%d\n\
-==================================================================================================\n",
-	httpc_ctx->user_ctx.head.ahifCid, resp_code);
+    APPLOG(APPLOG_ERR, "{{{PKT}}} http/2 send request internal error(%d), ahifCid=(%d)", resp_code, httpc_ctx->user_ctx.head.ahifCid);
 }
 
 void log_pkt_httpc_reset(httpc_ctx_t *httpc_ctx)
 {
-	if (CLIENT_CONF.pkt_log != 1)
-		return;
+    if (CLIENT_CONF.pkt_log != 1 && CLIENT_CONF.trace_enable != 1)
+        return;
 
-	APPLOG(APPLOG_ERR, "{{{PKT}}} HTTPC RESET STREAM http sess/stream(%d:%d) ahifCid(%d)]\n\
---------------------------------------------------------------------------------------------------\n\
-STREAM RESET SENDED\n\
-==================================================================================================\n",
-	httpc_ctx->session_id, 
-	httpc_ctx->stream.stream_id, 
-	httpc_ctx->user_ctx.head.ahifCid);
+    APPLOG(APPLOG_ERR, "{{{PKT}}} http/2 send request / stream ressetted, ahifCid=(%d)", httpc_ctx->user_ctx.head.ahifCid);
+
+    send_trace_to_omp(httpc_ctx);
 }

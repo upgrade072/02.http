@@ -332,25 +332,20 @@ static int submit_request(http2_session_data_t *session_data, httpc_ctx_t *httpc
 	hdrs_len = assign_more_headers(VHDR_INDEX[0], &hdrs[0], MAX_HDR_RELAY_CNT + 5, hdrs_len, &httpc_ctx->user_ctx);
 
 	nghttp2_data_provider data_prd = {0,};
-	char log_pfx[1024] = {0,};
 
 	if (httpc_ctx->user_ctx.head.bodyLen > 0) {
 		data_prd.source.ptr = httpc_ctx;
 		data_prd.read_callback = ptr_read_callback; // clear ctx after body send
 		stream_id = nghttp2_submit_request(session_data->session, NULL, hdrs, 
 				hdrs_len, &data_prd, stream_data);
-		sprintf(log_pfx, "HTTPC SEND ahifcid(%d) http sess/stream(%d:%d)]", 
-				httpc_ctx->user_ctx.head.ahifCid, httpc_ctx->session_id, stream_id);
-		log_pkt_send(log_pfx, hdrs, hdrs_len, 
+		log_pkt_send(httpc_ctx, hdrs, hdrs_len, 
 				httpc_ctx->user_ctx.data + httpc_ctx->user_ctx.head.queryLen, 
 				httpc_ctx->user_ctx.head.bodyLen);
 
 	} else {
 		stream_id = nghttp2_submit_request(session_data->session, NULL, hdrs, 
 				hdrs_len, NULL, stream_data);
-		sprintf(log_pfx, "HTTPC SEND ahifcid(%d) http sess/stream(%d:%d)]", 
-				httpc_ctx->user_ctx.head.ahifCid, httpc_ctx->session_id, stream_id);
-		log_pkt_send(log_pfx, hdrs, hdrs_len, 
+		log_pkt_send(httpc_ctx, hdrs, hdrs_len, 
 				httpc_ctx->user_ctx.data + httpc_ctx->user_ctx.head.queryLen, 
 				httpc_ctx->user_ctx.head.bodyLen);
 
@@ -474,7 +469,7 @@ static int on_stream_close_callback(nghttp2_session *session, int32_t stream_id,
 
 	// Whole data Reveived
 
-	log_pkt_end_stream(stream_id, httpc_ctx);
+	log_pkt_end_stream(httpc_ctx);
 
 	if (httpc_ctx->inflight_ref_cnt > 0) {
 		/* timeout case */
