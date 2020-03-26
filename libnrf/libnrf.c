@@ -553,6 +553,7 @@ void stat_cnvt_5geir_nrfm(STM_CommonStatMsg *commStatItem, STM_NrfmStatistics_s 
 void nrf_stat_function(int ixpcQid, IxpcQMsgType *rxIxpcMsg, int event_code, GNode *ROOT_STAT)
 {
 	int len = sizeof(int), txLen = 0;
+    int statCnt = 0;
 #ifdef STAT_LEGACY
     STM_NrfmStatisticMsgType stm_nrfm = {0,};
     int stm_nrfm_row = 0;
@@ -585,7 +586,8 @@ void nrf_stat_function(int ixpcQid, IxpcQMsgType *rxIxpcMsg, int event_code, GNo
         nrf_stat_t *NRF_STAT = (nrf_stat_t *)select_node->data;
 
         for (int i = 0; i < NRFS_OP_MAX; i++) {
-            commStatItem = &commStatMsg->info[i];
+            //commStatItem = &commStatMsg->info[i];
+            commStatItem = &commStatMsg->info[statCnt]; ++statCnt;
             len += sizeof (STM_CommonStatMsg);
 
             snprintf(commStatItem->strkey1, sizeof(commStatItem->strkey1), "%s", NRF_STAT->hostname);
@@ -608,6 +610,8 @@ void nrf_stat_function(int ixpcQid, IxpcQMsgType *rxIxpcMsg, int event_code, GNo
 #endif
         }
     }
+
+    commStatMsg->num = statCnt;
 
     /* remove nodes data */
     for (int nth = host_num - 1; nth >= 0; nth--) {
