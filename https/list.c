@@ -54,6 +54,7 @@ void assign_new_ctx_info(https_ctx_t *https_ctx, http2_session_data *session_dat
 void assign_rcv_ctx_info(https_ctx_t *https_ctx, AhifHttpCSMsgType *ResMsg)
 {
 	https_ctx->user_ctx.head.subsTraceFlag = ResMsg->head.subsTraceFlag;
+    memcpy(https_ctx->user_ctx.head.subsTraceId, ResMsg->head.subsTraceId, sizeof(https_ctx->user_ctx.head.subsTraceId));
 	https_ctx->user_ctx.head.respCode = ResMsg->head.respCode;
 	https_ctx->user_ctx.head.vheaderCnt = ResMsg->head.vheaderCnt;
 	memcpy(&https_ctx->user_ctx.vheader, ResMsg->vheader, sizeof(hdr_relay) * ResMsg->head.vheaderCnt);
@@ -87,6 +88,7 @@ void clear_and_free_ctx(https_ctx_t *https_ctx)
 {
     clear_trace_resource(https_ctx);
 	https_ctx->user_ctx.head.subsTraceFlag = 0;
+    memset(https_ctx->user_ctx.head.subsTraceId, 0x00, sizeof(https_ctx->user_ctx.head.subsTraceId));
 	https_ctx->inflight_ref_cnt = 0;
 	https_ctx->user_ctx.head.bodyLen = 0;
 	https_ctx->user_ctx.head.queryLen = 0;
@@ -352,11 +354,23 @@ void send_trace_to_omp(https_ctx_t *https_ctx)
     msg_len = sprintf(ixpcMsg->body, "[%s] [%s]\n", mySysName, currTmStr);
     // slogan
     msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "S4000 HTTP/2 RECV SEND PACKET\n");
-    msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "  OPERATION  : HTTP/2 STACK Recv Request / Send Response\n");
-    msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "  STRM_INFO  : SESS=(%d) STRM=(%d) ACID=(%d)\n", 
+    msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "  OPERATION        : HTTP/2 STACK Recv Request / Send Response\n");
+    // trace info
+    if (https_ctx->user_ctx.head.subsTraceFlag) {
+        msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "  TRACE_ID         : %s\n", https_ctx->user_ctx.head.subsTraceId);
+    }
+    http2_session_data *session_data = get_session(https_ctx->thrd_idx, https_ctx->sess_idx, https_ctx->session_id);
+    if (session_data != NULL) {
+        msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "  SESS_INFO        : %s://%s:%d (%s)\n",
+                session_data->scheme, 
+                !strncmp(session_data->client_addr, "::ffff:", strlen("::ffff:")) ? session_data->client_addr + strlen("::ffff:") : session_data->client_addr,
+                session_data->client_port, 
+                session_data->hostname); 
+    }
+    msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "  STRM_INFO        : SESS=(%d) STRM=(%d) ACID=(%d)\n", 
             https_ctx->session_id, https_ctx->user_ctx.head.stream_id, https_ctx->user_ctx.head.ahifCid);
-    msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "  RCV_TM     : %s\n", https_ctx->recv_time);
-    msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "  SND_TM     : %s\n", https_ctx->send_time);
+    msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "  RCV_TM           : %s\n", https_ctx->recv_time);
+    msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "  SND_TM           : %s\n", https_ctx->send_time);
     // rcv msg trace
     msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "[Recv_Request]\n");
     msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "%s", https_ctx->recv_log_ptr);
@@ -364,7 +378,7 @@ void send_trace_to_omp(https_ctx_t *https_ctx)
     msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "[Send_Response]\n");
     msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "%s", https_ctx->send_log_ptr);
     // trace end
-    msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "COMPLETE\n");
+    msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "COMPLETE\n\n\n");
 
     ixpcMsg->head.bodyLen = msg_len;
     if (SERVER_CONF.pkt_log == 1) {

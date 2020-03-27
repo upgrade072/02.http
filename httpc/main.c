@@ -1172,7 +1172,8 @@ void conn_func(evutil_socket_t fd, short what, void *arg)
 		/* stat HTTP_CONN */
 		http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_CONN);
 
-		// schlee, create session authority data
+        sprintf(session_data->host, CONN_LIST[i].host);
+
 		/* authority   = [ userinfo "@" ] host [ ":" port ] */
 		sprintf(session_data->scheme, "%s", CONN_LIST[i].scheme);
 		sprintf(session_data->authority, "%s", CONN_LIST[i].ip);

@@ -225,7 +225,6 @@ ONE_MORE_TRY:
                 break;
             }
             if (find == 0) {
-                APPLOG(APPLOG_DETAIL, "%s() giveup can't find any fep conn", __func__);
                 return NULL;
             }
         }

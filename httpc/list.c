@@ -57,6 +57,7 @@ void clear_and_free_ctx(httpc_ctx_t *httpc_ctx)
 {
     clear_trace_resource(httpc_ctx);
     httpc_ctx->user_ctx.head.subsTraceFlag = 0;
+    memset(httpc_ctx->user_ctx.head.subsTraceId, 0x00, sizeof(httpc_ctx->user_ctx.head.subsTraceId));
 	httpc_ctx->tcp_wait = 0;
 	httpc_ctx->inflight_ref_cnt = 0;
 	httpc_ctx->user_ctx.head.bodyLen = 0;
@@ -348,11 +349,16 @@ void send_trace_to_omp(httpc_ctx_t *httpc_ctx)
     msg_len = sprintf(ixpcMsg->body, "[%s] [%s]\n", mySysName, currTmStr);
     // slogan
     msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "S4000 HTTP/2 SEND RECV PACKET\n");
-    msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "  OPERATION  : HTTP/2 STACK Send Request / Recv Response\n");
-    msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "  STRM_INFO  : SESS=(%d) STRM=(%d) ACID=(%d)\n",
+    msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "  OPERATION        : HTTP/2 STACK Send Request / Recv Response\n");
+    http2_session_data_t *session_data = get_session(httpc_ctx->thrd_idx, httpc_ctx->sess_idx, httpc_ctx->session_id);
+    if (session_data != NULL) {
+        msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "  SESS_INFO        : %s://%s (%s)\n",
+                session_data->scheme, session_data->authority, session_data->host);
+    }
+    msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "  STRM_INFO        : SESS=(%d) STRM=(%d) ACID=(%d)\n",
             httpc_ctx->session_id, httpc_ctx->stream.stream_id, httpc_ctx->user_ctx.head.ahifCid);
-    msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "  SND_TM     : %s\n", httpc_ctx->send_time);
-    msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "  RCV_TM     : %s\n", httpc_ctx->recv_time);
+    msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "  SND_TM           : %s\n", httpc_ctx->send_time);
+    msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "  RCV_TM           : %s\n", httpc_ctx->recv_time);
     // snd msg trace
     msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "[Send_Response]\n");
     msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "%s", httpc_ctx->send_log_ptr);

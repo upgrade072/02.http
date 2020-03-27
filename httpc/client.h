@@ -210,6 +210,7 @@ typedef struct http2_session_data {
 	char scheme[12];
 	char authority[128];
 	int authority_len;
+    char host[AHIF_MAX_DESTHOST_LEN];
 
 	int list_index;		// hostname index
 

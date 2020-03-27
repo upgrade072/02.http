@@ -76,8 +76,12 @@ int assign_more_headers(hdr_index_t HDR_INDEX[], nghttp2_nv *hdrs, int size, int
 void print_header(FILE *f, const uint8_t *name, size_t namelen, const uint8_t *value, size_t valuelen) 
 {
 	fprintf(f, "  ");
+#if 0
     fwrite(name, 1, namelen, f);
     fprintf(f, ": ");
+#else
+    fprintf(f, "%-17s: ", name);
+#endif
     fwrite(value, 1, valuelen, f);
 	fprintf(f, "\n");
 }
