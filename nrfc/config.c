@@ -29,7 +29,7 @@ int init_cfg(config_t *CFG)
 	// sysconfig
 	save_sysconfig(CFG, &MAIN_CTX);
         
-    write_cfg(&MAIN_CTX);
+    //write_cfg(&MAIN_CTX);
     
     return 0;
 }       

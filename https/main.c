@@ -189,7 +189,6 @@ static http2_session_data *create_http2_session_data(app_context *app_ctx,
 		int addrlen) {
 	int rv;
 	http2_session_data *session_data;
-	SSL *ssl;
 	char host[NI_MAXHOST];
 	int val = 1;
 	int index = 0;
@@ -236,12 +235,13 @@ static http2_session_data *create_http2_session_data(app_context *app_ctx,
 	sprintf(session_data->type, "%s", ALLOW_LIST[allowlist_index].type);
 	session_data->list_index = ALLOW_LIST[allowlist_index].list_index;
 	session_data->auth_act = ALLOW_LIST[allowlist_index].auth_act;
+    session_data->app_ctx = app_ctx;
+    session_data->sock_fd = fd;
 
 	/* use when session DACT */
 	add_to_allowlist(allowlist_index, index, sess_idx, session_data->session_id);
 
 	if (app_ctx->ssl_ctx != NULL) {
-		ssl = create_ssl(app_ctx->ssl_ctx);
 		APPLOG(APPLOG_DETAIL, "TLS] %s() thread [%d], accept new client, session id (%d)", 
 				__func__, index, session_data->session_id);
 	} else {
@@ -251,19 +251,6 @@ static http2_session_data *create_http2_session_data(app_context *app_ctx,
 
 	setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (char *)&val, sizeof(val));
 	session_data->thrd_index = index;
-	if (app_ctx->ssl_ctx != NULL) {
-		APPLOG(APPLOG_DETAIL, "DBG}}} SSL CONNECTED !");
-		sprintf(session_data->scheme, "%s", "https");
-		session_data->bev = bufferevent_openssl_socket_new(
-				THRD_WORKER[index].evbase, fd, ssl, BUFFEREVENT_SSL_ACCEPTING,
-				BEV_OPT_CLOSE_ON_FREE | BEV_OPT_THREADSAFE| BEV_OPT_DEFER_CALLBACKS);
-	} else {
-		APPLOG(APPLOG_DETAIL, "DBG}}} TCP CONNECTED !");
-		sprintf(session_data->scheme, "%s", "http");
-		session_data->bev = bufferevent_socket_new(
-				THRD_WORKER[index].evbase, fd,
-				BEV_OPT_CLOSE_ON_FREE | BEV_OPT_THREADSAFE| BEV_OPT_DEFER_CALLBACKS);
-	}
 
 	session_data->client_addr = strdup(host);
 	session_data->client_port = ntohs(get_in_port(addr));
@@ -273,15 +260,6 @@ static http2_session_data *create_http2_session_data(app_context *app_ctx,
 		session_data->is_direct_session = 1;
 		session_data->relay_fep_tag = app_ctx->relay_fep_tag;
 	}
-
-	/* schlee, if tcp connection, never happen EVENT_CONNECTED */
-	if (app_ctx->ssl_ctx == NULL) {
-		eventcb(session_data->bev, BEV_EVENT_CONNECTED, session_data);
-	}
-
-    /* schlee, if evhandler not assigned, it cause send_ping core error */
-    bufferevent_setcb(session_data->bev, readcb, writecb, eventcb, session_data);
-	bufferevent_enable(session_data->bev, EV_READ | EV_WRITE);
 
 	return session_data;
 }
@@ -1108,7 +1086,7 @@ static void eventcb(struct bufferevent *bev, short events, void *ptr) {
 		unsigned int alpnlen = 0;
 		(void)bev;
 
-		APPLOG(APPLOG_DETAIL, "%s() %s:%d Connected", __func__, session_data->client_addr, session_data->client_port);
+		APPLOG(APPLOG_DETAIL, "%s() %s://%s:%d Connected", __func__, session_data->scheme, session_data->client_addr, session_data->client_port);
 
 		if (!strcmp(session_data->scheme, "https")) {
 			SSL *ssl = bufferevent_openssl_get_ssl(session_data->bev);
@@ -1151,6 +1129,37 @@ static void eventcb(struct bufferevent *bev, short events, void *ptr) {
 	delete_http2_session_data(session_data);
 }
 
+void accept_http2_session_data(evutil_socket_t fd, short what, void *arg)
+{
+	http2_session_data *session_data = (http2_session_data *)arg;
+    app_context *app_ctx = session_data->app_ctx;
+    int sock_fd = session_data->sock_fd;
+
+    if (app_ctx->ssl_ctx != NULL) {
+        APPLOG(APPLOG_DETAIL, "DBG}}} SSL CONNECTED !");
+        sprintf(session_data->scheme, "%s", "https");
+        SSL *ssl = create_ssl(app_ctx->ssl_ctx);
+        session_data->bev = bufferevent_openssl_socket_new(
+                THRD_WORKER[session_data->thrd_index].evbase, sock_fd, ssl, BUFFEREVENT_SSL_ACCEPTING,
+                BEV_OPT_CLOSE_ON_FREE | BEV_OPT_THREADSAFE| BEV_OPT_DEFER_CALLBACKS);
+    } else {
+        APPLOG(APPLOG_DETAIL, "DBG}}} TCP CONNECTED !");
+        sprintf(session_data->scheme, "%s", "http");
+        session_data->bev = bufferevent_socket_new(
+                THRD_WORKER[session_data->thrd_index].evbase, sock_fd, 
+                BEV_OPT_CLOSE_ON_FREE | BEV_OPT_THREADSAFE| BEV_OPT_DEFER_CALLBACKS);
+    }       
+
+    /* schlee, if evhandler not assigned, it cause send_ping core error */
+    bufferevent_setcb(session_data->bev, readcb, writecb, eventcb, session_data);
+    bufferevent_enable(session_data->bev, EV_READ | EV_WRITE);
+
+    /* schlee, if tcp connection, never happen EVENT_CONNECTED */
+    if (app_ctx->ssl_ctx == NULL) {
+        eventcb(session_data->bev, BEV_EVENT_CONNECTED, session_data);
+    }
+}
+
 /* callback for evconnlistener */
 static void acceptcb(struct evconnlistener *listener, int fd,
 		struct sockaddr *addr, int addrlen, void *arg) {
@@ -1174,7 +1183,11 @@ static void acceptcb(struct evconnlistener *listener, int fd,
 
 		close(fd);
 		return; // don't do anything!
-	}
+	} else {
+        if (event_base_once(THRD_WORKER[session_data->thrd_index].evbase, -1, EV_TIMEOUT, accept_http2_session_data, session_data, NULL) < 0) {
+            APPLOG(APPLOG_ERR, "{{{TODO}}} %s() fail to add callback to dest evbase", __func__);
+        }
+    }
 	/* stat HTTP_CONN */
 	http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_CONN);
 

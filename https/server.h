@@ -209,6 +209,8 @@ typedef struct http2_stream_data {
 } http2_stream_data;
 
 typedef struct http2_session_data {
+    app_context *app_ctx;
+    int sock_fd;
 	nghttp2_session *session;
 	http2_stream_data root;
 	struct bufferevent *bev;

@@ -351,7 +351,7 @@ int config_load()
     APPLOG(APPLOG_ERR, "{{{CFG}}} all cfg loading success");
 
     config_set_tab_width(&CFG, 4);
-    config_write_file(&CFG, CONFIG_PATH);
+    //config_write_file(&CFG, CONFIG_PATH);
 
     return (0);
 

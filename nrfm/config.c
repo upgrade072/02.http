@@ -267,7 +267,7 @@ int init_cfg(config_t *CFG)
 
 	// save with indent
 	config_set_tab_width(CFG, 4);
-	config_write_file(CFG, conf_path);
+	//config_write_file(CFG, conf_path);
 
 	// set info to cfg
 	set_cfg_sys_info(CFG);
