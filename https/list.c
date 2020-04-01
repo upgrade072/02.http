@@ -325,8 +325,10 @@ void send_trace_to_omp(https_ctx_t *https_ctx)
     GeneralQMsgType GeneralMsg = {0,};
 
     IxpcQMsgType *ixpcMsg = (IxpcQMsgType *)&GeneralMsg.body;
+    TraceMsgInfo *trcMsgInfo = (TraceMsgInfo *)(ixpcMsg->body);
+    memset(trcMsgInfo, 0x00, sizeof(TraceMsgInfo) - TRC_MSG_BODY_MAX_LEN);
 
-    GeneralMsg.mtype = MTYPE_TRC_CONSOLE;
+    GeneralMsg.mtype = MTYPE_TRACE_NOTIFICATION;
     strcpy(ixpcMsg->head.srcSysName, mySysName);
     strcpy(ixpcMsg->head.srcAppName, myProcName);
     strcpy(ixpcMsg->head.dstSysName, "OMP");
@@ -351,38 +353,43 @@ void send_trace_to_omp(https_ctx_t *https_ctx)
 
     // info
     char currTmStr[128] = {0,}; get_time_str(currTmStr);
-    msg_len = sprintf(ixpcMsg->body, "[%s] [%s]\n", mySysName, currTmStr);
+    msg_len = sprintf(trcMsgInfo->trcMsg, "[%s] [%s]\n", mySysName, currTmStr);
+    // ... //
+    sprintf(trcMsgInfo->trcTime, "%s", currTmStr);
+    trcMsgInfo->trcMsgType = TRCMSG_INIT_MSG;
+    // ... //
     // slogan
-    msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "S4000 HTTP/2 RECV SEND PACKET\n");
-    msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "  OPERATION        : HTTP/2 STACK Recv Request / Send Response\n");
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "S4000 HTTP/2 RECV SEND PACKET\n");
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "  OPERATION        : HTTP/2 STACK Recv Request / Send Response\n");
     // trace info
     if (https_ctx->user_ctx.head.subsTraceFlag) {
-        msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "  TRACE_ID         : %s\n", https_ctx->user_ctx.head.subsTraceId);
+        msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "  TRACE_ID         : %s\n", https_ctx->user_ctx.head.subsTraceId);
     }
     http2_session_data *session_data = get_session(https_ctx->thrd_idx, https_ctx->sess_idx, https_ctx->session_id);
     if (session_data != NULL) {
-        msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "  SESS_INFO        : %s://%s:%d (%s)\n",
+        msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "  SESS_INFO        : %s://%s:%d (%s)\n",
                 session_data->scheme, 
                 !strncmp(session_data->client_addr, "::ffff:", strlen("::ffff:")) ? session_data->client_addr + strlen("::ffff:") : session_data->client_addr,
                 session_data->client_port, 
                 session_data->hostname); 
     }
-    msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "  STRM_INFO        : SESS=(%d) STRM=(%d) ACID=(%d)\n", 
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "  STRM_INFO        : SESS=(%d) STRM=(%d) ACID=(%d)\n", 
             https_ctx->session_id, https_ctx->user_ctx.head.stream_id, https_ctx->user_ctx.head.ahifCid);
-    msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "  RCV_TM           : %s\n", https_ctx->recv_time);
-    msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "  SND_TM           : %s\n", https_ctx->send_time);
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "  RCV_TM           : %s\n", https_ctx->recv_time);
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "  SND_TM           : %s\n", https_ctx->send_time);
     // rcv msg trace
-    msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "[Recv_Request]\n");
-    msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "%s", https_ctx->recv_log_ptr);
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "[Recv_Request]\n");
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "%s", https_ctx->recv_log_ptr);
     // snd msg trace
-    msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "[Send_Response]\n");
-    msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "%s", https_ctx->send_log_ptr);
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "[Send_Response]\n");
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "%s", https_ctx->send_log_ptr);
     // trace end
-    msg_len += sprintf(ixpcMsg->body + strlen(ixpcMsg->body), "COMPLETE\n\n\n");
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "COMPLETE\n\n\n");
 
-    ixpcMsg->head.bodyLen = msg_len;
+    //ixpcMsg->head.bodyLen = msg_len;
+    ixpcMsg->head.bodyLen = sizeof(TraceMsgInfo)-TRC_MSG_BODY_MAX_LEN + msg_len + 8;
     if (SERVER_CONF.pkt_log == 1) {
-        APPLOG(APPLOG_ERR, "\n\n%s", ixpcMsg->body);
+        APPLOG(APPLOG_ERR, "\n\n%s", trcMsgInfo->trcMsg);
     }
     if (SERVER_CONF.trace_enable == 1 && https_ctx->user_ctx.head.subsTraceFlag == 1) {
         if (msgsnd(ixpcQid, (char *)&GeneralMsg, ixpcMsg->head.bodyLen + sizeof(long) + sizeof(ixpcMsg->head), IPC_NOWAIT) < 0) {
