@@ -297,6 +297,7 @@ void    set_intl_req_msg(intl_req_t *intl_req, int thrd_idx, int ctx_idx, int se
 http2_session_data_t    *get_session(int thrd_idx, int sess_idx, int session_id);
 void    save_session_info(httpc_ctx_t *httpc_ctx, int thrd_idx, int sess_idx, int session_id, int ctx_idx, conn_list_t *conn_list);
 int     find_least_conn_worker();
+void    select_list(conn_list_status_t CONN_STATUS[], char *type);
 void    print_list(conn_list_status_t conn_status[]);
 void    write_list(conn_list_status_t CONN_STATUS[], char *buff);
 void    gather_list(conn_list_status_t CONN_STATUS[]);

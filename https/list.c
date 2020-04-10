@@ -377,12 +377,30 @@ void send_trace_to_omp(https_ctx_t *https_ctx)
             https_ctx->session_id, https_ctx->user_ctx.head.stream_id, https_ctx->user_ctx.head.ahifCid);
     msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "  RCV_TM           : %s\n", https_ctx->recv_time);
     msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "  SND_TM           : %s\n", https_ctx->send_time);
+
+    // check remain size
+    int check_remain = sizeof(trcMsgInfo->trcMsg) - strlen(trcMsgInfo->trcMsg)
+        - strlen("[Recv_Request]\n")
+        - strlen("[Send_Response]\n")
+        - strlen("COMPLETE\n\n\n");
+    int half_size = check_remain / 2;
+
     // rcv msg trace
     msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "[Recv_Request]\n");
-    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "%s", https_ctx->recv_log_ptr);
+    if (strlen(https_ctx->recv_log_ptr) >= half_size) {
+        msg_len += snprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), half_size - 1, "%s", https_ctx->recv_log_ptr);
+        msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "\n");
+    } else {
+        msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "%s", https_ctx->recv_log_ptr);
+    }
     // snd msg trace
     msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "[Send_Response]\n");
-    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "%s", https_ctx->send_log_ptr);
+    if (strlen(https_ctx->send_log_ptr) >= half_size) {
+        msg_len += snprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), half_size - 1, "%s", https_ctx->send_log_ptr);
+        msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "\n");
+    } else {
+        msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "%s", https_ctx->send_log_ptr);
+    }
     // trace end
     msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "COMPLETE\n\n\n");
 

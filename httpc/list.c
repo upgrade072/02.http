@@ -159,6 +159,15 @@ void print_list(conn_list_status_t conn_status[]) {
     APPLOG(APPLOG_ERR, "---------------------------------------------------------------------------------------------------------------");
 }
 
+void select_list(conn_list_status_t CONN_STATUS[], char *type) {
+	for ( int i = 0; i < MAX_LIST_NUM; i++) {
+        if (CONN_STATUS[i].occupied != 1)
+            continue;
+        if (strcmp(CONN_STATUS[i].type, type))
+            CONN_STATUS[i].occupied = 0;
+    }
+}
+
 /* watch out for buffer size */
 void write_list(conn_list_status_t CONN_STATUS[], char *buff) {
 	ft_table_t *table = ft_create_table();
@@ -354,7 +363,7 @@ void send_trace_to_omp(httpc_ctx_t *httpc_ctx)
     trcMsgInfo->trcMsgType = TRCMSG_INIT_MSG;
     // ... //
     // slogan
-    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "S4000 HTTP/2 SEND RECV PACKET\n");
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "S4000 HTTP/2 SEND-RECV PACKET\n");
     msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "  OPERATION        : HTTP/2 STACK Send Request / Recv Response\n");
     http2_session_data_t *session_data = get_session(httpc_ctx->thrd_idx, httpc_ctx->sess_idx, httpc_ctx->session_id);
     if (session_data != NULL) {
@@ -365,14 +374,32 @@ void send_trace_to_omp(httpc_ctx_t *httpc_ctx)
             httpc_ctx->session_id, httpc_ctx->stream.stream_id, httpc_ctx->user_ctx.head.ahifCid);
     msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "  SND_TM           : %s\n", httpc_ctx->send_time);
     msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "  RCV_TM           : %s\n", httpc_ctx->recv_time);
+
+    // check remain size
+    int check_remain = sizeof(trcMsgInfo->trcMsg) - strlen(trcMsgInfo->trcMsg) 
+        - strlen("[Send_Response]\n") 
+        - strlen("[Recv_Request]\n") 
+        - strlen("COMPLETE\n\n\n");
+    int half_size = check_remain / 2;
+
     // snd msg trace
     msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "[Send_Response]\n");
-    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "%s", httpc_ctx->send_log_ptr);
+    if (strlen(httpc_ctx->send_log_ptr) >= half_size) {
+        msg_len += snprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), half_size - 1, "%s", httpc_ctx->send_log_ptr);
+        msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "\n");
+    } else {
+        msg_len += snprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), half_size, "%s", httpc_ctx->send_log_ptr);
+    }
     // rcv msg trace
     msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "[Recv_Request]\n");
-    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "%s", httpc_ctx->recv_log_ptr);
+    if (strlen(httpc_ctx->recv_log_ptr) >= half_size) {
+        msg_len += snprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), half_size - 1, "%s", httpc_ctx->recv_log_ptr);
+        msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "\n");
+    } else {
+        msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "%s", httpc_ctx->recv_log_ptr);
+    }
     // trace end
-    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "COMPLETE\n");
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "COMPLETE\n\n\n");
 
     //ixpcMsg->head.bodyLen = msg_len;
     ixpcMsg->head.bodyLen = sizeof(TraceMsgInfo)-TRC_MSG_BODY_MAX_LEN + msg_len + 8;

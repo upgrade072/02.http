@@ -504,13 +504,22 @@ int func_dis_http_server(IxpcQMsgType *rxIxpcMsg)
 {
 	APPLOG(APPLOG_DEBUG, "%s() called", __func__);
 
+	MMLReqMsgType   *mmlReq=(MMLReqMsgType*)rxIxpcMsg->body;
+
 	char *resBuf = malloc(1024 * 1024);
 	resBuf[0] = '\0';
 	conn_list_status_t CONN_STATUS[MAX_CON_NUM];
 
 	memset(CONN_STATUS, 0x00, sizeof(conn_list_status_t) * MAX_CON_NUM);
-
 	gather_list(CONN_STATUS);
+
+    // get specific type
+    char nf_type[64] = {0,};
+    if (get_mml_para_str(mmlReq, "TYPE", nf_type) > 0) {
+        strupr(nf_type, strlen(nf_type));
+        select_list(CONN_STATUS, nf_type);
+    }
+
 	write_list(CONN_STATUS, resBuf);
 
 	print_list(CONN_STATUS);

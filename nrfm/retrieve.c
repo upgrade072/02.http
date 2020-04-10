@@ -420,6 +420,7 @@ void nf_retrieve_list_retry_while_after(nf_retrieve_info_t *nf_retr_info)
 
 int nf_retrieve_parse_list(json_object *js_item, nf_retrieve_item_t *item_ctx)
 {
+#if 0
 	char protocol[128] = {0,};
 	char host[128] = {0,};
 
@@ -427,6 +428,15 @@ int nf_retrieve_parse_list(json_object *js_item, nf_retrieve_item_t *item_ctx)
 	APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s() %s %s %s %s", 
 			__func__, protocol, host, item_ctx->nf_uuid, strlen(item_ctx->nf_uuid) == 0 ? "fail" : "succ");
 	return strlen(item_ctx->nf_uuid);
+#else
+	char key[128] = "href";
+	json_object *js_uuid = search_json_object(js_item, key);
+
+    sscanf(json_object_get_string(js_uuid), "/%127s", item_ctx->nf_uuid);
+    APPLOG(APPLOG_DEBUG, "{{{DBG}}} retrieve list get uuid=(%s)", item_ctx->nf_uuid);
+    return strlen(item_ctx->nf_uuid);
+#endif
+
 }
 
 void nf_retrieve_remove_nth_item(nf_retrieve_info_t *nf_retr_info, nf_retrieve_item_t *nf_item)

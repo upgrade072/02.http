@@ -82,7 +82,7 @@ char *cfg_get_my_noti_uri(main_ctx_t *MAIN_CTX)
 
 	// TODO!!! change NOTI PATH
 	char temp[1024] = {0,};
-	sprintf(temp, "https://%s:%d%s", ipv4_address, config_setting_get_int(setting_svc_port), PATH_HTTPS_RECV_NOTIFY);
+	sprintf(temp, "http://%s:%d%s", ipv4_address, config_setting_get_int(setting_svc_port), PATH_HTTPS_RECV_NOTIFY);
 	char *res = strdup(temp);
 
 	return res;

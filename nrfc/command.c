@@ -121,7 +121,7 @@ void get_connected_lb_str(main_ctx_t *MAIN_CTX, char *hostname, char *printBuff)
     }
 }
 
-void printf_nf_mml(main_ctx_t *MAIN_CTX, char *printBuff, char *filter)
+void printf_nf_mml(main_ctx_t *MAIN_CTX, char *printBuff, char *filter_type, char *filter_host)
 {
 	APPLOG(APPLOG_ERR, "{{{DBG}}} %s called!", __func__);
 
@@ -138,7 +138,9 @@ void printf_nf_mml(main_ctx_t *MAIN_CTX, char *printBuff, char *filter)
 		mml_conf_t *mml_conf = g_slist_nth_data(MAIN_CTX->opr_mml_list, i);
         nf_service_info *svc_info = &mml_conf->service_info;
 
-        if (filter != NULL && strcmp(filter, mml_conf->nf_type))
+        if (filter_type != NULL && strcmp(filter_type, mml_conf->nf_type))
+            continue;
+        if (filter_host != NULL && strcmp(filter_host, mml_conf->target_hostname))
             continue;
 
         char plmnStr[1024] = {0,};
@@ -409,7 +411,7 @@ int add_cfg_nf_mml_udm(main_ctx_t *MAIN_CTX, const char *conf_name, const char *
 
 	reload_mml(MAIN_CTX);
 
-	printf_nf_mml(MAIN_CTX, resBuf, NULL);
+	printf_nf_mml(MAIN_CTX, resBuf, NULL, NULL);
 
 	return 0;
 }
@@ -596,7 +598,7 @@ int add_cfg_nf_mml_amf(main_ctx_t *MAIN_CTX, const char *conf_name, const char *
 
     reload_mml(MAIN_CTX);
 
-    printf_nf_mml(MAIN_CTX, resBuf, NULL);
+    printf_nf_mml(MAIN_CTX, resBuf, NULL, NULL);
 
     return 0;
 }
@@ -645,7 +647,7 @@ int del_cfg_nf_mml(main_ctx_t *MAIN_CTX, int ID, char *resBuf)
 
 	reload_mml(MAIN_CTX);
 
-	printf_nf_mml(MAIN_CTX, resBuf, NULL);
+	printf_nf_mml(MAIN_CTX, resBuf, NULL, NULL);
 
 	return 0;
 }
@@ -657,15 +659,17 @@ int func_dis_nf_mml(IxpcQMsgType *rxIxpcMsg)
     MMLReqMsgType   *mmlReq=(MMLReqMsgType*)rxIxpcMsg->body;
 
     char nf_type[32] = {0,};
-
     get_mml_para_str(mmlReq, "NF_TYPE", nf_type);
     if (strlen(nf_type) > 0)
         strupr(nf_type, strlen(nf_type));
 
+    char host[128] = {0,};
+    get_mml_para_str(mmlReq, "HOST", host);
+
     char *resBuf=malloc(1024 * 1024);
 	resBuf[0] = '\0';
 
-	printf_nf_mml(&MAIN_CTX, resBuf, strlen(nf_type) > 0 ? nf_type : NULL);
+	printf_nf_mml(&MAIN_CTX, resBuf, strlen(nf_type) > 0 ? nf_type : NULL, strlen(host) > 0 ? host : NULL);
 
 	int res = send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
 

@@ -860,18 +860,19 @@ void nf_get_specific_info_udm(json_object *js_specific_info, nf_type_info *nf_sp
 }
 
 /*
-"amfInfo" : {
-    "amfRegionId" : "01",
-    "amfSetId" : "001",
-    "guamiList" : [ {
-                "plmnId" : "262-01",
-                "amfId" : "000001"
-            },
-            {
-                "plmnId", "302-720",
-                "amfId" : "000002"
-    } ],
-}
+  "amfInfo":{
+    "amfRegionId":"2f",
+    "amfSetId":"1a",
+    "guamiList":[
+      {
+        "plmnId":{
+          "mcc":"123",
+          "mnc":"45"
+        },
+        "amfId":"111111"
+      }
+    ],
+    ... ... ...
 */
 void nf_get_specific_info_amf(json_object *js_specific_info, nf_type_info *nf_specific_info)
 {
@@ -901,8 +902,14 @@ void nf_get_specific_info_amf(json_object *js_specific_info, nf_type_info *nf_sp
             char key_amfId[128] = "amfId";
             json_object *js_plmnId = search_json_object(js_guami_elem, key_plmnId);
             json_object *js_amfId = search_json_object(js_guami_elem, key_amfId);
-            if (js_plmnId)
-                sprintf(amfInfo->nf_guami[i].plmnId, "%.6s", json_object_get_string(js_plmnId));
+            if (js_plmnId) {
+                char key_mcc[128] = "mcc";
+                char key_mnc[128] = "mnc";
+                json_object *js_mcc = search_json_object(js_plmnId, key_mcc);
+                json_object *js_mnc = search_json_object(js_plmnId, key_mnc);
+                //sprintf(amfInfo->nf_guami[i].plmnId, "%.6s", json_object_get_string(js_plmnId));
+                sprintf(amfInfo->nf_guami[i].plmnId, "%.3s-%.3s", json_object_get_string(js_mcc), json_object_get_string(js_mnc));
+            }
             if (js_amfId)
                 sprintf(amfInfo->nf_guami[i].amfId, "%.6s", json_object_get_string(js_amfId));
         }

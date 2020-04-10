@@ -140,7 +140,7 @@ void    init_cmd(main_ctx_t *MAIN_CTX);
 void    message_handle(evutil_socket_t fd, short what, void *arg);
 void    mml_function(IxpcQMsgType *rxIxpcMsg);
 void    adjust_loglevel(TrcLibSetPrintMsgType *trcMsg);
-void    printf_nf_mml(main_ctx_t *MAIN_CTX, char *printBuff, char *filter);
+void    printf_nf_mml(main_ctx_t *MAIN_CTX, char *printBuff, char *filter_type, char *filter_host);
 void    printf_fep_nfs(nfs_avail_shm_t *SHM_NFS_AVAIL, char *printBuff);
 int     func_dis_nf_status(IxpcQMsgType *rxIxpcMsg);
 int     add_cfg_nf_mml_udm(main_ctx_t *MAIN_CTX, const char *conf_name, const char *target_host, const char *nf_type, MMLReqMsgType *mmlReq, config_setting_t *mml_list, char *resBuf);
