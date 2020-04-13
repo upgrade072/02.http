@@ -377,22 +377,22 @@ void send_trace_to_omp(httpc_ctx_t *httpc_ctx)
 
     // check remain size
     int check_remain = sizeof(trcMsgInfo->trcMsg) - strlen(trcMsgInfo->trcMsg) 
-        - strlen("[Send_Response]\n") 
-        - strlen("[Recv_Request]\n") 
+        - strlen("[Send_Request]\n") 
+        - strlen("[Recv_Response]\n") 
         - strlen("COMPLETE\n\n\n");
     int half_size = check_remain / 2;
 
     // snd msg trace
-    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "[Send_Response]\n");
-    if (strlen(httpc_ctx->send_log_ptr) >= half_size) {
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "[Send_Request]\n");
+    if (httpc_ctx->send_log_ptr != NULL && strlen(httpc_ctx->send_log_ptr) >= half_size) {
         msg_len += snprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), half_size - 1, "%s", httpc_ctx->send_log_ptr);
         msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "\n");
     } else {
-        msg_len += snprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), half_size, "%s", httpc_ctx->send_log_ptr);
+        msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "%s", httpc_ctx->send_log_ptr);
     }
     // rcv msg trace
-    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "[Recv_Request]\n");
-    if (strlen(httpc_ctx->recv_log_ptr) >= half_size) {
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "[Recv_Response]\n");
+    if (httpc_ctx->recv_log_ptr != NULL && strlen(httpc_ctx->recv_log_ptr) >= half_size) {
         msg_len += snprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), half_size - 1, "%s", httpc_ctx->recv_log_ptr);
         msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "\n");
     } else {

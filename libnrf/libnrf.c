@@ -235,7 +235,7 @@ acc_token_info_t *get_acc_token_info(acc_token_shm_t *ACC_TOKEN_LIST, int id, in
 
 acc_token_info_t *new_acc_token_info(acc_token_shm_t *ACC_TOKEN_LIST)
 {
-	for (int id = MAX_ACC_TOKEN_NUM; id > 0; id--) {
+	for (int id = (MAX_ACC_TOKEN_NUM-1); id > 0; id--) {
 		acc_token_info_t *token_info = &ACC_TOKEN_LIST->acc_token[id];
 		if (token_info->occupied == 0) {
 			memset(token_info, 0x00, sizeof(acc_token_info_t));

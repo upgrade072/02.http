@@ -387,7 +387,7 @@ void send_trace_to_omp(https_ctx_t *https_ctx)
 
     // rcv msg trace
     msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "[Recv_Request]\n");
-    if (strlen(https_ctx->recv_log_ptr) >= half_size) {
+    if (https_ctx->recv_log_ptr != NULL && strlen(https_ctx->recv_log_ptr) >= half_size) {
         msg_len += snprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), half_size - 1, "%s", https_ctx->recv_log_ptr);
         msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "\n");
     } else {
@@ -395,7 +395,7 @@ void send_trace_to_omp(https_ctx_t *https_ctx)
     }
     // snd msg trace
     msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "[Send_Response]\n");
-    if (strlen(https_ctx->send_log_ptr) >= half_size) {
+    if (https_ctx->send_log_ptr != NULL && strlen(https_ctx->send_log_ptr) >= half_size) {
         msg_len += snprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), half_size - 1, "%s", https_ctx->send_log_ptr);
         msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "\n");
     } else {
