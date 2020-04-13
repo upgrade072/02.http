@@ -258,7 +258,7 @@ void    nf_token_acquire_token_handle_timeout(main_ctx_t *MAIN_CTX, nrf_ctx_t *t
 int     nf_token_get_scope_by_profile(json_object *nf_profile, char *scope_buff, size_t buff_len);
 void    nf_token_add_shm_by_nf(acc_token_info_t *token_info, nf_retrieve_item_t *nf_item);
 void    nf_token_check_and_acquire_token(main_ctx_t *MAIN_CTX, acc_token_info_t *token_info);
-int     nf_token_check_expires_in(long double timeval);
+//int     nf_token_check_expires_in(long double timeval);
 token_ctx_list_t        *nf_token_create_ctx(main_ctx_t *MAIN_CTX, acc_token_info_t *token_info);
 int     nf_token_create_body(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ahifPkt, acc_token_info_t *token_info);
 void    nf_token_create_pkt(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ahifPkt, acc_token_info_t *token_info, token_ctx_list_t *token_request);
