@@ -432,8 +432,10 @@ int nf_retrieve_parse_list(json_object *js_item, nf_retrieve_item_t *item_ctx)
 	char key[128] = "href";
 	json_object *js_uuid = search_json_object(js_item, key);
 
-    sscanf(json_object_get_string(js_uuid), "/%127s", item_ctx->nf_uuid);
-    APPLOG(APPLOG_DEBUG, "{{{DBG}}} retrieve list get uuid=(%s)", item_ctx->nf_uuid);
+    if (js_uuid != NULL) {
+        sscanf(json_object_get_string(js_uuid), "/%127s", item_ctx->nf_uuid);
+        APPLOG(APPLOG_DEBUG, "{{{DBG}}} retrieve list get uuid=(%s)", item_ctx->nf_uuid);
+    }
     return strlen(item_ctx->nf_uuid);
 #endif
 

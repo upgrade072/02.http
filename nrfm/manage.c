@@ -379,35 +379,37 @@ void nf_manage_create_httpc_cmd_conn_add(main_ctx_t *MAIN_CTX, nf_retrieve_item_
 
         char key_ip_end_points[128] = "ipEndPoints";
         json_object *js_ip_end_points = search_json_object(js_elem, key_ip_end_points);
-        int end_point_count = json_object_array_length(js_ip_end_points);
+        if (js_ip_end_points) {
+            int end_point_count = json_object_array_length(js_ip_end_points);
 
-        for (int k = 0; k < end_point_count; k++) {
-            char key_ip[128] = {0,};
-            char key_port[128] = {0,};
-            sprintf(key_ip, "/ipEndPoints/%d/ipv4Address", k);
-            sprintf(key_port, "/ipEndPoints/%d/port", k);
-            json_object *js_ip = search_json_object(js_elem, key_ip);
-            json_object *js_port = search_json_object(js_elem, key_port);
+            for (int k = 0; k < end_point_count; k++) {
+                char key_ip[128] = {0,};
+                char key_port[128] = {0,};
+                sprintf(key_ip, "/ipEndPoints/%d/ipv4Address", k);
+                sprintf(key_port, "/ipEndPoints/%d/port", k);
+                json_object *js_ip = search_json_object(js_elem, key_ip);
+                json_object *js_port = search_json_object(js_elem, key_port);
 
-            const char *ip = json_object_get_string(js_ip);
-            int port = json_object_get_int(js_port);
+                const char *ip = json_object_get_string(js_ip);
+                int port = json_object_get_int(js_port);
 
-            struct sockaddr_in sa = {0,};
-            if (inet_pton(AF_INET, ip, &(sa.sin_addr)) == 0) {
-                APPLOG(APPLOG_ERR, "{{{DBG}}} %s ip invalid [%s]!", __func__, ip);
-                continue;
-            }
-            if (port == 0) { /* port can not exist */
-                if (!strcmp(scheme, "https")) 
-                    port = 443;
-                else 
-                    port = 80;
-                APPLOG(APPLOG_ERR, "{{{DBG}}} %s port setted as [%d]", __func__, port);
-            }
+                struct sockaddr_in sa = {0,};
+                if (inet_pton(AF_INET, ip, &(sa.sin_addr)) == 0) {
+                    APPLOG(APPLOG_ERR, "{{{DBG}}} %s ip invalid [%s]!", __func__, ip);
+                    continue;
+                }
+                if (port == 0) { /* port can not exist */
+                    if (!strcmp(scheme, "https")) 
+                        port = 443;
+                    else 
+                        port = 80;
+                    APPLOG(APPLOG_ERR, "{{{DBG}}} %s port setted as [%d]", __func__, port);
+                }
 
-            if (nf_manage_fill_nrfm_mml(&httpc_add_cmd, service, scheme, ip, port) >= HTTP_MAX_CONN) {
-                APPLOG(APPLOG_ERR, "{{{DBG}}} %s httpc conn pkt full num", __func__);
-                goto NMCHCCA_END;
+                if (nf_manage_fill_nrfm_mml(&httpc_add_cmd, service, scheme, ip, port) >= HTTP_MAX_CONN) {
+                    APPLOG(APPLOG_ERR, "{{{DBG}}} %s httpc conn pkt full num", __func__);
+                    goto NMCHCCA_END;
+                }
             }
         }
 	}

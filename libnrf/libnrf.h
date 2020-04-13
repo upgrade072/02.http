@@ -285,8 +285,8 @@ int     ln_depth_compare(nf_search_key_t *key, GNode *compare_node);
 GNode   *search_or_create_node(GNode *node, nf_search_key_t *key, nf_service_info *insert_data, int create_if_none);
 void    create_node_data(GNode *root_node, nf_search_key_t *key, nf_service_info *insert_data);
 GNode   *search_node_data(GNode *root_node, nf_search_key_t *key, int search_depth);
-void    print_node_table(ft_table_t *table, GNode *node, int depth, char *temp_buff, char *nf_type_arg);
-void    print_node(ft_table_t *table, GNode *node, int depth, char *nf_type);
+void    print_node_table(ft_table_t *table, GNode *node, int depth, char *temp_buff, char *host_prefix, char *nf_type_arg);
+void    print_node(ft_table_t *table, GNode *node, int depth, char *host_prefix, char *nf_type);
 void    printf_fep_nfs_by_node_order(GNode *root_node, char *printBuff, char *nf_type);
 void    printf_fep_nfs_well_form(GNode *root_node, char *printBuff, char *nf_type);
 

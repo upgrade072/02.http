@@ -805,10 +805,10 @@ GNode *search_node_data(GNode *root_node, nf_search_key_t *key, int search_depth
 	return search_node; // return result (null or not)
 }
 
-void print_node_table(ft_table_t *table, GNode *node, int depth, char *temp_buff, char *nf_type_arg)
+void print_node_table(ft_table_t *table, GNode *node, int depth, char *temp_buff, char *host_prefix, char *nf_type_arg)
 {
-    nf_lbid_info_t *nf_lb = NULL;
-    nf_type_info_t *nf_type = NULL;
+    //nf_lbid_info_t *nf_lb = NULL;
+    //nf_type_info_t *nf_type = NULL;
     nf_host_info_t *nf_host = NULL;
     nf_svcname_info_t *nf_svcname = NULL;
     nf_connection_info_t *nf_conn = NULL;
@@ -817,6 +817,7 @@ void print_node_table(ft_table_t *table, GNode *node, int depth, char *temp_buff
     char typeStr[1024] = {0,};
 
     switch (depth) {
+#if 0
         case 0:
             ft_add_separator(table);
             nf_lb = (nf_lbid_info_t *)node->data;
@@ -831,6 +832,7 @@ void print_node_table(ft_table_t *table, GNode *node, int depth, char *temp_buff
             ft_set_cell_prop(table, FT_ANY_ROW, 0, FT_CPROP_MIN_WIDTH, 8);
             ft_printf_ln(table, "%s|%s", nf_type->type, temp_buff);
             break;
+#endif
         case 2:
             nf_host = (nf_host_info_t *)node->data;
             ft_set_cell_prop(table, FT_ANY_ROW, 0, FT_CPROP_MIN_WIDTH, 34);
@@ -840,7 +842,7 @@ void print_node_table(ft_table_t *table, GNode *node, int depth, char *temp_buff
                 nf_get_allowd_plmns_str(nf_host->allowdPlmnsNum, nf_host->allowdPlmns, plmnStr);
                 nf_get_specific_info_str(nf_host->nfType, &nf_host->nfTypeInfo, typeStr);
             }
-            ft_printf_ln(table, "%s|%s|%s|%s", nf_host->hostname, plmnStr, typeStr, temp_buff);
+            ft_printf_ln(table, "%s\n%s|%s|%s|%s", host_prefix, nf_host->hostname, plmnStr, typeStr, temp_buff);
             ft_add_separator(table);
             break;
         case 3:
@@ -880,25 +882,60 @@ void print_node_table(ft_table_t *table, GNode *node, int depth, char *temp_buff
     }
 }
 
-void print_node(ft_table_t *table, GNode *node, int depth, char *nf_type)
+void print_node(ft_table_t *table, GNode *node, int depth, char *host_prefix, char *nf_type)
 {
     for (int i = 0; i < g_node_n_children(node); i++) {
         GNode *child_node = g_node_nth_child(node, i);
         ft_table_t *child_table = ft_create_table();
         ft_set_border_style(child_table, FT_PLAIN_STYLE);
 
-        print_node(child_table, child_node, depth + 1, nf_type);
+        print_node(child_table, child_node, depth + 1, host_prefix, nf_type);
 
         char *temp_buff = NULL;
         asprintf(&temp_buff, "%s", ft_to_string(child_table));
         if (strlen(temp_buff) > 0)
             temp_buff[strlen(temp_buff) - 1] = '\0';
         
-        print_node_table(table, child_node, depth, temp_buff, nf_type);
+        print_node_table(table, child_node, depth, temp_buff, host_prefix, nf_type);
 
         free(temp_buff);
 
         ft_destroy_table(child_table);
+    }
+}
+
+void print_node_faster(char *print_buff, GNode *root_node, int depth, char *nf_type_filter)
+{
+    nf_lbid_info_t *nf_lb = NULL;
+    nf_type_info_t *nf_type = NULL;
+
+    sprintf(print_buff, "-------------------------------------------------------------------------------------------------------------------------------------------------------------\n");
+
+    for (int i = 0; i < g_node_n_children(root_node); i++) {
+        /* lb node */
+        GNode *lb_node = g_node_nth_child(root_node, i);
+        nf_lb = (nf_lbid_info_t *)lb_node->data;
+
+        for (int k = 0; k < g_node_n_children(lb_node); k++) {
+            /* nf type node */
+            GNode *nf_type_node = g_node_nth_child(lb_node, k);
+            nf_type = (nf_type_info_t *)nf_type_node->data;
+
+            /* nf_type filter */
+            if (nf_type_filter != NULL && strcmp(nf_type->type, nf_type_filter)) {
+                continue;
+            }
+
+            char host_prefix[1024] = {0,};
+            sprintf(host_prefix, "lb=(%02d) nf_type=(%.5s)", nf_lb->lb_id, nf_type->type);
+
+            ft_table_t *nf_type_table = ft_create_table();
+            ft_set_border_style(nf_type_table, FT_PLAIN_STYLE);
+            print_node(nf_type_table, nf_type_node, depth + 2, host_prefix, nf_type_filter);
+
+            sprintf(print_buff + strlen(print_buff), "%s\n", ft_to_string(nf_type_table));
+            ft_destroy_table(nf_type_table);
+        }
     }
 }
 
@@ -914,11 +951,7 @@ void printf_fep_nfs_by_node_order(GNode *root_node, char *printBuff, char *nf_ty
     /* start depth */
     int current_depth = 0;
 
-    /* recursive call */
-    print_node(table, root_node, current_depth, nf_type);
-
-    /* print result */
-    sprintf(printBuff, "%s\n", ft_to_string(table));
+    print_node_faster(printBuff, root_node, current_depth, nf_type);
 
     /* resource clear */
     ft_destroy_table(table);

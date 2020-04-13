@@ -250,7 +250,7 @@ int func_dis_nf_status(IxpcQMsgType *rxIxpcMsg)
     if (!strcmp(nf_type, "DUMP"))
         printf_fep_nfs(MAIN_CTX.SHM_NFS_AVAIL, resBuf);
     else 
-        printf_fep_nfs_well_form(MAIN_CTX.root_node, resBuf, nf_type);
+        printf_fep_nfs_well_form(MAIN_CTX.root_node, resBuf, strlen(nf_type) > 0 ? nf_type : NULL);
 
 	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
 	int res = send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
