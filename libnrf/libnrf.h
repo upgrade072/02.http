@@ -147,7 +147,7 @@ typedef enum token_acuire_status {
 #define MAX_NRF_TYPE_LEN    24
 #define MAX_NRF_INST_LEN    128
 #define MAX_NRF_SCOPE_LEN   256
-#define MAX_ACC_TOKEN_LEN	512
+#define MAX_ACC_TOKEN_LEN	1024
 typedef struct acc_token_info {
     /* used */
     int occupied;

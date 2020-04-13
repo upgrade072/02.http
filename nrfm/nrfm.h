@@ -270,7 +270,7 @@ void    nf_token_get_token_cb(evutil_socket_t fd, short what, void *arg);
 void    nf_token_handle_resp_nok(main_ctx_t *MAIN_CTX, token_ctx_list_t *token_request);
 void    nf_token_print_log(AhifHttpCSMsgType *ahifPkt, const char *log_prefix);
 void    nf_token_start_process(main_ctx_t *MAIN_CTX);
-void    nf_token_update_shm(acc_token_info_t *token_info, const char *access_token, double due_date);
+void    nf_token_update_shm(acc_token_info_t *token_info, const char *access_token, int expires_in);
 void    nf_token_update_shm_process(main_ctx_t *MAIN_CTX, token_ctx_list_t *token_request, AhifHttpCSMsgType *ahifPkt);
 
 
