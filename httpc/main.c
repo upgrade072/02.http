@@ -939,6 +939,7 @@ void send_status_to_omp(evutil_socket_t fd, short what, void *arg)
 
 conn_list_t *check_sess_group_prepair_reconn(conn_list_t *conn_list)
 {
+    int same_info_list_exist = 0;
 	for (int i = 0; i < MAX_SVR_NUM; i++) {
 		conn_list_t *compare_list =  &CONN_LIST[i];
 
@@ -955,9 +956,15 @@ conn_list_t *check_sess_group_prepair_reconn(conn_list_t *conn_list)
 				!strcmp(compare_list->ip, conn_list->ip)) {
 			return compare_list;
 		}
+        if (compare_list->list_index == conn_list->list_index) {
+            same_info_list_exist = 1; // that CONNECTED
+        }
 	}
 
-	return NULL;
+    if (same_info_list_exist != 0)
+        return NULL; // OK. release conn
+    else
+        return conn_list; // NO. don't release conn, we only have this one
 }
 
 void inspect_stream_id(int stream_id, http2_session_data_t *session_data)
