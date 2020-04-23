@@ -955,7 +955,7 @@ conn_list_t *check_sess_group_prepair_reconn(conn_list_t *conn_list)
 				!strcmp(compare_list->host, conn_list->host) &&
 				!strcmp(compare_list->ip, conn_list->ip)) {
 			return compare_list;
-        }
+		}
         if (compare_list->list_index == conn_list->list_index) {
             same_info_list_exist = 1; // that CONNECTED
         }
