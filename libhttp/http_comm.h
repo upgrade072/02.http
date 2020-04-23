@@ -83,8 +83,8 @@ typedef struct HttpCSAhifTagType {
         NGHTTP2_NV_FLAG_NONE                                                   \
   }
 
-#define HTTP_MAX_HOST	(512)
-#define HTTP_MAX_ADDR	(4)
+#define HTTP_MAX_HOST	(128)
+#define HTTP_MAX_ADDR	(16)
 #define HTTP_MAX_CONN	(4)
 
 #define MAX_SVR_NUM		(HTTP_MAX_HOST * HTTP_MAX_ADDR * HTTP_MAX_CONN)

@@ -352,18 +352,25 @@ void nf_manage_create_httpc_cmd_conn_add(main_ctx_t *MAIN_CTX, nf_retrieve_item_
 
 	char key_nfType[128] = "nfType";
 	json_object *js_nfType = search_json_object(nf_item->item_nf_profile, key_nfType);
-	sprintf(httpc_add_cmd.type, "%s", json_object_get_string(js_nfType));
+    if (js_nfType == NULL)
+        return;
+    else
+        sprintf(httpc_add_cmd.type, "%s", json_object_get_string(js_nfType));
 
 	char key_services[128] = "nfServices";
 	json_object *js_services = search_json_object(nf_item->item_nf_profile, key_services);
+    if (js_services == NULL)
+        return;
 
 	int array_length = json_object_array_length(js_services);
 	for (int i = 0; i < array_length; i++) {
         json_object *js_elem = json_object_array_get_idx(js_services, i);
         char key_service[128] = "serviceName";
         char key_scheme[128] = "scheme";
+        char key_allowed_nf_types[128] = "allowedNfTypes";
         json_object *js_service = search_json_object(js_elem, key_service);
         json_object *js_scheme = search_json_object(js_elem, key_scheme);
+        json_object *js_allowed_nf_types = search_json_object(js_elem, key_allowed_nf_types);
 
         if (js_service == NULL || js_scheme == NULL) {
             APPLOG(APPLOG_ERR, "{{{DBG}}} %s can't find serviceName or scheme in nfServices!", __func__);
@@ -371,18 +378,34 @@ void nf_manage_create_httpc_cmd_conn_add(main_ctx_t *MAIN_CTX, nf_retrieve_item_
         }
         const char *service = json_object_get_string(js_service);
         const char *scheme = json_object_get_string(js_scheme);
+        /* connect only allowed, if exist */
+        if (js_allowed_nf_types != NULL) {
+            int allowd_for_me = 0;
+            char *my_nf_type = cfg_get_mp_nf_type(MAIN_CTX); // free
+            for (int i = 0; i < json_object_array_length(js_allowed_nf_types); i++) {
+                const char *nf_type = json_object_get_string(json_object_array_get_idx(js_allowed_nf_types, i));
+                if (!strcmp(nf_type, my_nf_type)) {
+                    allowd_for_me = 1;
+                }
+            }
+            free(my_nf_type); // free
+            if (allowd_for_me == 0) {
+                APPLOG(APPLOG_ERR, "{{{DBG}}} %s check service=(%s) not allowd for me, skip this!", __func__, service);
+                continue;
+            }
+        }
 
         if (strcmp(scheme, "https") && strcmp(scheme, "http")) {
             APPLOG(APPLOG_ERR, "{{{DBG}}} %s scheme invalid [%s]!", __func__, scheme);
             continue;
         }
 
+        // drain conn info from ipEndPoints:[]
         char key_ip_end_points[128] = "ipEndPoints";
         json_object *js_ip_end_points = search_json_object(js_elem, key_ip_end_points);
         if (js_ip_end_points) {
-            int end_point_count = json_object_array_length(js_ip_end_points);
 
-            for (int k = 0; k < end_point_count; k++) {
+            for (int k = 0; k < json_object_array_length(js_ip_end_points); k++) {
                 char key_ip[128] = {0,};
                 char key_port[128] = {0,};
                 sprintf(key_ip, "/ipEndPoints/%d/ipv4Address", k);
@@ -406,9 +429,37 @@ void nf_manage_create_httpc_cmd_conn_add(main_ctx_t *MAIN_CTX, nf_retrieve_item_
                     APPLOG(APPLOG_ERR, "{{{DBG}}} %s port setted as [%d]", __func__, port);
                 }
 
-                if (nf_manage_fill_nrfm_mml(&httpc_add_cmd, service, scheme, ip, port) >= HTTP_MAX_CONN) {
+                if (nf_manage_fill_nrfm_mml(&httpc_add_cmd, service, scheme, ip, port) >= HTTP_MAX_ADDR) {
                     APPLOG(APPLOG_ERR, "{{{DBG}}} %s httpc conn pkt full num", __func__);
                     goto NMCHCCA_END;
+                }
+            }
+        }
+        /* drain conn info from defaultNotificationSubscriptions:[] */
+        char key_def_noti_subsc[128] = "defaultNotificationSubscriptions";
+        json_object *js_def_noti_subsc = search_json_object(js_elem, key_def_noti_subsc);
+        if (js_def_noti_subsc) {
+
+            for (int k = 0; k < json_object_array_length(js_def_noti_subsc); k++) {
+                char key_callback_uri[128] = {0,};
+                char key_notif_type[128] = {0,};
+                sprintf(key_callback_uri, "/defaultNotificationSubscriptions/%d/callbackUri", k);
+                sprintf(key_notif_type, "/defaultNotificationSubscriptions/%d/notificationType", k);
+                json_object *js_callback_uri = search_json_object(js_elem, key_callback_uri);
+                json_object *js_notif_type = search_json_object(js_elem, key_notif_type);
+                const char *uri = json_object_get_string(js_callback_uri);
+                const char *notif_type = json_object_get_string(js_notif_type);
+                char scheme[128] = {0,};
+                char ip[128] ={0,};
+                char portstr[128] = {0,};
+                sscanf(uri, "%127[^:/]://%127[^:]:%127[^/]", scheme, ip, portstr);
+                int port = atoi(portstr);
+                if (nf_manage_fill_nrfm_mml(&httpc_add_cmd, notif_type, scheme, ip, port) >= HTTP_MAX_ADDR) {
+                    APPLOG(APPLOG_ERR, "{{{DBG}}} %s httpc conn pkt full num", __func__);
+                    goto NMCHCCA_END;
+                } else {
+                    APPLOG(APPLOG_ERR, "{{{DBG}}} %s create http/2 conn for [%s] to [%s://%s:%d]", __func__,
+                            notif_type, scheme, ip, port);
                 }
             }
         }

@@ -445,7 +445,10 @@ void nf_retrieve_remove_nth_item(nf_retrieve_info_t *nf_retr_info, nf_retrieve_i
 {
 	if (nf_item->item_nf_profile) {
 		APPLOG(APPLOG_ERR, "{{{DBG}}} %s object_put() legacy profile!", __func__);
-		json_object_put(nf_item->item_nf_profile);
+        if (nf_item->item_nf_profile != NULL) {
+            json_object_put(nf_item->item_nf_profile);
+            nf_item->item_nf_profile = NULL;
+        }
 	}
 	if (nf_item->retrieve_item_ctx.ev_action) {
 		APPLOG(APPLOG_ERR, "{{{DBG}}} %s event_del() legacy request!", __func__);
@@ -464,6 +467,7 @@ void nf_retrieve_save_recv_nf_profile(nf_retrieve_item_t *nf_item, AhifHttpCSMsg
 	if (nf_item->item_nf_profile) {
 		APPLOG(APPLOG_ERR, "{{{DBG}}} %s release older nf_profile (from NRF)", __func__);
 		json_object_put(nf_item->item_nf_profile);
+        nf_item->item_nf_profile = NULL;
 	}       
 	nf_item->item_nf_profile = json_tokener_parse(ahifPkt->data);
 
@@ -477,6 +481,7 @@ int nf_retrieve_save_response(nf_retrieve_info_t *nf_retr_info, AhifHttpCSMsgTyp
 	if (nf_retr_info->js_retrieve_response != NULL) {
 		APPLOG(APPLOG_ERR, "{{{CAUTION!!!}}} %s release older nf_service_retrieve_list", __func__);
 		json_object_put(nf_retr_info->js_retrieve_response);
+        nf_retr_info->js_retrieve_response = NULL;
 	}
 
 	if ((nf_retr_info->js_retrieve_response = json_tokener_parse(ahifPkt->data)) == NULL) {
@@ -492,6 +497,7 @@ int nf_retrieve_save_response(nf_retrieve_info_t *nf_retr_info, AhifHttpCSMsgTyp
 	if (js_item == NULL) {
 		APPLOG(APPLOG_ERR, "{{{DBG}}} %s can't find \"_links/item\"", __func__);
 		json_object_put(nf_retr_info->js_retrieve_response);
+        nf_retr_info->js_retrieve_response = NULL;
 		return -1;
 	}
 

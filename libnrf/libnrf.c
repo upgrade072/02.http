@@ -835,7 +835,7 @@ void print_node_table(ft_table_t *table, GNode *node, int depth, char *temp_buff
 #endif
         case 2:
             nf_host = (nf_host_info_t *)node->data;
-            ft_set_cell_prop(table, FT_ANY_ROW, 0, FT_CPROP_MIN_WIDTH, 34);
+            ft_set_cell_prop(table, FT_ANY_ROW, 0, FT_CPROP_MIN_WIDTH, 40);
             ft_set_cell_prop(table, FT_ANY_ROW, 1, FT_CPROP_MIN_WIDTH, 14);
             ft_set_cell_prop(table, FT_ANY_ROW, 2, FT_CPROP_MIN_WIDTH, 24);
             if (nf_host->auto_add == NF_ADD_NRF || nf_host->auto_add == NF_ADD_MML) {
@@ -909,7 +909,7 @@ void print_node_faster(char *print_buff, GNode *root_node, int depth, char *nf_t
     nf_lbid_info_t *nf_lb = NULL;
     nf_type_info_t *nf_type = NULL;
 
-    sprintf(print_buff, "-------------------------------------------------------------------------------------------------------------------------------------------------------------\n");
+    sprintf(print_buff, "------------------------------------------------------------------------------------------------------------------------------------------------------------------------\n");
 
     for (int i = 0; i < g_node_n_children(root_node); i++) {
         /* lb node */

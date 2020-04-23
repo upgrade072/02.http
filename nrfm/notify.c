@@ -223,6 +223,7 @@ int nf_notify_profile_add(nf_retrieve_item_t *nf_older_item, json_object *js_nf_
 		if (nf_older_item->item_nf_profile) {
 			APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s remove nf_profile addr(%p)", __func__, nf_older_item->item_nf_profile);
 			json_object_put(nf_older_item->item_nf_profile);
+            nf_older_item->item_nf_profile = NULL;
 		}
 		if (nf_older_item) {
 			NF_MANAGE_NF_DEL(&MAIN_CTX, nf_older_item);
@@ -327,6 +328,7 @@ int nf_notify_profile_remove(nf_retrieve_item_t *nf_item)
 	if (nf_item->item_nf_profile) {
 		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s remove nf_profile addr(%p)", __func__, nf_item->item_nf_profile);
 		json_object_put(nf_item->item_nf_profile);
+        nf_item->item_nf_profile = NULL;
 	}
 	if (nf_item) {
 		NF_MANAGE_NF_DEL(&MAIN_CTX, nf_item);

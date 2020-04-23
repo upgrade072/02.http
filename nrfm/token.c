@@ -154,6 +154,7 @@ void nf_token_check_and_acquire_token(main_ctx_t *MAIN_CTX, acc_token_info_t *to
 	nf_token_acquire_token(MAIN_CTX, token_info);
 }
 
+#if 0
 int nf_token_check_expires_in(long double timeval)
 {
 	time_t expire_time = timeval;
@@ -173,6 +174,7 @@ int nf_token_check_expires_in(long double timeval)
         return 0;
 	}
 }
+#endif
 
 token_ctx_list_t *nf_token_create_ctx(main_ctx_t *MAIN_CTX, acc_token_info_t *token_info)
 {

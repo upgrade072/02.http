@@ -271,6 +271,7 @@ void nf_regi_save_recv_nf_profile(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ahifP
 	if (MAIN_CTX->received_nf_profile != NULL) {
 		APPLOG(APPLOG_ERR, "{{{DBG}}} %s release older nf_profile (from NRF)", __func__);
 		json_object_put(MAIN_CTX->received_nf_profile);
+        MAIN_CTX->received_nf_profile = NULL;
 	} 
 	MAIN_CTX->received_nf_profile = json_tokener_parse(ahifPkt->data);
 
