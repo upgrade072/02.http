@@ -77,6 +77,7 @@
 #define CF_OVLD_EVENT_CODE  "server_cfg.http_config.ovld_event_code"
 #define CF_ALLOW_ANY_CLIENT "server_cfg.http_config.allow_any_client"
 #define CF_ANY_CLIENT_DEFAULT_MAX   "server_cfg.http_config.any_cli_def_max"
+#define CF_ANY_CLIENT_OAUTH_CHECK   "server_cfg.http_config.any_cli_oauth_chk"
 #define CF_HTTP_OPT_HDR_TABLE_SIZE  "server_cfg.http_option.setting_header_table_size"
 #define CF_PKT_LOG          "server_cfg.http_config.pkt_log"
 #define CF_TRACE_ENABLE     "server_cfg.http_config.trace_enable"
@@ -149,6 +150,7 @@ typedef struct server_conf {
     /* for NRF import NF Client */
     int allow_any_client;
     int any_client_default_max;
+    int any_client_oauth_check;
 
     /* for WEIGHT balance */
     int weight[MAX_THRD_NUM];

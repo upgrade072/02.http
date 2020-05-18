@@ -472,6 +472,8 @@ static int on_stream_close_callback(nghttp2_session *session, int32_t stream_id,
 	log_pkt_end_stream(httpc_ctx);
 
 	if (httpc_ctx->inflight_ref_cnt > 0) {
+        APPLOG(APPLOG_ERR, "%s() (ahifCid=%d from_fep=%d) stream closed but already timeouted!",
+                __func__, httpc_ctx->user_ctx.head.ahifCid, httpc_ctx->fep_tag);
 		/* timeout case */
 		clear_and_free_ctx(httpc_ctx);
 		Free_CtxId(thrd_idx, idx);

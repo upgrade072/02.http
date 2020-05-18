@@ -164,7 +164,11 @@ int accept_with_anyclient(char *ip)
             ALLOW_LIST[i].act = 1;
             ALLOW_LIST[i].max = SERVER_CONF.any_client_default_max;
             ALLOW_LIST[i].curr++;
+#if 0
             ALLOW_LIST[i].auth_act = 1;
+#else
+            ALLOW_LIST[i].auth_act = SERVER_CONF.any_client_oauth_check;
+#endif
             ALLOW_LIST[i].auto_added = 1;
             return i;
         }

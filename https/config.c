@@ -348,6 +348,17 @@ int config_load()
         APPLOG(APPLOG_ERR, "{{{CFG}}} any_client_default_max is [%d]", SERVER_CONF.any_client_default_max);
     }
 
+	/* any client oauth enable */
+	int any_client_oauth_check = 0;
+    if (config_lookup_int(&CFG, CF_ANY_CLIENT_OAUTH_CHECK, &any_client_oauth_check) == CONFIG_FALSE ||
+            any_client_oauth_check < 0) {
+		APPLOG(APPLOG_ERR, "{{{CFG}}} any_client_oauth_check cfg not exist! or wrong value[%d]", any_client_oauth_check);
+		goto CF_LOAD_ERR;
+	} else {
+        SERVER_CONF.any_client_oauth_check = any_client_oauth_check;
+        APPLOG(APPLOG_ERR, "{{{CFG}}} any_client_oauth_check is [%d]", SERVER_CONF.any_client_oauth_check);
+    }
+
     /* pkt_log enable */
     int pkt_log = 0;
     if (config_lookup_int(&CFG, CF_PKT_LOG, &pkt_log) == CONFIG_FALSE) {

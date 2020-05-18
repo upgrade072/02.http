@@ -657,11 +657,11 @@ int check_token_uuid(const char *audience)
 }
 .
 {
-    "audience": "NF producer UUID",
-    "expiration": 1649949847,       // expire time
-    "issuer": "NF Consumer UUID",
+    "aud": "NF producer UUID",
+    "exp": 1649949847,       // expire time
+    "iss": "NF Consumer UUID",
     "scope": "namf-loc namf-evts namf-loc namf-mt", // service scope
-    "subject": "NRF UUID"
+    "sub": "NRF UUID"
 }
 */
 int check_access_token(char *token, char *oauth_scope)
@@ -683,7 +683,7 @@ int check_access_token(char *token, char *oauth_scope)
 	APPLOG(APPLOG_DEBUG, "{{{JWT}}} recv token (pretty)\n%s", out);
 	free(out);
 
-	long double expiration = jwt_get_grant_int(jwt, "expiration");
+	long double expiration = jwt_get_grant_int(jwt, "exp");
 	time_t current = time(NULL);
 	if (expiration == 0 || expiration < current) {
 		APPLOG(APPLOG_DETAIL, "{{{JWT}}} wrong expiration! [%Lf]", expiration);
@@ -691,7 +691,7 @@ int check_access_token(char *token, char *oauth_scope)
 		return (-1);
 	}
 
-	const char *audience = jwt_get_grant(jwt, "audience");
+	const char *audience = jwt_get_grant(jwt, "aud");
 	if (audience == NULL || check_token_uuid(audience) < 0) {
 		APPLOG(APPLOG_DETAIL, "{{{JWT}}} wrong audience! [%s]", audience);
 		jwt_free(jwt);
@@ -700,7 +700,7 @@ int check_access_token(char *token, char *oauth_scope)
 
     const char *scope = jwt_get_grant(jwt, "scope");
     if (scope != NULL) {
-		APPLOG(APPLOG_DEBUG, "{{{JWT}}} {{{TEST}}} recv scope [%s]", scope);
+		APPLOG(APPLOG_DEBUG, "{{{JWT}}} recv scope [%s]", scope);
         sprintf(oauth_scope, "%.255s", scope);
     }
 

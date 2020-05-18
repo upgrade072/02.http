@@ -416,6 +416,17 @@ int add_cfg_nf_mml_udm(main_ctx_t *MAIN_CTX, const char *conf_name, const char *
 	return 0;
 }
 
+void add_cfg_nf_mml_guami_plmn(config_setting_t *cf_guami, const char *plmn_str)
+{
+    config_setting_t *cf_plmn = config_setting_add_try(cf_guami, "plmnId", CONFIG_TYPE_GROUP);
+    config_setting_t *cf_mcc = config_setting_add_try(cf_plmn, "mcc", CONFIG_TYPE_STRING);
+    config_setting_t *cf_mnc = config_setting_add_try(cf_plmn, "mnc", CONFIG_TYPE_STRING);
+    char mcc[128] = {0,};
+    char mnc[128] = {0,};
+    sscanf(plmn_str, "%127[^-]-%127s", mcc, mnc);
+    config_setting_set_string(cf_mcc, mcc);
+    config_setting_set_string(cf_mnc, mnc);
+}
 
 int add_cfg_nf_mml_amf(main_ctx_t *MAIN_CTX, const char *conf_name, const char *target_host, const char *nf_type, MMLReqMsgType *mmlReq, config_setting_t *mml_list, char *resBuf)
 {
@@ -529,8 +540,12 @@ int add_cfg_nf_mml_amf(main_ctx_t *MAIN_CTX, const char *conf_name, const char *
         config_setting_t *cf_guami_list = config_setting_add_try(cf_amf_info, "guamiList", CONFIG_TYPE_LIST);
         config_setting_t *cf_guami = config_setting_add_try(cf_guami_list, "", CONFIG_TYPE_GROUP);
         if (strlen(GM_PLMN1)) {
+#if 0
             config_setting_t *cf_plmn = config_setting_add_try(cf_guami, "plmnId", CONFIG_TYPE_STRING);
             config_setting_set_string(cf_plmn, GM_PLMN1);
+#else
+            add_cfg_nf_mml_guami_plmn(cf_guami, GM_PLMN1);
+#endif
         }
         if (strlen(GM_AMF1)) {
             config_setting_t *cf_amf_id = config_setting_add_try(cf_guami, "amfId", CONFIG_TYPE_STRING);
@@ -543,8 +558,12 @@ int add_cfg_nf_mml_amf(main_ctx_t *MAIN_CTX, const char *conf_name, const char *
         config_setting_t *cf_guami_list = config_setting_add_try(cf_amf_info, "guamiList", CONFIG_TYPE_LIST);
         config_setting_t *cf_guami = config_setting_add_try(cf_guami_list, "", CONFIG_TYPE_GROUP);
         if (strlen(GM_PLMN2)) {
+#if 0
             config_setting_t *cf_plmn = config_setting_add_try(cf_guami, "plmnId", CONFIG_TYPE_STRING);
             config_setting_set_string(cf_plmn, GM_PLMN2);
+#else
+            add_cfg_nf_mml_guami_plmn(cf_guami, GM_PLMN2);
+#endif
         }
         if (strlen(GM_AMF2)) {
             config_setting_t *cf_amf_id = config_setting_add_try(cf_guami, "amfId", CONFIG_TYPE_STRING);
@@ -557,8 +576,12 @@ int add_cfg_nf_mml_amf(main_ctx_t *MAIN_CTX, const char *conf_name, const char *
         config_setting_t *cf_guami_list = config_setting_add_try(cf_amf_info, "guamiList", CONFIG_TYPE_LIST);
         config_setting_t *cf_guami = config_setting_add_try(cf_guami_list, "", CONFIG_TYPE_GROUP);
         if (strlen(GM_PLMN3)) {
+#if 0
             config_setting_t *cf_plmn = config_setting_add_try(cf_guami, "plmnId", CONFIG_TYPE_STRING);
             config_setting_set_string(cf_plmn, GM_PLMN3);
+#else
+            add_cfg_nf_mml_guami_plmn(cf_guami, GM_PLMN3);
+#endif
         }
         if (strlen(GM_AMF3)) {
             config_setting_t *cf_amf_id = config_setting_add_try(cf_guami, "amfId", CONFIG_TYPE_STRING);
@@ -571,8 +594,12 @@ int add_cfg_nf_mml_amf(main_ctx_t *MAIN_CTX, const char *conf_name, const char *
         config_setting_t *cf_guami_list = config_setting_add_try(cf_amf_info, "guamiList", CONFIG_TYPE_LIST);
         config_setting_t *cf_guami = config_setting_add_try(cf_guami_list, "", CONFIG_TYPE_GROUP);
         if (strlen(GM_PLMN4)) {
+#if 0
             config_setting_t *cf_plmn = config_setting_add_try(cf_guami, "plmnId", CONFIG_TYPE_STRING);
             config_setting_set_string(cf_plmn, GM_PLMN4);
+#else
+            add_cfg_nf_mml_guami_plmn(cf_guami, GM_PLMN4);
+#endif
         }
         if (strlen(GM_AMF4)) {
             config_setting_t *cf_amf_id = config_setting_add_try(cf_guami, "amfId", CONFIG_TYPE_STRING);
@@ -585,8 +612,12 @@ int add_cfg_nf_mml_amf(main_ctx_t *MAIN_CTX, const char *conf_name, const char *
         config_setting_t *cf_guami_list = config_setting_add_try(cf_amf_info, "guamiList", CONFIG_TYPE_LIST);
         config_setting_t *cf_guami = config_setting_add_try(cf_guami_list, "", CONFIG_TYPE_GROUP);
         if (strlen(GM_PLMN5)) {
+#if 0
             config_setting_t *cf_plmn = config_setting_add_try(cf_guami, "plmnId", CONFIG_TYPE_STRING);
             config_setting_set_string(cf_plmn, GM_PLMN5);
+#else
+            add_cfg_nf_mml_guami_plmn(cf_guami, GM_PLMN5);
+#endif
         }
         if (strlen(GM_AMF5)) {
             config_setting_t *cf_amf_id = config_setting_add_try(cf_guami, "amfId", CONFIG_TYPE_STRING);

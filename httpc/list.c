@@ -295,7 +295,7 @@ void log_pkt_send(httpc_ctx_t *httpc_ctx, nghttp2_nv *hdrs, int hdrs_len, const 
 		APPLOG(APPLOG_ERR, "{{{PKT}}} in %s fail to call open_memstream!", __func__);
 		return;
     } else {
-        get_time_str(httpc_ctx->recv_time);
+        get_time_str(httpc_ctx->send_time);
     }
 
 	print_headers(httpc_ctx->send_log_file, hdrs, hdrs_len);

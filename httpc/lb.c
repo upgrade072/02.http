@@ -168,6 +168,7 @@ void push_callback(evutil_socket_t fd, short what, void *arg)
 			push_item->unset_cb_func(push_item->unset_cb_arg);
 		if (push_item->ctx_unset_ptr != NULL)
 			*push_item->ctx_unset_ptr = 0;
+        APPLOG(APPLOG_ERR, "%s() fail to find ahifSockCtx!", __func__);
         return;
     } else {
         create_write_item(&sock_ctx->push_items, push_item);
