@@ -107,7 +107,7 @@ void isif_save_recv_lb_status(main_ctx_t *MAIN_CTX, nf_service_info *nf_info)
 	}
 
 	/* 1 sec diff */
-	if ((elapse_milisec >= 1000) && (nowProgress == 0)) {
+	if ((elapse_milisec >= 2000) && (nowProgress == 0)) {
 
 		/* attach mml */
 		g_slist_foreach(MAIN_CTX->opr_mml_list, (GFunc)attach_mml_info_into_shm, MAIN_CTX);

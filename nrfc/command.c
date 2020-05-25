@@ -785,7 +785,8 @@ void send_conn_req_profile(assoc_t *lb_assoc, nf_disc_host_info *nf_host_info)
 
     nf_host_info->mtype = LIBNRF_MSG_ADD_NF_PROFILE;
 
-	APPLOG(APPLOG_DEBUG, "{DBG} %s() send request! to node index(%d)", __func__, lb_assoc->index);
+    APPLOG(APPLOG_ERR, "{DBG} %s() send request! to node index(%d), hostname=(%s)", 
+            __func__, lb_assoc->index, nf_host_info->hostname);
 
     isifc_create_pkt(&txIsifMsg, &MAIN_CTX.my_info, lb_assoc, nf_host_info, sizeof(nf_disc_host_info));
     isifc_send_pkt(MAIN_CTX.my_qid.isifc_tx_qid, &txIsifMsg);
