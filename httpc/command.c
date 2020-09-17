@@ -522,6 +522,10 @@ int func_dis_http_server(IxpcQMsgType *rxIxpcMsg)
 
 	write_list(CONN_STATUS, resBuf);
 
+    sprintf(resBuf + strlen(resBuf), "  ------------------------------------------\n");
+    sprintf(resBuf + strlen(resBuf), "        OAuth2 enable status=[%s]\n", CLIENT_CONF.oauth_enable == 1 ? "ON" : "OFF");
+    sprintf(resBuf + strlen(resBuf), "  ------------------------------------------\n");
+
 	print_list(CONN_STATUS);
 
 	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
@@ -892,6 +896,8 @@ void relaod_http_config(char *conf_name, int conf_val)
         CLIENT_CONF.ping_event_ms = conf_val;
     else if (!strcmp(conf_name, CF_TRACE_ENABLE))
         CLIENT_CONF.trace_enable = conf_val;
+    else if (!strcmp(conf_name, CF_OAUTH_ENABLE))
+        CLIENT_CONF.oauth_enable = conf_val;
 }
 
 int func_chg_httpc_config(IxpcQMsgType *rxIxpcMsg)

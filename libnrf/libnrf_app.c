@@ -417,11 +417,16 @@ void nf_discover_update_nf_profiles(nf_discover_table *DISC_TABLE, int nfType, c
 
     memcpy(&nf_host_info.validityPeriod, validity_time, sizeof(time_t));
 
-    // create child_node
-    GNode *new_node = nf_discover_create_new_node(&nf_host_info);
+    nf_disc_host_info *nf_host = nf_discover_search_node_by_hostname(&DISC_TABLE->root_node, nfInstanceId);
 
-    // add to root_node
-    nf_discover_add_new_node(&DISC_TABLE->root_node, new_node);
+    if (nf_host == NULL) {
+        // create child_node
+        GNode *new_node = nf_discover_create_new_node(&nf_host_info);
+        // add to root_node
+        nf_discover_add_new_node(&DISC_TABLE->root_node, new_node);
+    } else {
+        memcpy(nf_host, &nf_host_info, sizeof(nf_disc_host_info));
+    }
 }
 
 int nf_discover_table_update(nf_discover_table *DISC_TABLE, json_object *js_nf_profile, time_t *validity_time)

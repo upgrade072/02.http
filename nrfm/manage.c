@@ -300,7 +300,11 @@ void nf_manage_collect_oper_added_nf(main_ctx_t *MAIN_CTX, nf_list_pkt_t *my_ava
 
         if (conn_raw->act <= 0 ||
             conn_raw->conn_cnt <= 0 ||
+#if 0
             conn_raw->token_acquired <= 0) {
+#else
+            ((MAIN_CTX->sysconfig.oauth_enable == 1) && (conn_raw->token_acquired <= 0))) {
+#endif
             nf_avail->available = 0;
         } else {
             nf_avail->available = 1;
@@ -447,6 +451,9 @@ void nf_manage_create_httpc_cmd_conn_add(main_ctx_t *MAIN_CTX, nf_retrieve_item_
                 sprintf(key_notif_type, "/defaultNotificationSubscriptions/%d/notificationType", k);
                 json_object *js_callback_uri = search_json_object(js_elem, key_callback_uri);
                 json_object *js_notif_type = search_json_object(js_elem, key_notif_type);
+                if (js_callback_uri == NULL || js_notif_type == NULL) {
+                    continue;
+                }
                 const char *uri = json_object_get_string(js_callback_uri);
                 const char *notif_type = json_object_get_string(js_notif_type);
                 char scheme[128] = {0,};
@@ -546,7 +553,11 @@ void nf_manage_create_lb_list_pkt(main_ctx_t *MAIN_CTX, conn_list_status_t *conn
 
         if (conn_raw->act <= 0 ||
             conn_raw->conn_cnt <= 0 ||
+#if 0
             conn_raw->token_acquired <= 0) {
+#else
+            ((MAIN_CTX->sysconfig.oauth_enable == 1) && (conn_raw->token_acquired <= 0))) {
+#endif
             nf_avail->available = 0;
         } else {
             nf_avail->available = 1;

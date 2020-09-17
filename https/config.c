@@ -89,6 +89,15 @@ int config_load()
         APPLOG(APPLOG_ERR, "{{{CFG}}} debug mode is [%s]", SERVER_CONF.debug_mode == 1 ? "ON" : "OFF");
     }
 
+	/* local_ip_address */
+    if (config_lookup_string(&CFG, CF_LOCAL_IP, &str) == CONFIG_FALSE) {
+		APPLOG(APPLOG_ERR, "{{{CFG}}} local_ip cfg not exist!");
+        goto CF_LOAD_ERR;
+    } else {
+		sprintf(SERVER_CONF.local_ip, "%s", str);
+        APPLOG(APPLOG_ERR, "{{{CFG}}} local_ip is [%s]", SERVER_CONF.local_ip);
+    }
+
 	/* HTTPS listen port cfg loading */
     if ((setting = config_lookup(&CFG, CF_TLS_LISTEN_PORT)) == NULL) {
 		APPLOG(APPLOG_ERR, "{{{CFG}}} https listen port cfg not exist!");
@@ -349,14 +358,14 @@ int config_load()
     }
 
 	/* any client oauth enable */
-	int any_client_oauth_check = 0;
-    if (config_lookup_int(&CFG, CF_ANY_CLIENT_OAUTH_CHECK, &any_client_oauth_check) == CONFIG_FALSE ||
-            any_client_oauth_check < 0) {
-		APPLOG(APPLOG_ERR, "{{{CFG}}} any_client_oauth_check cfg not exist! or wrong value[%d]", any_client_oauth_check);
+	int any_client_oauth_enable = 0;
+    if (config_lookup_int(&CFG, CF_ANY_CLIENT_OAUTH_ENABLE, &any_client_oauth_enable) == CONFIG_FALSE ||
+            any_client_oauth_enable < 0) {
+		APPLOG(APPLOG_ERR, "{{{CFG}}} any_client_oauth_enable cfg not exist! or wrong value[%d]", any_client_oauth_enable);
 		goto CF_LOAD_ERR;
 	} else {
-        SERVER_CONF.any_client_oauth_check = any_client_oauth_check;
-        APPLOG(APPLOG_ERR, "{{{CFG}}} any_client_oauth_check is [%d]", SERVER_CONF.any_client_oauth_check);
+        SERVER_CONF.any_client_oauth_enable = any_client_oauth_enable;
+        APPLOG(APPLOG_ERR, "{{{CFG}}} any_client_oauth_enable is [%d]", SERVER_CONF.any_client_oauth_enable);
     }
 
     /* pkt_log enable */

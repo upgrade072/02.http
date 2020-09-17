@@ -167,7 +167,7 @@ int accept_with_anyclient(char *ip)
 #if 0
             ALLOW_LIST[i].auth_act = 1;
 #else
-            ALLOW_LIST[i].auth_act = SERVER_CONF.any_client_oauth_check;
+            ALLOW_LIST[i].auth_act = SERVER_CONF.any_client_oauth_enable;
 #endif
             ALLOW_LIST[i].auto_added = 1;
             return i;
@@ -185,21 +185,35 @@ int check_allow(char *ip, int allow_any_client)
 		ip += strlen("::ffff:");
 
     int its_blocked_address = 0;
+    int its_already_fulled = 0;
 
     for (int i = 1; i < MAX_LIST_NUM; i++) {
         if (ALLOW_LIST[i].used != 1)
             continue;
         if (!strcmp(ip, ALLOW_LIST[i].ip)) {
+#if 0
             if ((ALLOW_LIST[i].act == 1) && (ALLOW_LIST[i].curr < ALLOW_LIST[i].max)) {
                 ALLOW_LIST[i].curr++;
                 return i;
             } if (ALLOW_LIST[i].act == 0) {
                 its_blocked_address = 1;
             }
+#else
+            if (ALLOW_LIST[i].act == 0) {
+                its_blocked_address = 1;
+            } else {
+                if (ALLOW_LIST[i].curr < ALLOW_LIST[i].max) {
+                    ALLOW_LIST[i].curr++;
+                    return i;
+                } else {
+                    its_already_fulled = 1;
+                }
+            }
+#endif
         }
     }
 
-    if (allow_any_client && !its_blocked_address)
+    if (allow_any_client && !its_blocked_address && !its_already_fulled)
         return accept_with_anyclient(ip);
     else
         return (-1);
