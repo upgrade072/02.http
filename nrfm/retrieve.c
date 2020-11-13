@@ -191,6 +191,7 @@ void nf_retrieve_instance_handle_resp_proc(AhifHttpCSMsgType *ahifPkt)
             break;
 
 		case 403: // you don't have right to query that nf-type
+		case 404: // just not found 
 		case 500: // NRF have problem
 			NRF_STAT_INC(MAIN_CTX.NRF_STAT, head->destHost, NFProfileRetrieval, NRFS_FAIL);
 			nf_retrieve_item_retry_while_after(nf_item);

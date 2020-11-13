@@ -9,7 +9,7 @@ void nf_subscribe_check_time(evutil_socket_t fd, short what, void *arg)
 	time_t tm_curr = {0,}, tm_expire = {0,};
 
 	tm_curr = time(NULL);
-	tm_expire = mktime(&nf_retr_info->tm_validity);
+	tm_expire = timegm(&nf_retr_info->tm_validity);/* _IMPV_SUBSCRIBE_ */ 
 
 	int remain_time = tm_expire - tm_curr;
 
@@ -280,12 +280,12 @@ void nf_subscribe_nf_type_update_process(main_ctx_t *MAIN_CTX, nf_retrieve_info_
 			__func__, nf_retr_info->nf_type, nf_retr_info->subscription_id, tic_sec.tv_sec);
 }
 
-#define JS_SUBSCRIBE_PATCH "{ \"op\":\"replace\", \"path\":\"/validityTime\", \"value\":\"%s\" }"
+#define JS_SUBSCRIBE_PATCH "[{ \"op\":\"replace\", \"path\":\"/validityTime\", \"value\":\"%s\" }]"     /* _IMPV_SUBSCRIBE_ */
 int nf_subscribe_patch_create_body(AhifHttpCSMsgType *ahifPkt, nf_retrieve_info_t *nf_retr_info)
 {
 	char time_str[1024] = {0,};
 	nf_retr_info->tm_wish_in_patch_req = time(NULL) + (60 * 60 * 12); // 12 hour
-	struct tm *cnvt_tm = localtime(&nf_retr_info->tm_wish_in_patch_req);
+	struct tm *cnvt_tm = gmtime(&nf_retr_info->tm_wish_in_patch_req); /* _IMPV_SUBSCRIBE_ */
 	strftime(time_str, sizeof(time_str), "%FT%TZ", cnvt_tm);
 
 	char patch_body[1024] = {0,};

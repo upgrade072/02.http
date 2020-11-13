@@ -488,7 +488,12 @@ void recurse_json_obj(json_object *input_obj, main_ctx_t *MAIN_CTX, nf_retrieve_
 						/* hold index & replace it */
 						json_object_array_del_idx(obj, i, 1);
 						char *replace_val = replace_json_val(js_val, MAIN_CTX, nf_retr_info);
+#if 0
 						json_object_array_put_idx(obj, i, json_object_new_string(replace_val));
+#else
+                        // don't replace, add to last
+						json_object_array_add(obj, json_object_new_string(replace_val));
+#endif
 						free(replace_val);
 					}
 				}
@@ -545,6 +550,10 @@ int save_sysconfig(config_t *CFG, main_ctx_t *MAIN_CTX)
     }
     if (config_lookup_int(CFG, CF_NFS_SHM_CREATE, &MAIN_CTX->sysconfig.nfs_shm_create) == CONFIG_FALSE) {
         APPLOG(APPLOG_ERR, "DBG| (%s) .cfg [%s] not exist!", __func__, CF_NFS_SHM_CREATE);
+        return -1;
+    }
+    if (config_lookup_int(CFG, CF_OAUTH_ENABLE, &MAIN_CTX->sysconfig.oauth_enable) == CONFIG_FALSE) {
+        APPLOG(APPLOG_ERR, "DBG| (%s) .cfg [%s] not exist!", __func__, CF_OAUTH_ENABLE);
         return -1;
     }
 

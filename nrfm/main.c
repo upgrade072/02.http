@@ -373,7 +373,13 @@ void INITIAL_PROCESS(main_ctx_t *MAIN_CTX)
 		nf_subscribe_start_process(MAIN_CTX);
 
 		/* start token acquire */
-		nf_token_start_process(MAIN_CTX);
+#if 0
+        nf_token_start_process(MAIN_CTX);
+#else
+        if (MAIN_CTX->sysconfig.oauth_enable > 0) {
+            nf_token_start_process(MAIN_CTX);
+        }
+#endif
 	}
 }
 

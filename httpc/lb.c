@@ -315,7 +315,8 @@ void send_to_remote(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx)
 	desthost_case_sensitive(recv_ctx);
 #endif
     if (CLIENT_CONF.debug_mode == 1) {
-        APPLOG(APPLOG_ERR, "{{{DBG}}} searchDest try ahifPkt api=[%s] type=(%s) host=(%s) ip=(%s) port=(%d)",
+        APPLOG(APPLOG_ERR, "{{{DBG}}} searchDest try ahifPkt ahifCid=(%d) api=[%s] type=(%s) host=(%s) ip=(%s) port=(%d)",
+                recv_ctx->user_ctx.head.ahifCid,
                 recv_ctx->user_ctx.head.rsrcUri,
                 recv_ctx->user_ctx.head.destType,
                 recv_ctx->user_ctx.head.destHost,
@@ -329,7 +330,8 @@ void send_to_remote(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx)
         trig_refresh_select_node(&CLIENT_CONF);
 
 		if (CLIENT_CONF.debug_mode == 1) {
-			APPLOG(APPLOG_ERR, "{{{DBG}}} searchDest fail ahifPkt api=[%s] type=(%s) host=(%s) ip=(%s) port=(%d)",
+			APPLOG(APPLOG_ERR, "{{{DBG}}} searchDest fail ahifPkt ahifCid=(%d) api=[%s] type=(%s) host=(%s) ip=(%s) port=(%d)",
+					recv_ctx->user_ctx.head.ahifCid,
 					recv_ctx->user_ctx.head.rsrcUri,
 					recv_ctx->user_ctx.head.destType,
 					recv_ctx->user_ctx.head.destHost,

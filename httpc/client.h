@@ -65,6 +65,7 @@
 #define CF_PING_EVENT_CODE  "client_cfg.http_config.ping_event_code"
 #define CF_PKT_LOG          "client_cfg.http_config.pkt_log"
 #define CF_TRACE_ENABLE     "client_cfg.http_config.trace_enable"
+#define CF_OAUTH_ENABLE     "client_cfg.http_config.oauth_enable"
 #define CF_LB_CONFIG        "client_cfg.lb_config"
 #define CF_CONNECT_LIST     "connect_list"
 #define CF_HTTP_OPT_HDR_TABLE_SIZE  "client_cfg.http_option.setting_header_table_size"
@@ -85,6 +86,7 @@ typedef struct client_conf {
 	int ping_event_code;
 	int pkt_log;
     int trace_enable;
+    int oauth_enable;
 	config_setting_t *lb_config;
 
 	int http_opt_header_table_size;
@@ -116,7 +118,7 @@ typedef enum loadshare_mode {
 typedef struct conn_list {
 	int index;	// 0, 1, 2, 3, ....
 	int used;	// if 1 : conn retry, 0 : don't do anything
-	int conn;	// if 0 : disconnected, 1 : connected
+	volatile int conn;	// if 0 : disconnected, 1 : connected
 	int act;	// 1: act, 0: deact
 
 	char scheme[12];					// https (over TLS) | http (over TCP)
@@ -133,7 +135,7 @@ typedef struct conn_list {
 	int session_id;
 
 	int token_id;
-	int reconn_candidate;				// stream_id is full, trigger reconnect
+	volatile int reconn_candidate;				// stream_id is full, trigger reconnect
 
 	int nrfm_auto_added;				// this conn list added by nrfm 
 	time_t tombstone_date;				// last (conn->disconn) time
@@ -219,7 +221,7 @@ typedef struct http2_session_data {
 	int session_index; 
 	int session_id;		// unique id
 	int used;			// 1 : used, 0 : free
-	int connected;
+	volatile int connected;
 
 	int ping_cnt;
 	struct timeval ping_snd_time;

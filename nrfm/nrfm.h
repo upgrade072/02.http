@@ -57,6 +57,7 @@
 #define CF_OVLD_NOTIFY_CODE	"nrfm_cfg.sys_config.ovld_notify_code"
 #define CF_ISIFCS_MODE      "nrfm_cfg.sys_config.isifcs_mode"
 #define CF_NFS_SHM_CREATE   "nrfm_cfg.sys_config.nfs_shm_create"
+#define CF_OAUTH_ENABLE     "nrfm_cfg.sys_config.oauth_enable"
 #define CF_RECOVERY_TIME	"nrfm_cfg.sys_info.recovery_time"
 #define CF_SUBSCRIBE_FORM	"nrfm_cfg.subscription_form"
 #define CF_HTTP_RSP_WAIT_TM	"nrfm_cfg.timer_info.httpc_rsp_wait_tm"
@@ -170,6 +171,7 @@ typedef struct sys_conf {
 	int nfs_shm_create;
 	int ovld_tps_enabled;
 	int ovld_notify_code;
+    int oauth_enable;
 } sys_conf_t;
 
 typedef struct nrf_conn_ctx {

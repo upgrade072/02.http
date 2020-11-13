@@ -203,6 +203,16 @@ int config_load()
         APPLOG(APPLOG_ERR, "{{{CFG}}} trace_enable is [%s]", CLIENT_CONF.trace_enable == 1 ? "ON" : "OFF");
     }
 
+    /* oauth_enable */
+    int oauth_enable = 0;
+    if (config_lookup_int(&CFG, CF_OAUTH_ENABLE, &oauth_enable) == CONFIG_FALSE) {
+        APPLOG(APPLOG_ERR, "{{{CFG}}} oauth_enable cfg not exist!");
+        goto CF_LOAD_ERR;
+    } else {
+        CLIENT_CONF.oauth_enable = oauth_enable;
+        APPLOG(APPLOG_ERR, "{{{CFG}}} oauth_enable is [%s]", CLIENT_CONF.oauth_enable == 1 ? "ON" : "OFF");
+    }
+
 	/* http/2 option setting header table size */
     int setting_header_table_size = 0;
     if (config_lookup_int(&CFG, CF_HTTP_OPT_HDR_TABLE_SIZE, &setting_header_table_size) == CONFIG_FALSE) {

@@ -64,6 +64,7 @@
 #define CF_LOG_LEVEL        "server_cfg.sys_config.log_level"
 #define CF_DEBUG_MODE       "server_cfg.sys_config.debug_mode"
 #define CF_WORKER_SHMKEY    "server_cfg.sys_config.worker_shmkey_base"
+#define CF_LOCAL_IP         "server_cfg.http_config.local_ip"
 #define CF_TLS_LISTEN_PORT  "server_cfg.http_config.listen_port_tls"
 #define CF_TCP_LISTEN_PORT  "server_cfg.http_config.listen_port_tcp"
 #define CF_MAX_WORKER_NUM   "server_cfg.http_config.worker_num"
@@ -77,7 +78,7 @@
 #define CF_OVLD_EVENT_CODE  "server_cfg.http_config.ovld_event_code"
 #define CF_ALLOW_ANY_CLIENT "server_cfg.http_config.allow_any_client"
 #define CF_ANY_CLIENT_DEFAULT_MAX   "server_cfg.http_config.any_cli_def_max"
-#define CF_ANY_CLIENT_OAUTH_CHECK   "server_cfg.http_config.any_cli_oauth_chk"
+#define CF_ANY_CLIENT_OAUTH_ENABLE   "server_cfg.http_config.any_cli_oauth_enable"
 #define CF_HTTP_OPT_HDR_TABLE_SIZE  "server_cfg.http_option.setting_header_table_size"
 #define CF_PKT_LOG          "server_cfg.http_config.pkt_log"
 #define CF_TRACE_ENABLE     "server_cfg.http_config.trace_enable"
@@ -109,6 +110,7 @@ typedef struct uuid_list {
 typedef struct server_conf {
 	int debug_mode;
 	int log_level;
+    char local_ip[1024];
 	int https_listen_port[MAX_PORT_NUM];
 	int http_listen_port[MAX_PORT_NUM];
 	int worker_num;
@@ -150,7 +152,7 @@ typedef struct server_conf {
     /* for NRF import NF Client */
     int allow_any_client;
     int any_client_default_max;
-    int any_client_oauth_check;
+    int any_client_oauth_enable;
 
     /* for WEIGHT balance */
     int weight[MAX_THRD_NUM];

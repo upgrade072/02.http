@@ -77,7 +77,13 @@ int nf_notify_handle_check_req(AhifHttpCSMsgType *ahifPkt, char **problemDetail)
 		goto NNHCR_RET;
 	}
 	nf_retrieve_item_t temp_nf_item = {0,};
+#if 0
 	nf_retrieve_parse_list(js_uri, &temp_nf_item);
+#else
+    // schlee 20201109 test code
+    memset(&temp_nf_item, 0x00, sizeof(nf_retrieve_item_t));
+    sscanf(json_object_get_string(js_uri), "../nf-instances/%128s", temp_nf_item.nf_uuid);
+#endif
 	nf_retrieve_item_t *nf_item = nf_notify_search_item_by_uuid(&MAIN_CTX, temp_nf_item.nf_uuid);
 
 	if (strcmp(event_value, "NF_REGISTERED") && nf_item == NULL) {

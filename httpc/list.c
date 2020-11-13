@@ -110,8 +110,10 @@ void save_session_info(httpc_ctx_t *httpc_ctx, int thrd_idx, int sess_idx, int s
 
     /* oauth 2.0 */
 	char *token = NULL;
-    if (conn_list->token_id > 0) {
-        token = get_access_token(CLIENT_CONF.ACC_TOKEN_LIST, conn_list->token_id);
+    if (CLIENT_CONF.oauth_enable == 1) {
+        if (conn_list->token_id > 0) {
+            token = get_access_token(CLIENT_CONF.ACC_TOKEN_LIST, conn_list->token_id);
+        }
     }
 
 	sprintf(httpc_ctx->access_token, "%s", token != NULL ? token : "");

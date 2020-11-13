@@ -948,9 +948,17 @@ conn_list_t *check_sess_group_prepair_reconn(conn_list_t *conn_list)
 		if (i == conn_list->index) continue; // it's me
 		if (compare_list->used == 0) continue;
 		if (compare_list->act == 0) continue;
+#if 0
 		if (compare_list->conn != CN_CONNECTED) continue;
+#else
+        if (CONN_LIST[i].conn != CN_CONNECTED) continue;
+#endif
 
+#if 0
 		if ((compare_list->reconn_candidate > 0) &&
+#else
+		if ((CONN_LIST[i].reconn_candidate > 0) &&
+#endif
 				(compare_list->port == conn_list->port) &&
 				!strcmp(compare_list->scheme, conn_list->scheme) &&
 				!strcmp(compare_list->type, conn_list->type) &&
@@ -988,7 +996,11 @@ void inspect_stream_id(int stream_id, http2_session_data_t *session_data)
 			APPLOG(APPLOG_ERR, "%s() SESSION[%d] (%s:%s:%s:%d) REACH TO STREAM_ID LIMIT[%d], PREPARE RECONNECT!!!",
 					__func__, session_data->session_id, 
 					conn_list->type, conn_list->host, conn_list->ip, conn_list->port, CLIENT_CONF.prepare_close_stream_limit);
+#if 0
 			conn_list->reconn_candidate = 1;
+#else
+            CONN_LIST[session_data->conn_index].reconn_candidate = 1;
+#endif
 		}
 #endif
 	}
@@ -1002,7 +1014,7 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 	http2_session_data_t *session_data = NULL;
 	httpc_ctx_t *httpc_ctx = NULL;
 
-	int thrd_index, session_index, ctx_id, session_id;
+	int thrd_index, session_index, ctx_id, session_id, stream_id;
 	int msg_type;
 
 	while (1)
@@ -1030,6 +1042,7 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 
 		switch (msg_type) {
 			case HTTP_INTL_SND_REQ:
+#if 0
 				if (session_data  == NULL) {
 					/* legacy session expired and new one already created case */
 					APPLOG(APPLOG_DEBUG, "%s():%d send req case) get_session(id:%d) fail", __func__, __LINE__, session_id);
@@ -1045,6 +1058,27 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 				} else {
 					inspect_stream_id(stream_id, session_data);
 				}
+#else
+                if (httpc_ctx == NULL) {
+					APPLOG(APPLOG_DEBUG, "%s():%d get_context fail", __func__, __LINE__);
+					continue;
+                }
+                if (session_data != NULL &&
+                    ((stream_id = send_request(session_data, thrd_index, ctx_id)) >= 0) &&
+                    session_send(session_data) == 0) {
+					inspect_stream_id(stream_id, session_data);
+                } else {
+					APPLOG(APPLOG_DEBUG, "%s():%d send_request fail ahifCid=(%d) session [%s]", 
+                            __func__, __LINE__, httpc_ctx->user_ctx.head.ahifCid, 
+                            session_data != NULL ? "exist" : "goaway");
+                    clear_and_free_ctx(httpc_ctx);
+                    Free_CtxId(thrd_index, ctx_id);
+                }
+                if (session_data == NULL) {
+					APPLOG(APPLOG_DEBUG, "%s():%d get_session fail", __func__, __LINE__);
+                    continue;
+                }
+#endif
 
 				/* stat HTTP_TX_REQ */
 				http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_TX_REQ);
