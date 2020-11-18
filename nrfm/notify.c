@@ -435,11 +435,16 @@ int nf_notify_send_resp(AhifHttpCSMsgType *ahifPktRecv, int respCode, char *prob
 	head->respCode = respCode;
 
     /* vheader */
+#if 0
     head->vheaderCnt = 2;
+#endif
+
+#if 0
     ahifPkt->vheader[0].vheader_id = VH_CONTENT_TYPE;
     sprintf(ahifPkt->vheader[0].vheader_body, "%s", "application/json");
     ahifPkt->vheader[1].vheader_id = VH_ACCEPT_ENCODING;;
     sprintf(ahifPkt->vheader[1].vheader_body, "%s", "application/json");
+#endif
 
 	switch(respCode) {
 		case 204: // no contents
@@ -447,6 +452,12 @@ int nf_notify_send_resp(AhifHttpCSMsgType *ahifPktRecv, int respCode, char *prob
 			break;
 		default:
 			NRF_STAT_INC(MAIN_CTX.NRF_STAT, head->destHost, NFStatusNotify, NRFS_FAIL);
+
+            head->vheaderCnt = 2;
+            ahifPkt->vheader[0].vheader_id = VH_CONTENT_TYPE;
+            sprintf(ahifPkt->vheader[0].vheader_body, "%s", "application/json");
+            ahifPkt->vheader[1].vheader_id = VH_ACCEPT_ENCODING;;
+            sprintf(ahifPkt->vheader[1].vheader_body, "%s", "application/json");
 
 			head->bodyLen = sprintf(ahifPkt->data, ERROR_NRFM_NOTIFICATION, respCode, problemDetail);
 			APPLOG(APPLOG_ERR, "{{{TEST}}} AHIF DATA is (%s)", ahifPkt->data);

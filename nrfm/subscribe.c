@@ -396,7 +396,11 @@ void nf_subscribe_patch_handle_resp_proc(AhifHttpCSMsgType *ahifPkt)
 
 void nf_subscribe_patch_modify_validity_with_wish(nf_retrieve_info_t *nf_retr_info)
 {
-	struct tm *new_validity = localtime(&nf_retr_info->tm_wish_in_patch_req);
+#if 0
+    struct tm *new_validity = localtime(&nf_retr_info->tm_wish_in_patch_req);
+#else
+    struct tm *new_validity = gmtime(&nf_retr_info->tm_wish_in_patch_req);
+#endif
 	memcpy(&nf_retr_info->tm_validity, new_validity, sizeof(struct tm));
 
 	// for test */

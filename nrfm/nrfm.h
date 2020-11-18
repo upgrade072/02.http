@@ -328,9 +328,9 @@ void    nf_manage_collect_httpc_conn_status_cb(evutil_socket_t fd, short what, v
 void    nf_manage_httpc_conn_status_cb(evutil_socket_t fd, short what, void *arg);
 void    nf_manage_https_conn_status_cb(evutil_socket_t fd, short what, void *arg);
 void    nf_manage_collect_oper_added_nf(main_ctx_t *MAIN_CTX, nf_list_pkt_t *my_avail_nfs);
-void    nf_manage_create_httpc_cmd_conn_act_dact(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item, int act);
-void    nf_manage_create_httpc_cmd_conn_add(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item);
-void    nf_manage_create_httpc_cmd_conn_del(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item);
+int     nf_manage_create_httpc_cmd_conn_act_dact(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item, int act);
+int     nf_manage_create_httpc_cmd_conn_add(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item);
+int     nf_manage_create_httpc_cmd_conn_del(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item);
 int     nf_manage_create_lb_list_get_load(json_object *nf_profile, char *service_name);
 int     nf_manage_create_lb_list_get_priority(json_object *nf_profile, char *service_name);
 void    nf_manage_create_lb_list_pkt(main_ctx_t *MAIN_CTX, conn_list_status_t *conn_raw, int nfType, nf_type_info *nf_specific_info, int allowdPlmnsNum, nf_comm_plmn *allowdPlmns, nf_conn_info_t *nf_conn, json_object *nf_profile, nf_list_pkt_t *my_avail_nfs);

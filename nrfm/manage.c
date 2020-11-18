@@ -6,17 +6,19 @@ extern shm_http_t *SHM_HTTPC_PTR;
 
 void NF_MANAGE_NF_ACT(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item)
 {
-	nf_manage_create_httpc_cmd_conn_act_dact(MAIN_CTX, nf_item, 1);
-	print_nrfm_mml_raw(&nf_item->httpc_cmd);
-	nf_manage_send_httpc_cmd(MAIN_CTX, nf_item);
+    if (nf_manage_create_httpc_cmd_conn_act_dact(MAIN_CTX, nf_item, 1) >= 0) {
+        print_nrfm_mml_raw(&nf_item->httpc_cmd);
+        nf_manage_send_httpc_cmd(MAIN_CTX, nf_item);
+    }
 }
 
 void NF_MANAGE_NF_ADD(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item)
 {
 	nf_retrieve_item_token_add(MAIN_CTX, nf_item);
-	nf_manage_create_httpc_cmd_conn_add(MAIN_CTX, nf_item);
-	print_nrfm_mml_raw(&nf_item->httpc_cmd);
-	nf_manage_send_httpc_cmd(MAIN_CTX, nf_item);
+    if (nf_manage_create_httpc_cmd_conn_add(MAIN_CTX, nf_item) >= 0) {
+        print_nrfm_mml_raw(&nf_item->httpc_cmd);
+        nf_manage_send_httpc_cmd(MAIN_CTX, nf_item);
+    }
 }
 
 void NF_MANAGE_NF_CLEAR(main_ctx_t *MAIN_CTX)
@@ -39,17 +41,19 @@ void NF_MANAGE_NF_CLEAR(main_ctx_t *MAIN_CTX)
 
 void NF_MANAGE_NF_DACT(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item)
 {
-	nf_manage_create_httpc_cmd_conn_act_dact(MAIN_CTX, nf_item, 0);
-	print_nrfm_mml_raw(&nf_item->httpc_cmd);
-	nf_manage_send_httpc_cmd(MAIN_CTX, nf_item);
+	if (nf_manage_create_httpc_cmd_conn_act_dact(MAIN_CTX, nf_item, 0) >= 0) {
+        print_nrfm_mml_raw(&nf_item->httpc_cmd);
+        nf_manage_send_httpc_cmd(MAIN_CTX, nf_item);
+    }
 }
 
 void NF_MANAGE_NF_DEL(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item)
 {
     nf_retrieve_item_token_del(MAIN_CTX, nf_item);
-	nf_manage_create_httpc_cmd_conn_del(MAIN_CTX, nf_item);
-	print_nrfm_mml_raw(&nf_item->httpc_cmd);
-	nf_manage_send_httpc_cmd(MAIN_CTX, nf_item);
+    if (nf_manage_create_httpc_cmd_conn_del(MAIN_CTX, nf_item) >= 0) {
+        print_nrfm_mml_raw(&nf_item->httpc_cmd);
+        nf_manage_send_httpc_cmd(MAIN_CTX, nf_item);
+    }
 }
 
 void NF_MANAGE_RESTORE_HTTPC_CONN(main_ctx_t *MAIN_CTX)
@@ -323,15 +327,15 @@ void nf_manage_collect_oper_added_nf(main_ctx_t *MAIN_CTX, nf_list_pkt_t *my_ava
 	}
 }
 
-void nf_manage_create_httpc_cmd_conn_act_dact(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item, int act)
+int nf_manage_create_httpc_cmd_conn_act_dact(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item, int act)
 {
 	nrfm_mml_t *httpc_cmd = &nf_item->httpc_cmd;
 
 	/* never added */
 	if (httpc_cmd->id <= 0)
-		return;
+		return -1;
 	if (httpc_cmd->info_cnt <= 0)
-		return;
+		return -1;
 
 	if (act)
 		httpc_cmd->command = HTTP_MML_HTTPC_ACT;
@@ -340,10 +344,10 @@ void nf_manage_create_httpc_cmd_conn_act_dact(main_ctx_t *MAIN_CTX, nf_retrieve_
 
 	httpc_cmd->seqNo = nf_item->httpc_cmd_ctx.seqNo = ++MAIN_CTX->MAIN_SEQNO;
 
-	return;
+	return 0;
 }
 
-void nf_manage_create_httpc_cmd_conn_add(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item)
+int nf_manage_create_httpc_cmd_conn_add(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item)
 {
 	nrfm_mml_t httpc_add_cmd = {0,};
 
@@ -357,14 +361,14 @@ void nf_manage_create_httpc_cmd_conn_add(main_ctx_t *MAIN_CTX, nf_retrieve_item_
 	char key_nfType[128] = "nfType";
 	json_object *js_nfType = search_json_object(nf_item->item_nf_profile, key_nfType);
     if (js_nfType == NULL)
-        return;
+        return -1;
     else
         sprintf(httpc_add_cmd.type, "%s", json_object_get_string(js_nfType));
 
 	char key_services[128] = "nfServices";
 	json_object *js_services = search_json_object(nf_item->item_nf_profile, key_services);
     if (js_services == NULL)
-        return;
+        return -1;
 
 	int array_length = json_object_array_length(js_services);
 	for (int i = 0; i < array_length; i++) {
@@ -476,22 +480,24 @@ NMCHCCA_END:
 	httpc_add_cmd.token_id = nf_item->token_id;
 
 	memcpy(&nf_item->httpc_cmd, &httpc_add_cmd, sizeof(nrfm_mml_t));
+
+    return 0;
 }
 
-void nf_manage_create_httpc_cmd_conn_del(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item)
+int nf_manage_create_httpc_cmd_conn_del(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item)
 {
 	nrfm_mml_t *httpc_cmd = &nf_item->httpc_cmd;
 
 	/* never added */
 	if (httpc_cmd->id <= 0)
-		return;
+		return -1;
 	if (httpc_cmd->info_cnt <= 0)
-		return;
+		return -1;
 
 	httpc_cmd->command = HTTP_MML_HTTPC_DEL;
 	httpc_cmd->seqNo = nf_item->httpc_cmd_ctx.seqNo = ++MAIN_CTX->MAIN_SEQNO;
 
-	return;
+	return 0;
 }
 
 int nf_manage_create_lb_list_get_load(json_object *nf_profile, char *service_name)

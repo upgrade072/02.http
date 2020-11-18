@@ -413,7 +413,11 @@ static int send_response_by_ctx(nghttp2_session *session, int32_t stream_id,
 	data_prd.source.ptr = https_ctx;
 	data_prd.read_callback = ptr_read_callback_ctx;
 
-	rv = nghttp2_submit_response(session, stream_id, nva, nvlen, &data_prd);
+#if 0
+    rv = nghttp2_submit_response(session, stream_id, nva, nvlen, &data_prd);
+#else
+    rv = nghttp2_submit_response(session, stream_id, nva, nvlen, https_ctx->user_ctx.head.bodyLen > 0 ? &data_prd : NULL);
+#endif
 
 	log_pkt_send(https_ctx, nva, nvlen, 
 			https_ctx->user_ctx.data + https_ctx->user_ctx.head.queryLen, 
@@ -736,6 +740,9 @@ int send_request_to_nrfm(https_ctx_t *https_ctx, int ahif_mtype)
 			APPLOG(APPLOG_ERR, "%s(), fail to send resp to NRFM! (res:%d)", __func__, res);
 		}
 	}
+
+    // clean vheader
+    gb_clean_ctx(https_ctx);
 
 	return res;
 }
