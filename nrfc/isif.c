@@ -12,14 +12,13 @@ int isifc_init()
 	return 0;
 }
 
-void isifc_create_pkt_for_status(IsifMsgType *txIsifMsg, service_info_t *fep_svc, svr_info_t *my_info, assoc_t *lb_assoc)
+void isifc_create_pkt(IsifMsgType *txIsifMsg, svr_info_t *my_info, assoc_t *lb_assoc, void *ptr, size_t size)
 {
     /* ISIF Header Set */
     txIsifMsg->head.mtype = MTYPE_NRFC_BROAD_STATUS_TO_LB;
 
     /* Set Source Info */
 	/* schlee, only use for set (a:b:c = 1 set) */
-    //txIsifMsg->head.srcSysSetID = atoi(my_info->mySvrId);
     sprintf(txIsifMsg->head.srcSysType, "%s", my_info->mySysType);
     sprintf(txIsifMsg->head.srcSysName, "%s", my_info->mySysName);
     sprintf(txIsifMsg->head.srcAppName, "%s", my_info->myProcName);
@@ -32,11 +31,11 @@ void isifc_create_pkt_for_status(IsifMsgType *txIsifMsg, service_info_t *fep_svc
 	/* schlee, is it work ??? */
     //txIsifMsg.head.option |= ISIF_OPTION_ALL_SERVER;
 
-	memcpy(txIsifMsg->body, fep_svc, sizeof(service_info_t));
-	txIsifMsg->head.bodyLen = sizeof(service_info_t);
+	memcpy(txIsifMsg->body, ptr, size);
+	txIsifMsg->head.bodyLen = size;
 }
 
-void isifc_send_pkt_for_status(int isifc_qid, IsifMsgType *txIsifMsg)
+void isifc_send_pkt(int isifc_qid, IsifMsgType *txIsifMsg)
 {
 	int tx_len = ISIF_HEAD_LEN + txIsifMsg->head.bodyLen;
 

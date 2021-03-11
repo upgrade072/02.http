@@ -21,11 +21,32 @@ conn_list_t *find_nrfm_inf_dest(AhifHttpCSMsgType *ahifPkt)
 		if (conn_list->conn != CN_CONNECTED)
 			continue;
 
-		if (!strcmp(conn_list->type, ahifPkt->head.destType) &&
-				!strcmp(conn_list->scheme, ahifPkt->head.scheme)) {
-			LAST_INDEX_FOR_NRFM = (index + 1); //move forward
-			return conn_list;
-		}
+        if (ahifPkt->head.mtype == MTYPE_NRFM_REGI_REQUEST) {
+#if 0
+            /* if Regi Request, select HTTPS://(type-NRF) */
+            if (!strcmp(conn_list->scheme, ahifPkt->head.scheme) &&
+                    !strcmp(conn_list->type, ahifPkt->head.destType)) {
+#else
+            if (!strcmp(conn_list->type, ahifPkt->head.destType)) {
+#endif
+                LAST_INDEX_FOR_NRFM = (index + 1); //move forward
+                return conn_list;
+            }
+        } else {
+        /* else (after Regi), check full */
+            if (!strcmp(conn_list->scheme, ahifPkt->head.scheme) &&
+                    !strcmp(conn_list->type, ahifPkt->head.destType) &&
+#if 0
+                    !strcmp(conn_list->host, ahifPkt->head.destHost) &&
+                    !strcmp(conn_list->ip, ahifPkt->head.destIp) &&
+                    (conn_list->port ==  ahifPkt->head.destPort)) {
+#else
+                    !strcmp(conn_list->host, ahifPkt->head.destHost)) {
+#endif
+                LAST_INDEX_FOR_NRFM = (index + 1); //move forward
+                return conn_list;
+            }
+        }
     }
 	return NULL;
 }
@@ -342,7 +363,6 @@ conn_list_t *search_conn_list(GNode *curr_node, compare_input_t *comm_input, sel
 		} else if (leaf_conn_list->act == 1 && 
 				(leaf_conn_list->conn == CN_CONNECTED && leaf_conn_list->reconn_candidate == 0)) {
 			traverse_parent_move_index(curr_node);
-			//APPLOG(APPLOG_ERR, "{{{TEST}}} ip=(%s) port=(%d) index=(%d)", leaf_conn_list->ip, leaf_conn_list->port, leaf_conn_list->index);
             return leaf_conn_list;
 		} else {
             return NULL;
@@ -421,6 +441,7 @@ void destroy_select_node(select_node_t *root_node)
 
 void rebuild_select_node(select_node_t *root_node)
 {
+    APPLOG(APPLOG_ERR, "%s() called", __func__);
 	destroy_select_node(root_node);
 	create_select_node(root_node);
 	reorder_select_node(root_node);
@@ -430,7 +451,8 @@ void refresh_select_node(evutil_socket_t fd, short what, void *arg)
 {
 	select_node_t *root_node = (select_node_t *)arg;
 
-	rebuild_select_node(root_node);
+    APPLOG(APPLOG_ERR, "%s() rebuild lb thread's select node, this trigger from lb forward mismatch", __func__);
+    rebuild_select_node(root_node);
 }
 
 void set_refresh_select_node(GNode *root_node)

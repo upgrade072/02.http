@@ -1,7 +1,6 @@
 #include <nrfm.h>
 
 extern main_ctx_t MAIN_CTX;
-extern nrf_stat_t NRF_STAT;
 
 void dump_pkt_log(void *msg, ssize_t size)
 {
@@ -18,47 +17,6 @@ void dump_pkt_log(void *msg, ssize_t size)
 	fclose(temp_file);
 	APPLOG(APPLOG_ERR, "{{{{PKT}}} RECV\n%s\n", ptr);
 	free(ptr);
-}
-
-// CAUTION!!! must free after use, outbuffer
-int get_file_contents(const char* filename, char** outbuffer)
-{
-	FILE* file = NULL;
-	long filesize;
-	const int blocksize = 1;
-	size_t readsize;
-	char* filebuffer;
-
-	// Open the file
-	file = fopen(filename, "r");
-	if (NULL == file) {
-		fprintf(stderr, "'%s' not opened\n", filename);
-		return -1;
-	}
-
-	// Determine the file size
-	fseek(file, 0, SEEK_END);
-	filesize = ftell(file);
-	rewind (file);
-
-	// Allocate memory for the file contents
-	filebuffer = (char*) malloc(sizeof(char) * filesize);
-	*outbuffer = filebuffer;
-	if (filebuffer == NULL) {
-		fprintf(stderr, "malloc out-of-memory\n");
-		return -1;
-	}
-
-	// Read in the file
-	readsize = fread(filebuffer, blocksize, filesize, file);
-	if (readsize != filesize) {
-		fprintf(stderr, "didn't read file completely\n");
-		return -1;
-	}
-
-	// Clean exit
-	fclose(file);
-	return 0;
 }
 
 void get_svc_ipv4_addr(const char *nic_name, char *nic_addr)
@@ -90,43 +48,38 @@ void handle_ctx_timeout(evutil_socket_t fd, short what, void *arg)
 	switch (timer->type) {
 		// re try to another NRF
 		case NF_CTX_TYPE_REGI:
-			NRF_STAT_INC(&NRF_STAT, NFRegister, NRFS_TIMEOUT);
+			NRF_STAT_INC(MAIN_CTX.NRF_STAT, MAIN_CTX.nrf_selection_info.host, NFRegister, NRFS_TIMEOUT);
 			APPLOG(APPLOG_ERR, "{{{DBG}}} %s nf register ctx timed out!", __func__);
 			nf_regi_init_proc(&MAIN_CTX);
 			break;
 		case NF_CTX_TYPE_HEARTBEAT:
-			NRF_STAT_INC(&NRF_STAT, NFUpdate, NRFS_TIMEOUT);
+			NRF_STAT_INC(MAIN_CTX.NRF_STAT, MAIN_CTX.nrf_selection_info.host, NFUpdate, NRFS_TIMEOUT);
 			APPLOG(APPLOG_ERR, "{{{DBG}}} %s nf heartbeat ctx timed out!", __func__);
 			break;
 		case NF_CTX_TYPE_RETRIEVE_LIST:
-			NRF_STAT_INC(&NRF_STAT, NFListRetrieval, NRFS_TIMEOUT);
+			NRF_STAT_INC(MAIN_CTX.NRF_STAT, MAIN_CTX.nrf_selection_info.host, NFListRetrieval, NRFS_TIMEOUT);
 			APPLOG(APPLOG_ERR, "{{{DBG}}} %s nf retrieve(list) ctx timed out!", __func__);
 			nf_retrieve_list_handle_timeout(timer->my_ctx);
 			break;
 		case NF_CTX_TYPE_RETRIEVE_PROFILE:
-			NRF_STAT_INC(&NRF_STAT, NFProfileRetrieval, NRFS_TIMEOUT);
+			NRF_STAT_INC(MAIN_CTX.NRF_STAT, MAIN_CTX.nrf_selection_info.host, NFProfileRetrieval, NRFS_TIMEOUT);
 			APPLOG(APPLOG_ERR, "{{{DBG}}} %s nf retrieve(profile) ctx timed out!", __func__);
 			nf_retrieve_item_handle_timeout(timer->my_ctx);
 			break;
 		case NF_CTX_TYPE_SUBSCRIBE:
-			NRF_STAT_INC(&NRF_STAT, NFStatusSubscribe, NRFS_TIMEOUT);
+			NRF_STAT_INC(MAIN_CTX.NRF_STAT, MAIN_CTX.nrf_selection_info.host, NFStatusSubscribe, NRFS_TIMEOUT);
 			APPLOG(APPLOG_ERR, "{{{DBG}}} %s nf subscribe ctx timed out!", __func__);
 			nf_subscribe_nf_type_handle_timeout(timer->my_ctx);
 			break;
 		case NF_CTX_TYPE_SUBSCR_PATCH:
-			NRF_STAT_INC(&NRF_STAT, NFStatusSubscribePatch, NRFS_TIMEOUT);
+			NRF_STAT_INC(MAIN_CTX.NRF_STAT, MAIN_CTX.nrf_selection_info.host, NFStatusSubscribePatch, NRFS_TIMEOUT);
 			APPLOG(APPLOG_ERR, "{{{DBG}}} %s nf subscribe ctx timed out!", __func__);
 			break;
 		case NF_CTX_TYPE_ACQUIRE_TOKEN:
-			NRF_STAT_INC(&NRF_STAT, AccessToken, NRFS_TIMEOUT);
+			NRF_STAT_INC(MAIN_CTX.NRF_STAT, MAIN_CTX.nrf_selection_info.host, AccessToken, NRFS_TIMEOUT);
 			APPLOG(APPLOG_ERR, "{{{DBG}}} %s nf acuire token ctx timed out!", __func__);
 			nf_token_acquire_token_handle_timeout(&MAIN_CTX, timer->my_ctx);
 			break;
-#if 0
-		case NF_CTX_TYPE_HTTPC_CMD:
-			APPLOG(APPLOG_ERR, "{{{DBG}}} %s nf management ctx timed out!", __func__);
-			break;
-#endif
 		default:
 			APPLOG(APPLOG_ERR, "{{{DBG}}} %s recv unknown type(%d)", __func__, timer->type);
 			break;

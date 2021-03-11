@@ -12,6 +12,7 @@
 #include <netinet/in.h>
 #include <net/if.h>
 #include <arpa/inet.h>
+#include <ctype.h>
 
 #include <libs.h>
 
@@ -27,8 +28,6 @@
 #include <event.h>
 #include <event2/event.h>
 
-#include <gmodule.h>
-
 #include <nrf_comm.h>
 
 // monitor config file change
@@ -37,32 +36,45 @@
 // table print
 #include <libfort.h>
 
+//------- message --------//
+#define LIBNRF_MSG_SERVICE_INFO         1000
+#define LIBNRF_MSG_ADD_NF_PROFILE       1001
+#define LIBNRF_MSG_ADD_NF_CALLBACK      1002
+
 typedef struct svr_info {
     char mySysName[COMM_MAX_NAME_LEN];
     char myProcName[COMM_MAX_NAME_LEN];
     char mySysType[COMM_MAX_VALUE_LEN];
-    char mySvrId[COMM_MAX_VALUE_LEN];
+    //char mySvrId[COMM_MAX_VALUE_LEN]; /* no use */
 	int myLabelNum;
 } svr_info_t;
 
 typedef struct assoc {
+	int index; // 01234 ...
+    int id; // 12345 ...
     char name[1024];
     char type[1024];
     char group[1024];
     char ip[1024];
 } assoc_t;
 
+#define MAX_NRFC_CHK_PROC   12
 typedef struct service_info {
+    //------- message --------//
+    long mtype;                                     /* LIB --> NRFC msgsnd, msg mtype */
+
     int sys_mp_id;
-    char service_name[1024];
-    char ovld_name[1024];
-    char proc_name[1024];
+    char service_name[128];
+    char ovld_name[128];
+    int proc_num;
+    char proc_name[MAX_NRFC_CHK_PROC][128];
+    int chk_all_active;
     int ovld_tps;
     int curr_tps;
     int curr_load;
-    int proc_table_index;
-    int proc_last_count;  // mapping with keepalive shm table
-    int proc_curr_count;  // ..
+    int proc_table_index[MAX_NRFC_CHK_PROC];
+    int proc_last_count[MAX_NRFC_CHK_PROC];  // mapping with keepalive shm table
+    int proc_curr_count[MAX_NRFC_CHK_PROC];  // ..
     int proc_alive;       // -> alive of not 
     int olcd_table_index; // mapping with OLCD shm table
     int bep_use;
@@ -86,20 +98,13 @@ typedef struct nf_conn_info {
 	int cnt;
 } nf_conn_info_t;
 
-typedef enum nrfm_mml_cmd {
-	NRFM_MML_HTTPC_CLEAR = 0, /* NRFM restart clear all */
-	NRFM_MML_HTTPC_ADD,		/* add & act */
-	NRFM_MML_HTTPC_ACT,
-	NRFM_MML_HTTPC_DACT,
-	NRFM_MML_HTTPC_DEL		/* dact & del */
-} nrfm_mml_cmd_t;
-
 typedef struct nrfm_mml {
 	/* key */
 	int seqNo;
 
 	/* request */
-	nrfm_mml_cmd_t command;
+	http_mml_cmd_t command;
+    int nrfm_auto_added;
 	char host[64];
 	char type[16];
 	int info_cnt;
@@ -142,7 +147,7 @@ typedef enum token_acuire_status {
 #define MAX_NRF_TYPE_LEN    24
 #define MAX_NRF_INST_LEN    128
 #define MAX_NRF_SCOPE_LEN   256
-#define MAX_ACC_TOKEN_LEN	512
+#define MAX_ACC_TOKEN_LEN	1024
 typedef struct acc_token_info {
     /* used */
     int occupied;
@@ -191,113 +196,99 @@ typedef enum {
 } nrf_stat_op_enum_t;
 
 typedef struct {
+    char hostname[128];
     int stat_count[NRFS_OP_MAX][NRFS_CATE_MAX];
 } nrf_stat_t;
 /* for NRF Statistics  -- end */
 
 
-/* for NRF APP -- start */
-typedef struct {
-    int index;          /* my table index */
-    int occupied;       /* use or not */
-    int priority;       /* service priority - lowest better */ 
-    int sel_count;      /* select count - lowest lowest */
+/* -NF STATUS TABLE ------------------------------------------ */
+#define NF_NODE_DATA_DEPTH  5
 
-    nf_comm_type    nfType;                         /* UDM UDR ETC DTC ... (now only avail UDM) */
-    nf_type_info    nfTypeInfo;                     /* udmInfo udrInfo etc dtc ... (only avail udmInfo) */
+typedef struct nf_lbid_info {
+    int lb_id;
+} nf_lbid_info_t;
 
-    int allowdPlmnsNum;                             /* if 0, any plmn allowd */
-    nf_comm_plmn allowdPlmns[NF_MAX_ALLOWD_PLMNS];  /* mcc mnc */
+typedef struct nf_type_info {
+    char type[16];
+} nf_type_info_t;
 
-    char serviceName[32];                           /* nudm-ueauth ... */
-    char hostname[52];                              /* nfInstance UUID */
+typedef struct nf_host_info {
+    char hostname[52];
 
-    time_t validityPeriod;                          /* NOW + remain time sec */
-} nf_discover_raw;
+    int allowdPlmnsNum;
+    nf_comm_plmn allowdPlmns[NF_MAX_ALLOWD_PLMNS];
 
-#define MAX_NF_CACHE_NUM    1024
-typedef struct {
-    nf_discover_raw disc_cache[MAX_NF_CACHE_NUM];
-} nf_discover_table;
+    nf_comm_type nfType;
+    nf_type_info nfTypeInfo;
 
-typedef struct {
-	int start_lbId;			/* lb id */
-	int lbNum;				/* total lb num = 2 */
+    int auto_add;
+} nf_host_info_t;
 
-	int nfType;
-#define NF_DISC_ST_SUPI		0x0001
-#define NF_DISC_ST_SUCI		0x0002
-	int nfSearchType;
+typedef struct nf_svcname_info {
+    char servicename[32];
+} nf_svcname_info_t;
 
-	const char *mcc;
-	const char *mnc;
-	const char *routing_indicators;
-	const char *supi;
+typedef struct nf_connection_info {
+    char connInfoStr[64];   // https://192.168.200.231:5555
 
-	const char *serviceName;
+    int auto_add;
+    int priority;
+    int load;
+    int avail;
 
-#define NF_DISC_SE_LOW		0x0001
-#define NF_DISC_SE_PRI		0x0002
-	int selectionType;
+    nf_service_info *nf_service_shm_ptr;
+} nf_connection_info_t;
 
-} nf_discover_key;
-/* for NRF APP -- end */
-
-typedef struct {
-	int occupied;
-	int disc_raw_index;
-	int disc_raw_vector;
-} nf_discover_res_info;
-
-#define MAX_NF_CACHE_RES	5
-typedef struct {
-	int res_num;
-	nf_discover_res_info nf_disc_res[MAX_NF_CACHE_RES];
-} nf_discover_local_res;
-
+typedef struct nf_search_key {
+    int depth;
+    int lb_id;
+    const char *nf_type;
+    const char *nf_host;
+    const char *nf_svcname;
+    char nf_conn_info[64];
+} nf_search_key_t;
+/* -NF STATUS TABLE ------------------------------------------ */
 /* ------------------------- libnrf.c --------------------------- */
 void    def_sigaction();
 GSList  *get_associate_node(GSList *node_assoc_list, const char *type_str);
-int     get_sys_label_num();
-void    get_my_info(svr_info_t *my_info, const char *my_proc_name);
+int     get_my_info(svr_info_t *my_info, const char *my_proc_name);
 void    node_assoc_release(assoc_t *node_elem);
 void    node_list_remove_all(GSList *node_assoc_list);
 GSList  *node_list_add_elem(GSList *node_assoc_list, assoc_t *node_elem);
 void    node_assoc_log(assoc_t *node_elem);
 void    node_list_print_log(GSList *node_assoc_list);
-int     watch_directory_init(struct event_base *evbase, const char *path_name);
+int     watch_directory_init(struct event_base *evbase, const char *path_name, void (*callback_function)(const char *arg_is_path));
 acc_token_info_t        *get_acc_token_info(acc_token_shm_t *ACC_TOKEN_LIST, int id, int used);
 acc_token_info_t        *new_acc_token_info(acc_token_shm_t *ACC_TOKEN_LIST);
 char    *get_access_token(acc_token_shm_t *ACC_TOKEN_LIST, int token_id);
 void    print_token_info_raw(acc_token_shm_t *ACC_TOKEN_LIST, char *respBuff);
 void    print_nrfm_mml_raw(nrfm_mml_t *httpc_cmd);
-void    getTypeSpecStr(nf_service_info *nf_info, char *resBuf);
+void    getTypeSpecStrDump(nf_service_info *nf_info, char *resBuf);
+void    getTypeSpecStrTest(nf_comm_type nfType, nf_type_info *nfTypeInfo, char *resBuf);
 void    getAllowdPlmns(nf_service_info *nf_info, char *resBuf);
+void    getAllowdPlmnsTest(int allowdPlmnsNum, nf_comm_plmn *allowdPlmns, char *resBuf);
 void    printf_avail_nfs(nf_list_pkt_t *avail_nfs);
-char    *get_nrfm_cmd_str(int cmd);
 int     cnvt_cfg_to_json(json_object *obj, config_setting_t *setting, int callerType);
-int     check_number(char *ptr);
-json_object     *search_json_object(json_object *obj, char *key_string);
-int     nf_search_specific_info(json_object *nf_profile, json_object **js_specific_info);
-void    nf_get_specific_info(int nfType, json_object *js_specific_info, nf_type_info *nf_specific_info);
-int     nf_get_allowd_plmns(json_object *nf_profile, nf_comm_plmn *allowdPlmns);
-void    NRF_STAT_INC(nrf_stat_t *NRF_STAT, int operation, int category);
-void    nrf_stat_function(int ixpcQid, IxpcQMsgType *rxIxpcMsg, int event_code, nrf_stat_t *NRF_STAT);
-
-/* ------------------------- libnrf_app.c --------------------------- */
-nf_service_info *nf_discover_search_cache(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE);
-nf_service_info *nf_discover_search_udm(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE);
-nf_service_info *nf_discover_search_udm_supi(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE);
-nf_service_info *nf_discover_search_udm_suci(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE);
-nf_service_info *nf_discover_result(nf_discover_local_res *result_cache, nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE);
-void    nf_discover_order_local_res(nf_discover_raw *disc_raw, nf_discover_local_res *result_cache, int selectionType);
-void    nf_discover_res_log(nf_discover_local_res *result_cache, int selectionType);
-int     nf_discover_check_cache_raw(nf_discover_raw *disc_raw, nf_discover_key *search_info);
-int     nf_discover_table_handle(nf_discover_table *DISC_TABLE, char *json_string);
-int     nf_discover_table_update(nf_discover_table *DISC_TABLE, json_object *js_nf_profile, time_t *validity_time);
-void    nf_discover_raw_update(nf_discover_table *DISC_TABLE, int nfType, nf_type_info *nf_specific_info, int allowdPlmnsNum, nf_comm_plmn *allowdPlmns, const char *serviceName, const char *nfInstanceId, int priority, time_t *validity_time);
-int     nf_discover_table_clear_cached(nf_discover_table *DISC_TABLE);
-void    nf_discover_table_print(nf_discover_table *DISC_TABLE, char *print_buffer, size_t buffer_size);
+GNode   *NRF_STAT_ADD_CHILD(GNode *ROOT_STAT, char *hostname);
+GNode   *NRF_STAT_ADD_CHILD_POS(GNode *ROOT_NODE, GNode *SIBLING, char *hostname, int pre_or_append);
+GNode   *NRF_STAT_FIND_CHILD(GNode *ROOT_STAT, char *hostname, int *compare_res);
+void    NRF_STAT_INC(GNode *ROOT_STAT, char *hostname, int operation, int category);
+#ifdef STAT_LEGACY
+void    stat_cnvt_5geir_nrfm(STM_CommonStatMsg *commStatItem, STM_NrfmStatistics_s *nrfm_stat);
+#endif
+void    nrf_stat_function(int ixpcQid, IxpcQMsgType *rxIxpcMsg, int event_code, GNode *ROOT_STAT);
+char *get_http_cmd_str(int cmd);
+gboolean        node_free_data(GNode *node, gpointer data);
+GNode   *create_nth_child(nf_search_key_t *key, nf_service_info *insert_data);
+int     ln_depth_compare(nf_search_key_t *key, GNode *compare_node);
+GNode   *search_or_create_node(GNode *node, nf_search_key_t *key, nf_service_info *insert_data, int create_if_none);
+void    create_node_data(GNode *root_node, nf_search_key_t *key, nf_service_info *insert_data);
+GNode   *search_node_data(GNode *root_node, nf_search_key_t *key, int search_depth);
+void    print_node_table(ft_table_t *table, GNode *node, int depth, char *temp_buff, char *host_prefix, char *nf_type_arg);
+void    print_node(ft_table_t *table, GNode *node, int depth, char *host_prefix, char *nf_type);
+void    printf_fep_nfs_by_node_order(GNode *root_node, char *printBuff, char *nf_type);
+void    printf_fep_nfs_well_form(GNode *root_node, char *printBuff, char *nf_type);
 
 #endif /* __LIBNRF_H__ */
 

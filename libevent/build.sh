@@ -16,6 +16,8 @@ tar xvf libevent-${VERSION}.tar.gz
 
 cd libevent-${VERSION}
 
+patch -p2 < ../00-evhttp-add-func.patch
+
 export PKG_CONFIG_PATH=$(PKG_CONFIG_PATH):${ROOTDIR}/../build/lib/pkgconfig
 
 ./configure \

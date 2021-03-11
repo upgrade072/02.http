@@ -32,17 +32,7 @@ httpc_ctx_t *get_assembled_ctx(tcp_ctx_t *tcp_ctx, char *ptr)
 
 	char *vheader = ptr + sizeof(AhifHttpCSMsgHeadType);
 	int vheaderCnt = head->vheaderCnt;
-#if 0
-	char *body = ptr + sizeof(AhifHttpCSMsgHeadType) + (sizeof(hdr_relay) * vheaderCnt);
-	int bodyLen = head->bodyLen;
 
-	if((recv_ctx = get_null_recv_ctx(tcp_ctx)) == NULL)
-		return NULL;
-
-	memcpy(&recv_ctx->user_ctx.head, ptr, sizeof(AhifHttpCSMsgHeadType));
-	memcpy(&recv_ctx->user_ctx.vheader, vheader, (sizeof(hdr_relay) * vheaderCnt));
-	memcpy(&recv_ctx->user_ctx.body, body, bodyLen);
-#else
 	char *data = ptr + sizeof(AhifHttpCSMsgHeadType) + (sizeof(hdr_relay) * vheaderCnt);
 	int dataLen = head->queryLen + head->bodyLen;
 
@@ -52,7 +42,6 @@ httpc_ctx_t *get_assembled_ctx(tcp_ctx_t *tcp_ctx, char *ptr)
 	memcpy(&recv_ctx->user_ctx.head, ptr, sizeof(AhifHttpCSMsgHeadType));
 	memcpy(&recv_ctx->user_ctx.vheader, vheader, (sizeof(hdr_relay) * vheaderCnt));
 	memcpy(&recv_ctx->user_ctx.data, data, dataLen);
-#endif
 
 	return recv_ctx;
 }
@@ -179,6 +168,7 @@ void push_callback(evutil_socket_t fd, short what, void *arg)
 			push_item->unset_cb_func(push_item->unset_cb_arg);
 		if (push_item->ctx_unset_ptr != NULL)
 			*push_item->ctx_unset_ptr = 0;
+        APPLOG(APPLOG_ERR, "%s() fail to find ahifSockCtx!", __func__);
         return;
     } else {
         create_write_item(&sock_ctx->push_items, push_item);
@@ -232,7 +222,7 @@ void stp_err_to_fep(tcp_ctx_t *fep_tcp_ctx, httpc_ctx_t *recv_ctx)
 	recv_ctx->user_ctx.head.respCode = HTTP_RESP_CODE_NOT_FOUND;
 	
 	/* for error debuging */
-	log_pkt_httpc_error_reply(recv_ctx, HTTP_RESP_CODE_NOT_FOUND);
+	log_pkt_httpc_error_reply(recv_ctx, -HTTP_RESP_CODE_NOT_FOUND);
 
 	/* response only header */
 	recv_ctx->user_ctx.head.vheaderCnt = 0;
@@ -311,14 +301,6 @@ void send_to_peerlb(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx)
 	return stp_snd_to_peer(peer_tcp_ctx, recv_ctx); /* send relay to peer */
 }
 
-void desthost_case_sensitive(httpc_ctx_t *recv_ctx)
-{
-	for (int i = 0; i < strlen(recv_ctx->user_ctx.head.destHost); i++) {
-		if (isalnum(recv_ctx->user_ctx.head.destHost[i]) == 0)
-			recv_ctx->user_ctx.head.destHost[i] = '_';
-	}
-}
-
 void send_to_remote(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx)
 {
 	conn_list_t *httpc_conn = 0;
@@ -332,10 +314,24 @@ void send_to_remote(sock_ctx_t *sock_ctx, httpc_ctx_t *recv_ctx)
 	/* our config lib can't use www.aaa.com, modified name is www_aaa_com */
 	desthost_case_sensitive(recv_ctx);
 #endif
+    if (CLIENT_CONF.debug_mode == 1) {
+        APPLOG(APPLOG_ERR, "{{{DBG}}} searchDest try ahifPkt ahifCid=(%d) api=[%s] type=(%s) host=(%s) ip=(%s) port=(%d)",
+                recv_ctx->user_ctx.head.ahifCid,
+                recv_ctx->user_ctx.head.rsrcUri,
+                recv_ctx->user_ctx.head.destType,
+                recv_ctx->user_ctx.head.destHost,
+                recv_ctx->user_ctx.head.destIp,
+                recv_ctx->user_ctx.head.destPort);
+    }
 
 	if ((httpc_conn = find_packet_index(&tcp_ctx->root_select, &recv_ctx->user_ctx.head)) == NULL) {
+
+        /* something wrong */
+        trig_refresh_select_node(&CLIENT_CONF);
+
 		if (CLIENT_CONF.debug_mode == 1) {
-			APPLOG(APPLOG_ERR, "{{{DBG}}} searchDest fail ahifPkt api=[%s] type=(%s) host=(%s) ip=(%s) port=(%d)",
+			APPLOG(APPLOG_ERR, "{{{DBG}}} searchDest fail ahifPkt ahifCid=(%d) api=[%s] type=(%s) host=(%s) ip=(%s) port=(%d)",
+					recv_ctx->user_ctx.head.ahifCid,
 					recv_ctx->user_ctx.head.rsrcUri,
 					recv_ctx->user_ctx.head.destType,
 					recv_ctx->user_ctx.head.destHost,
@@ -715,7 +711,9 @@ int create_lb_thread()
 	// wait for thread created ((we use thread[evbase]))
 	sleep(1);
 
+#if 0 // not by timer-audit refresh, just when mismatch refresh 
 	init_refresh_select_node(&LB_CTX);
+#endif
 
 	return 0;
 }

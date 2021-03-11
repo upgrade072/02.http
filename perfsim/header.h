@@ -22,9 +22,11 @@ try this with json-c (https://github.com/jehiah/json-c)
 #include <errno.h>
 #include <time.h>
 #include <ctype.h>
+#include <pthread.h>
 
 #include <commlib.h>
-#include <shmQueue.h>
+#include <shmqlib.h>
+//#include <shmQueue.h>
 #include <ahif_msgtypes.h>
 
 // JSON related -----------------------------------------------------------

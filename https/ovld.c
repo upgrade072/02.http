@@ -25,43 +25,50 @@ void ovld_send_alarm(allow_list_t *allow_list, int occur)
 
 int ovld_calc_check(http2_session_data *session_data)
 {
+    /* boundary check */
+    if (session_data->allowlist_index < 0 || session_data->allowlist_index >= MAX_LIST_NUM) {
+        APPLOG(APPLOG_ERR, "{{{WARN}}} func_%s() check session (%s:%s) have invalid allowlist (%d)",
+                __func__, session_data->type, session_data->hostname, session_data->allowlist_index);
+        return 0; // act like normal
+    }
+
 	/* check limit */
-	allow_list_t *allow_list = &ALLOW_LIST[session_data->list_index];
-	int tps_limit = ALLOW_LIST[session_data->list_index].limit_tps;
+	allow_list_t *allow_list = &ALLOW_LIST[session_data->allowlist_index];
+	int tps_limit = ALLOW_LIST[session_data->allowlist_index].limit_tps;
 
 	/* check ovld state */
 	int curr_pos = OVLD_STATE.curr_pos;
-	int list_index = session_data->list_index;
+	int allowlist_index = session_data->allowlist_index;
 	int thrd_index = session_data->thrd_index;
 	int curr_tps = 0;
 
 	/* calc curr tps */
 	for (int i = 0; i < MAX_THRD_NUM; i++) {
-		curr_tps += OVLD_STATE.peer_ovld[curr_pos][i].curr_tps[list_index];
+		curr_tps += OVLD_STATE.peer_ovld[curr_pos][i].curr_tps[allowlist_index];
 	}
 
 	/* ovld decision */
 	if (tps_limit == 0) {
-		if (ALLOW_LIST[session_data->list_index].ovld_alrm_sts != 0) {
-			ALLOW_LIST[session_data->list_index].ovld_alrm_sts = 0;
+		if (ALLOW_LIST[session_data->allowlist_index].ovld_alrm_sts != 0) {
+			ALLOW_LIST[session_data->allowlist_index].ovld_alrm_sts = 0;
 			ovld_send_alarm(allow_list, 0);
 		}
-		OVLD_STATE.peer_ovld[curr_pos][thrd_index].curr_tps[list_index]++;
+		OVLD_STATE.peer_ovld[curr_pos][thrd_index].curr_tps[allowlist_index]++;
 
 		return 0; // disabled
 	} else if (curr_tps >= tps_limit) {
-		if (ALLOW_LIST[session_data->list_index].ovld_alrm_sts == 0) {
-			ALLOW_LIST[session_data->list_index].ovld_alrm_sts = 1;
+		if (ALLOW_LIST[session_data->allowlist_index].ovld_alrm_sts == 0) {
+			ALLOW_LIST[session_data->allowlist_index].ovld_alrm_sts = 1;
 			ovld_send_alarm(allow_list, 1);
 		}
-		OVLD_STATE.peer_ovld[curr_pos][thrd_index].drop_tps[list_index]++;
+		OVLD_STATE.peer_ovld[curr_pos][thrd_index].drop_tps[allowlist_index]++;
 		return -1; // overload
 	} else {
-		if (ALLOW_LIST[session_data->list_index].ovld_alrm_sts != 0) {
-			ALLOW_LIST[session_data->list_index].ovld_alrm_sts = 0;
+		if (ALLOW_LIST[session_data->allowlist_index].ovld_alrm_sts != 0) {
+			ALLOW_LIST[session_data->allowlist_index].ovld_alrm_sts = 0;
 			ovld_send_alarm(allow_list, 0);
 		}
-		OVLD_STATE.peer_ovld[curr_pos][thrd_index].curr_tps[list_index]++;
+		OVLD_STATE.peer_ovld[curr_pos][thrd_index].curr_tps[allowlist_index]++;
 
 		return 0; // normal
 	}

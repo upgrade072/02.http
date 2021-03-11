@@ -1,14 +1,79 @@
 #include <nrfm.h>
 
 extern main_ctx_t MAIN_CTX;
-extern nrf_stat_t NRF_STAT;
+
+nf_retrieve_item_t *nf_retrieve_create_item(nf_retrieve_item_t *nf_add_item)
+{
+    /* make data */
+    nf_retrieve_item_t *nf_item = malloc(sizeof(nf_retrieve_item_t));
+    memcpy(nf_item, nf_add_item, sizeof(nf_retrieve_item_t));
+
+    return nf_item;
+}
+
+// add_if_fail : 0 --> just search, 1 --> add new one if not exist
+nf_retrieve_item_t *nf_retrieve_search_item(GSList **list, nf_retrieve_item_t *nf_search_item, int add_if_fail) {
+    int list_length = 0;
+
+    /* if length 0 return */
+    if ((list_length = g_slist_length(*list)) == 0) {
+        if (add_if_fail) {
+            nf_retrieve_item_t *nf_item = nf_retrieve_create_item(nf_search_item);
+            *list = g_slist_insert(*list, nf_item, 0);
+            return nf_item;
+        } else {
+            return NULL;
+        }
+    }
+
+    /* else bsearch */
+    int low = 0;
+    int high = (list_length - 1);
+    int nth = 0;
+    int compare_res = 0;
+    GSList *nth_list = NULL;
+    nf_retrieve_item_t *nth_data = NULL;
+
+    while (low <= high) {
+        nth = (low + high) / 2;
+        nth_list = g_slist_nth(*list, nth);
+        nth_data = (nf_retrieve_item_t *)nth_list->data;
+
+        compare_res = strcmp(nf_search_item->nf_uuid, nth_data->nf_uuid);
+
+        if (compare_res == 0) {
+            return nth_data; // search hit!
+        } else if (compare_res < 0) {
+            high = nth - 1;
+        } else {
+            low = nth + 1;
+        }
+    }
+
+    if (add_if_fail == 0) {
+        return NULL;
+    } else {
+        nf_retrieve_item_t *nf_item = nf_retrieve_create_item(nf_search_item);
+        if (compare_res < 0) {
+            *list = g_slist_insert(*list, nf_item, g_slist_position(*list, nth_list));
+        } else {
+            *list = g_slist_insert(*list, nf_item, g_slist_position(*list, nth_list) + 1);
+        }
+        return nf_item;
+    }
+}
 
 void nf_retrieve_addnew_and_get_profile(main_ctx_t *MAIN_CTX, nf_retrieve_info_t *nf_retr_info, nf_retrieve_item_t *nf_add_item)
 {
+#if 0
 	nf_retrieve_item_t *nf_item = malloc(sizeof(nf_retrieve_item_t));
 	memcpy(nf_item, nf_add_item, sizeof(nf_retrieve_item_t));
 
 	nf_retr_info->nf_retrieve_items = g_slist_append(nf_retr_info->nf_retrieve_items, nf_item);
+#else
+    // insert
+    nf_retrieve_item_t *nf_item = nf_retrieve_search_item(&nf_retr_info->nf_retrieve_items, nf_add_item, 1);
+#endif
 
 	nf_retrieve_single_instance(MAIN_CTX, nf_item);
 
@@ -82,8 +147,12 @@ void nf_retrieve_instance_create_pkt(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ah
 
 	sprintf(head->rsrcUri, "/nnrf-nfm/v1/nf-instances/%s", nf_item->nf_uuid);
 
+#if 0
 	/* destType */
 	sprintf(head->destType, "%s", "NRF");
+#else
+    nf_regi_restore_httpc_info(MAIN_CTX, head);
+#endif
 
     /* vheader */
     head->vheaderCnt = 2;
@@ -107,7 +176,7 @@ void nf_retrieve_instance_handle_resp_proc(AhifHttpCSMsgType *ahifPkt)
 	nf_retrieve_item_t *nf_item = nf_retrieve_search_item_via_seqNo(&MAIN_CTX, NF_ITEM_CTX_TYPE_PROFILE, head->ahifCid);
 
 	if (nf_item == NULL) {
-		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s() something wrong, can't find ctx (seqNo:%s)",
+		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s() something wrong, can't find ctx (seqNo:%d)",
 				__func__, head->ahifCid);
 		return;
 	}
@@ -116,19 +185,20 @@ void nf_retrieve_instance_handle_resp_proc(AhifHttpCSMsgType *ahifPkt)
 
     switch (head->respCode) {
         case 200: // with nfProfile
-			NRF_STAT_INC(&NRF_STAT, NFProfileRetrieval, NRFS_SUCCESS);
+			NRF_STAT_INC(MAIN_CTX.NRF_STAT, head->destHost, NFProfileRetrieval, NRFS_SUCCESS);
 
 			nf_retrieve_save_recv_nf_profile(nf_item, ahifPkt);
             break;
 
 		case 403: // you don't have right to query that nf-type
+		case 404: // just not found 
 		case 500: // NRF have problem
-			NRF_STAT_INC(&NRF_STAT, NFProfileRetrieval, NRFS_FAIL);
+			NRF_STAT_INC(MAIN_CTX.NRF_STAT, head->destHost, NFProfileRetrieval, NRFS_FAIL);
 			nf_retrieve_item_retry_while_after(nf_item);
 			break;
 
         default:
-			NRF_STAT_INC(&NRF_STAT, NFProfileRetrieval, NRFS_FAIL);
+			NRF_STAT_INC(MAIN_CTX.NRF_STAT, head->destHost, NFProfileRetrieval, NRFS_FAIL);
 			nf_retrieve_item_retry_while_after(nf_item);
             break;
     }
@@ -149,9 +219,9 @@ void nf_retrieve_instances_list(nf_retrieve_info_t *nf_retr_info, main_ctx_t *MA
 
     size_t shmqlen = AHIF_APP_MSG_HEAD_LEN + AHIF_VHDR_LEN + ahifPkt->head.queryLen + ahifPkt->head.bodyLen;
 
-    int res = msgsnd(MAIN_CTX->my_qid.httpc_qid, msg, shmqlen, 0);
+    int res = msgsnd(MAIN_CTX->my_qid.httpc_qid, msg, shmqlen, IPC_NOWAIT);
 
-	NRF_STAT_INC(&NRF_STAT, NFListRetrieval, NRFS_ATTEMPT);
+	NRF_STAT_INC(MAIN_CTX->NRF_STAT, ahifPkt->head.destHost, NFListRetrieval, NRFS_ATTEMPT);
 
     if (res < 0) {
         APPLOG(APPLOG_ERR, "{{{DBG}}} %s called, res (%d:fail), will retry {httpc_qid:%d}",
@@ -171,7 +241,7 @@ void nf_retrieve_item_handle_timeout(nrf_ctx_t *nf_ctx)
 	nf_retrieve_item_t *nf_item = nf_retrieve_search_item_via_seqNo(&MAIN_CTX, NF_ITEM_CTX_TYPE_PROFILE, nf_ctx->seqNo);
 
 	if (nf_item == NULL) {
-		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s() something wrong, can't find ctx (seqNo:%s)",
+		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s() something wrong, can't find ctx (seqNo:%d)",
 				__func__, nf_ctx->seqNo);
 		return;
 	}
@@ -251,8 +321,12 @@ void nf_retrieve_list_create_pkt(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ahifPk
 
 	sprintf(head->rsrcUri, "/nnrf-nfm/v1/nf-instances?nf-type%%3D%s%%26limit%%3D%d", nf_retr_info->nf_type, nf_retr_info->limit);
 
+#if 0
 	/* destType */
 	sprintf(head->destType, "%s", "NRF");
+#else
+    nf_regi_restore_httpc_info(MAIN_CTX, head);
+#endif
 
     /* vheader */
     head->vheaderCnt = 2;
@@ -278,7 +352,7 @@ void nf_retrieve_list_handle_resp_proc(AhifHttpCSMsgType *ahifPkt)
 	nf_retrieve_info_t *nf_retr_info = nf_retrieve_search_info_via_seqNo(&MAIN_CTX, head->ahifCid);
 
 	if (nf_retr_info == NULL) {
-		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s() something wrong, can't find ctx (seqNo:%s)",
+		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s() something wrong, can't find ctx (seqNo:%d)",
 				__func__, head->ahifCid);
 		return;
 	}
@@ -287,7 +361,7 @@ void nf_retrieve_list_handle_resp_proc(AhifHttpCSMsgType *ahifPkt)
 
     switch (head->respCode) {
         case 200: // with nfProfile
-			NRF_STAT_INC(&NRF_STAT, NFListRetrieval, NRFS_SUCCESS);
+			NRF_STAT_INC(MAIN_CTX.NRF_STAT, head->destHost, NFListRetrieval, NRFS_SUCCESS);
 
 			nf_retrieve_item_num = nf_retrieve_save_response(nf_retr_info, ahifPkt);
 
@@ -303,12 +377,12 @@ void nf_retrieve_list_handle_resp_proc(AhifHttpCSMsgType *ahifPkt)
 		case 400: // request query param is wrong
 		case 403: // you don't have right to query that nf-type
 		case 500: // NRF have problem
-			NRF_STAT_INC(&NRF_STAT, NFListRetrieval, NRFS_FAIL);
+			NRF_STAT_INC(MAIN_CTX.NRF_STAT, head->destHost, NFListRetrieval, NRFS_FAIL);
 			nf_retrieve_list_retry_while_after(nf_retr_info);
 			break;
 
         default:
-			NRF_STAT_INC(&NRF_STAT, NFListRetrieval, NRFS_FAIL);
+			NRF_STAT_INC(MAIN_CTX.NRF_STAT, head->destHost, NFListRetrieval, NRFS_FAIL);
 			nf_retrieve_list_retry_while_after(nf_retr_info);
             break;
     }
@@ -319,7 +393,7 @@ void nf_retrieve_list_handle_timeout(nrf_ctx_t *nf_ctx)
 	nf_retrieve_info_t *nf_retr_info = nf_retrieve_search_info_via_seqNo(&MAIN_CTX, nf_ctx->seqNo);
 
 	if (nf_retr_info == NULL) {
-		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s() something wrong, can't find ctx (seqNo:%s)",
+		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s() something wrong, can't find ctx (seqNo:%d)",
 				__func__, nf_ctx->seqNo);
 		return;
 	}
@@ -347,20 +421,35 @@ void nf_retrieve_list_retry_while_after(nf_retrieve_info_t *nf_retr_info)
 
 int nf_retrieve_parse_list(json_object *js_item, nf_retrieve_item_t *item_ctx)
 {
+#if 0
 	char protocol[128] = {0,};
 	char host[128] = {0,};
 
 	sscanf(json_object_get_string(js_item), "%127[^:/]://%127[^/]/nnrf-nfm/v1/nf-instances/%255s", protocol, host, item_ctx->nf_uuid);
 	APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s() %s %s %s %s", 
-			__func__, protocol, host, item_ctx->nf_uuid, strlen(item_ctx->nf_uuid) <= 0 ? "fail" : "succ");
+			__func__, protocol, host, item_ctx->nf_uuid, strlen(item_ctx->nf_uuid) == 0 ? "fail" : "succ");
 	return strlen(item_ctx->nf_uuid);
+#else
+	char key[128] = "href";
+	json_object *js_uuid = search_json_object(js_item, key);
+
+    if (js_uuid != NULL) {
+        sscanf(json_object_get_string(js_uuid), "/%127s", item_ctx->nf_uuid);
+        APPLOG(APPLOG_DEBUG, "{{{DBG}}} retrieve list get uuid=(%s)", item_ctx->nf_uuid);
+    }
+    return strlen(item_ctx->nf_uuid);
+#endif
+
 }
 
 void nf_retrieve_remove_nth_item(nf_retrieve_info_t *nf_retr_info, nf_retrieve_item_t *nf_item)
 {
 	if (nf_item->item_nf_profile) {
 		APPLOG(APPLOG_ERR, "{{{DBG}}} %s object_put() legacy profile!", __func__);
-		json_object_put(nf_item->item_nf_profile);
+        if (nf_item->item_nf_profile != NULL) {
+            json_object_put(nf_item->item_nf_profile);
+            nf_item->item_nf_profile = NULL;
+        }
 	}
 	if (nf_item->retrieve_item_ctx.ev_action) {
 		APPLOG(APPLOG_ERR, "{{{DBG}}} %s event_del() legacy request!", __func__);
@@ -379,6 +468,7 @@ void nf_retrieve_save_recv_nf_profile(nf_retrieve_item_t *nf_item, AhifHttpCSMsg
 	if (nf_item->item_nf_profile) {
 		APPLOG(APPLOG_ERR, "{{{DBG}}} %s release older nf_profile (from NRF)", __func__);
 		json_object_put(nf_item->item_nf_profile);
+        nf_item->item_nf_profile = NULL;
 	}       
 	nf_item->item_nf_profile = json_tokener_parse(ahifPkt->data);
 
@@ -392,6 +482,7 @@ int nf_retrieve_save_response(nf_retrieve_info_t *nf_retr_info, AhifHttpCSMsgTyp
 	if (nf_retr_info->js_retrieve_response != NULL) {
 		APPLOG(APPLOG_ERR, "{{{CAUTION!!!}}} %s release older nf_service_retrieve_list", __func__);
 		json_object_put(nf_retr_info->js_retrieve_response);
+        nf_retr_info->js_retrieve_response = NULL;
 	}
 
 	if ((nf_retr_info->js_retrieve_response = json_tokener_parse(ahifPkt->data)) == NULL) {
@@ -407,6 +498,7 @@ int nf_retrieve_save_response(nf_retrieve_info_t *nf_retr_info, AhifHttpCSMsgTyp
 	if (js_item == NULL) {
 		APPLOG(APPLOG_ERR, "{{{DBG}}} %s can't find \"_links/item\"", __func__);
 		json_object_put(nf_retr_info->js_retrieve_response);
+        nf_retr_info->js_retrieve_response = NULL;
 		return -1;
 	}
 
@@ -450,13 +542,21 @@ nf_retrieve_info_t *nf_retrieve_search_info_via_seqNo(main_ctx_t *MAIN_CTX, int 
 
 nf_retrieve_item_t *nf_retrieve_search_item_by_uuid(GSList *nf_retrieve_items, const char *nf_uuid)
 {
+#if 0
 	for (int i = 0; i < g_slist_length(nf_retrieve_items); i++) {
 		nf_retrieve_item_t *nf_nth_item = g_slist_nth_data(nf_retrieve_items, i);
 		if (!strcmp(nf_nth_item->nf_uuid, nf_uuid))
 			return nf_nth_item;
 	}
 	return NULL;
+#else
+    nf_retrieve_item_t input = {0,};
+    sprintf(input.nf_uuid, nf_uuid);
+    // search 
+    return nf_retrieve_search_item(&nf_retrieve_items, &input, 0);
+#endif
 }
+
 nf_retrieve_item_t *nf_retrieve_search_item_via_seqNo(main_ctx_t *MAIN_CTX, int type, int seqNo)
 {
 	int nf_type_num = g_slist_length(MAIN_CTX->nf_retrieve_list);
@@ -495,9 +595,9 @@ void nf_retrieve_single_instance(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_it
 
     size_t shmqlen = AHIF_APP_MSG_HEAD_LEN + AHIF_VHDR_LEN + ahifPkt->head.queryLen + ahifPkt->head.bodyLen;
 
-    int res = msgsnd(MAIN_CTX->my_qid.httpc_qid, msg, shmqlen, 0);
+    int res = msgsnd(MAIN_CTX->my_qid.httpc_qid, msg, shmqlen, IPC_NOWAIT);
 
-	NRF_STAT_INC(&NRF_STAT, NFProfileRetrieval, NRFS_ATTEMPT);
+	NRF_STAT_INC(MAIN_CTX->NRF_STAT, ahifPkt->head.destHost, NFProfileRetrieval, NRFS_ATTEMPT);
 
     if (res < 0) {
         APPLOG(APPLOG_ERR, "{{{DBG}}} %s called, res (%d:fail), will retry {httpc_qid:%d}",

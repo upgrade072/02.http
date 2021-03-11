@@ -1,0 +1,12 @@
+diff -urN ./libcli-1.10.2.org/Makefile libcli-1.10.2/Makefile
+--- ./libcli-1.10.2.org/Makefile	2019-09-24 21:18:03.000000000 +0900
++++ libcli-1.10.2/Makefile	2020-01-28 11:44:02.001646854 +0900
+@@ -20,7 +20,7 @@
+ ARFLAGS = rcs
+ DEBUG = -g
+ OPTIM = -O3
+-override CFLAGS += $(DEBUG) $(OPTIM) -Wall -std=c99 -pedantic -Wformat-security -Wno-format-zero-length -Werror -Wwrite-strings -Wformat -fdiagnostics-show-option -Wextra -Wsign-compare -Wcast-align -Wno-unused-parameter
++override CFLAGS += $(DEBUG) $(OPTIM) -Wall -std=c99 -pedantic -Wformat-security -Wno-format-zero-length -Werror -Wwrite-strings -Wformat -fdiagnostics-show-option -Wsign-compare -Wcast-align -Wno-unused-parameter
+ override LDFLAGS += -shared
+ override LIBPATH += -L.
+ 

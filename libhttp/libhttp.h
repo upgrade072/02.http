@@ -9,4 +9,6 @@
 #include <sys/types.h>
 #include <time.h>
 #include <errno.h>
+#include <conflib.h>
+#include <shmqlib.h>
 #include "http_comm.h" /* local include first, then copy to include directory */

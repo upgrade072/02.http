@@ -1,6 +1,9 @@
 
 #include <restsvr.h>
 
+/* my proc name : restsvr1.cfg restsvr2.cfg */
+extern char *__progname;
+
 /* log */
 int logLevel = APPLOG_DEBUG;
 int *lOG_FLAG = &logLevel;
@@ -61,7 +64,6 @@ static size_t next_proto_list_len;
 /* proto */
 char *replace_value_body(const char *value, http2_stream_data *stream_data, key_value_t token[TOKEN_MAX_NUM]);
 static void eventcb(struct bufferevent *bev, short events, void *ptr);
-int watch_directory_init(struct event_base *evbase, const char *path_name);
 int keepalivelib_init(char *processName);
 void keepalivelib_increase();
 
@@ -524,12 +526,12 @@ static int on_header_callback(nghttp2_session *session,
     stream_data =
         nghttp2_session_get_stream_user_data(session, frame->hd.stream_id);
 
-	/* save header for trace */
-	fprintf(stream_data->trace_file, "%s %s\n", name, value);
-
     if (!stream_data || stream_data->request_path) {
       break;
     }
+
+	/* save header for trace */
+	fprintf(stream_data->trace_file, "%s %s\n", name, value);
 
     if (namelen == sizeof(PATH) - 1 && memcmp(PATH, name, namelen) == 0) {
       size_t j;
@@ -605,10 +607,18 @@ stop_and_return:
 int comp_and_save(char input[][TOKEN_MAX_LEN], char comp[][TOKEN_MAX_LEN], key_value_t token[TOKEN_MAX_NUM], int array_num)
 {   
     for (int i = 0, cnt = 0; i < array_num; i++) {
+#if 0
         if (comp[i][0] == '$') {
             sprintf(token[cnt].key, "%s", comp[i]);
             sprintf(token[cnt].value, "%s", input[i]);
             cnt++;
+#else
+        char *ptr = strchr(comp[i], '$');
+        if (ptr != NULL && !strncmp(input[i], comp[i], ptr - comp[i])) {
+            sprintf(token[cnt].key, "%s", ptr);
+            sprintf(token[cnt].value, "%s", input[i]);
+            cnt++;
+#endif
         } else if (strcmp(input[i], comp[i])) {
             return -1;
         }
@@ -1177,7 +1187,7 @@ static void run()
   // check config file changed
   char watch_directory[1024] = {0,};
   sprintf(watch_directory, "%s/data", getenv("IV_HOME"));
-  watch_directory_init(evbase, watch_directory);
+  watch_directory_init(evbase, watch_directory, NULL);
 
   // for https
   initialize_app_context(&app_ctx_for_https, ssl_ctx, evbase);
@@ -1195,7 +1205,11 @@ static void run()
 
 int init_cfg(config_t *CFG) 
 {   
+#if 0
     sprintf(CONF_PATH,"%s/data/restsvr.cfg", getenv("IV_HOME"));
+#else
+    sprintf(CONF_PATH,"%s/data/%s.cfg", getenv("IV_HOME"), __progname);
+#endif
     if (!config_read_file(CFG, CONF_PATH)) {
         APPLOG(APPLOG_ERR, "config read fail! (%s|%d - %s)",
                 config_error_file(CFG),
@@ -1245,12 +1259,20 @@ void directory_watch_action(const char *file_name)
 
 void initialize()
 {
-	keepalivelib_init("RESTSVR");
+    char myProcName[1024] = {0,};
+    sprintf(myProcName, __progname);
+    strupr(myProcName, strlen(myProcName));
 
-#ifdef LOG_APP
+	keepalivelib_init(myProcName);
+
+#ifdef LOG_LIB
+	char log_path[1024] = {0,};
+	sprintf(log_path, "%s/log/ERR_LOG/%s", getenv(IV_HOME), myProcName);
+	initlog_for_loglib(myProcName, log_path);
+#elif LOG_APP
     char log_path[1024] = {0,};
     sprintf(log_path, "%s/log", getenv(IV_HOME));
-    LogInit("RESTSVR", log_path);
+    LogInit(myProcName, log_path);
 #endif
 }
 

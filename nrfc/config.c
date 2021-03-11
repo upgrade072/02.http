@@ -5,7 +5,7 @@ extern main_ctx_t MAIN_CTX;
 void write_cfg(main_ctx_t *MAIN_CTX)
 {
 	char conf_path[1024] = {0,};
-	sprintf(conf_path,"%s/data/nrfc.cfg", getenv(IV_HOME));
+	sprintf(conf_path,"%s/data/STACK/HTTP/nrfc.cfg", getenv(IV_HOME));
 
     // save with indent
     config_set_tab_width(&MAIN_CTX->CFG, 4);
@@ -15,7 +15,7 @@ void write_cfg(main_ctx_t *MAIN_CTX)
 int init_cfg(config_t *CFG)
 {
     char conf_path[1024] = {0,};
-    sprintf(conf_path,"%s/data/nrfc.cfg", getenv(IV_HOME));
+    sprintf(conf_path,"%s/data/STACK/HTTP/nrfc.cfg", getenv(IV_HOME));
     if (!config_read_file(CFG, conf_path)) {
         fprintf(stderr, "config read fail! (%s|%d - %s)\n",
                 config_error_file(CFG),
@@ -29,16 +29,23 @@ int init_cfg(config_t *CFG)
 	// sysconfig
 	save_sysconfig(CFG, &MAIN_CTX);
         
-    write_cfg(&MAIN_CTX);
+    //write_cfg(&MAIN_CTX);
     
     return 0;
 }       
 
-#define CF_SYS_DBG_MODE		"nrfc_cfg.sys_config.debug_mode"
 int save_sysconfig(config_t *CFG, main_ctx_t *MAIN_CTX)
 {
 	if (config_lookup_int(CFG, CF_SYS_DBG_MODE, &MAIN_CTX->sysconfig.debug_mode) == CONFIG_FALSE) {
 		APPLOG(APPLOG_ERR, "DBG| (%s) .cfg [%s] not exist!", __func__, CF_SYS_DBG_MODE);
+		return -1;
+	}
+    if (config_lookup_int(CFG, CF_ISIFCS_MODE, &MAIN_CTX->sysconfig.isifcs_mode) == CONFIG_FALSE) {
+		APPLOG(APPLOG_ERR, "DBG| (%s) .cfg [%s] not exist!", __func__, CF_ISIFCS_MODE);
+		return -1;
+	}
+    if (config_lookup_int(CFG, CF_NFS_SHM_CREATE, &MAIN_CTX->sysconfig.nfs_shm_create) == CONFIG_FALSE) {
+		APPLOG(APPLOG_ERR, "DBG| (%s) .cfg [%s] not exist!", __func__, CF_NFS_SHM_CREATE);
 		return -1;
 	}
 

@@ -19,6 +19,9 @@
 #include <appLog.h>
 #endif
 
+#include <shmqlib.h>
+#include <overloadlib.h>
+
 #include <libconfig.h>
 #include <json-c/json.h>
 #include <json-c/json_object.h>
@@ -31,8 +34,8 @@
 #include <http_comm.h>
 
 // for nrf
-#include <nrf_comm.h>
 #include <libnrf.h>
+#include <libnrf_app.h>
 // for isif
 #include <isif_msgtypes.h>
 
@@ -47,17 +50,20 @@
 #define CF_LOGLEVEL			"nrfm_cfg.sys_config.log_level"
 #define CF_SVC_NIC			"nrfm_cfg.sys_config.svc_nic"
 #define CF_NOTIFY_PORT		"nrfm_cfg.sys_config.notify_listen_port"
-#define CF_ACC_TOKEN_SHM	"nrfm_cfg.sys_config.access_token_shm_key"
 #define CF_NRF_STAT_CODE	"nrfm_cfg.sys_config.nrfm_stat_code"
 #define CF_MP_SYS_TYPE		"nrfm_cfg.sys_config.mp_sys_type"
 #define CF_LOGLEVEL			"nrfm_cfg.sys_config.log_level"
 #define CF_OVLD_TPS_ENABLED	"nrfm_cfg.sys_config.ovld_tps_enabled"
 #define CF_OVLD_NOTIFY_CODE	"nrfm_cfg.sys_config.ovld_notify_code"
-//#define CF_UUID_FILE		"nrfm_cfg.sys_config.uuid_file"
+#define CF_ISIFCS_MODE      "nrfm_cfg.sys_config.isifcs_mode"
+#define CF_NFS_SHM_CREATE   "nrfm_cfg.sys_config.nfs_shm_create"
+#define CF_OAUTH_ENABLE     "nrfm_cfg.sys_config.oauth_enable"
 #define CF_RECOVERY_TIME	"nrfm_cfg.sys_info.recovery_time"
 #define CF_SUBSCRIBE_FORM	"nrfm_cfg.subscription_form"
 #define CF_HTTP_RSP_WAIT_TM	"nrfm_cfg.timer_info.httpc_rsp_wait_tm"
 #define CF_NRFM_RETRY_TM	"nrfm_cfg.timer_info.nrfm_retry_after_tm"
+#define CF_HTTPC_DISCONN_TM	"nrfm_cfg.timer_info.httpc_disconn_info_min"
+#define CF_HTTPS_DISCONN_TM	"nrfm_cfg.timer_info.https_disconn_info_min"
 #define CF_NRF_RETRIEVAL	"nrfm_cfg.retrieval_nf_type"
 #define CF_MY_PROFILE		"my_profile"
 #define CF_MY_INSTANCE_ID	"my_profile.nfInstanceId"
@@ -118,7 +124,7 @@ typedef enum nf_item_ctx_type {
 
 typedef struct nf_retrieve_item {
 	/* item ctx type profile */
-	char nf_uuid[1024];
+	char nf_uuid[128];
 	json_object *item_nf_profile;
 	nrf_ctx_t retrieve_item_ctx;
 
@@ -130,7 +136,7 @@ typedef struct nf_retrieve_item {
 
 typedef struct nf_retrieve_info {
 	/* for retrieve list */
-	char nf_type[128];
+	char nf_type[12];
 	int	limit;
 	nrf_ctx_t retrieve_list_ctx;
 	json_object *js_retrieve_response; // NRF receive response
@@ -161,39 +167,58 @@ typedef struct nrf_token_info {
 
 typedef struct sys_conf {
 	int debug_mode;
+	int isifcs_mode;
+	int nfs_shm_create;
 	int ovld_tps_enabled;
 	int ovld_notify_code;
+    int oauth_enable;
 } sys_conf_t;
 
+typedef struct nrf_conn_ctx {
+    char scheme[12];
+    char host[AHIF_MAX_DESTHOST_LEN];
+    char type[AHIF_COMM_NAME_LEN];
+    char ip[INET6_ADDRSTRLEN];
+    int port;
+} nrf_conn_ctx_t;
+
 typedef struct main_ctx {
-	int MAIN_SEQNO;
-	config_t CFG;
-	pid_t HTTPC_PID;
-
 	struct event_base *EVBASE;
-	int init_regi_success;
 
+	int MAIN_SEQNO;
+
+	config_t CFG;
 	sys_conf_t sysconfig;
-
 	svr_info_t my_info;
 	qid_info_t my_qid;
 
-	json_object *my_nf_profile;	// static
-	json_object *received_nf_profile;	// just for ref (location header / hb timer ..)
+    nrf_conn_ctx_t nrf_selection_info;  // last tryed NRF or last successed NRF
+    int last_try_nrf_index;     
+
+	int init_regi_success;
 	char location_uri[1024];
-
-	GSList *fep_service_list;	// static : fep_service_t
-	GSList *fep_assoc_list;		// dynamic : assoc_t
-
-	int httpc_alive_status;		// httpc --> nrfm : I'm alive
-	int fep_conn_status;		// https --> nrfm : some FEP alive
-
-	GSList *nf_retrieve_list;	// static : nf_retrieve_list_t
+	json_object *my_nf_profile;         // static
+	json_object *received_nf_profile;	// just for ref (location header / hb timer ..)
+    time_t last_regi_resp_time;
+    int last_regi_resp_code;
+    int prefer_undiscover_set;       // if set hb status (UNDISCOVERABLE), if regi auto reset as 0
 
 	nrf_ctx_t regi_ctx;
 	nrf_ctx_t heartbeat_ctx;
 
+	GSList *nf_retrieve_list;	// static : nf_retrieve_list_t
+	GSList *fep_assoc_list;		// dynamic : assoc_t
+	GSList *fep_service_list;	// static : fep_service_t
+
 	nrf_token_info_t nrf_access_token;
+
+	pid_t HTTPC_PID;
+	int httpc_alive_status;		// httpc --> nrfm : I'm alive
+	int fep_conn_status;		// https --> nrfm : some FEP alive
+
+    allow_list_t *HTTPS_ALLOW_STATUS;   // https allow status shm, find tombstone & send remove request
+
+    GNode *NRF_STAT;
 } main_ctx_t;
 
 // glib
@@ -235,7 +260,7 @@ void    nf_token_acquire_token_handle_timeout(main_ctx_t *MAIN_CTX, nrf_ctx_t *t
 int     nf_token_get_scope_by_profile(json_object *nf_profile, char *scope_buff, size_t buff_len);
 void    nf_token_add_shm_by_nf(acc_token_info_t *token_info, nf_retrieve_item_t *nf_item);
 void    nf_token_check_and_acquire_token(main_ctx_t *MAIN_CTX, acc_token_info_t *token_info);
-int     nf_token_check_expires_in(long double timeval);
+//int     nf_token_check_expires_in(long double timeval);
 token_ctx_list_t        *nf_token_create_ctx(main_ctx_t *MAIN_CTX, acc_token_info_t *token_info);
 int     nf_token_create_body(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ahifPkt, acc_token_info_t *token_info);
 void    nf_token_create_pkt(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ahifPkt, acc_token_info_t *token_info, token_ctx_list_t *token_request);
@@ -247,12 +272,17 @@ void    nf_token_get_token_cb(evutil_socket_t fd, short what, void *arg);
 void    nf_token_handle_resp_nok(main_ctx_t *MAIN_CTX, token_ctx_list_t *token_request);
 void    nf_token_print_log(AhifHttpCSMsgType *ahifPkt, const char *log_prefix);
 void    nf_token_start_process(main_ctx_t *MAIN_CTX);
-void    nf_token_update_shm(acc_token_info_t *token_info, const char *access_token, double due_date);
+void    nf_token_update_shm(acc_token_info_t *token_info, const char *access_token, int expires_in);
 void    nf_token_update_shm_process(main_ctx_t *MAIN_CTX, token_ctx_list_t *token_request, AhifHttpCSMsgType *ahifPkt);
+
 
 /* ------------------------- isif.c --------------------------- */
 void    isifc_create_pkt_for_status(IsifMsgType *txIsifMsg, nf_service_info *nf_info, svr_info_t *my_info, assoc_t *fep_assoc);
 void    isifc_send_pkt_for_status(int isifc_qid, IsifMsgType *txIsifMsg);
+void    isif_save_recv_fep_status(service_info_t *fep_svc_info);
+void    isif_handle_fep_conn_req_profile(nf_disc_host_info *nf_host_info);
+void    isif_handle_fep_conn_handle_req(http_conn_handle_req_t *handle_req);
+void    shmq_recv_handle(evutil_socket_t fd, short what, void *arg);
 
 /* ------------------------- retrieve.c --------------------------- */
 void    nf_retrieve_addnew_and_get_profile(main_ctx_t *MAIN_CTX, nf_retrieve_info_t *nf_retr_info, nf_retrieve_item_t *nf_add_item);
@@ -295,25 +325,24 @@ void    nf_manage_collect_avail_each_type(nf_retrieve_info_t *nf_retr_info, nf_l
 void    nf_manage_broadcast_nfs_to_fep(main_ctx_t *MAIN_CTX, nf_list_pkt_t *my_avail_nfs);
 void    nf_manage_collect_httpc_conn_status(main_ctx_t *MAIN_CTX);
 void    nf_manage_collect_httpc_conn_status_cb(evutil_socket_t fd, short what, void *arg);
+void    nf_manage_httpc_conn_status_cb(evutil_socket_t fd, short what, void *arg);
+void    nf_manage_https_conn_status_cb(evutil_socket_t fd, short what, void *arg);
 void    nf_manage_collect_oper_added_nf(main_ctx_t *MAIN_CTX, nf_list_pkt_t *my_avail_nfs);
-void    nf_manage_create_httpc_cmd_conn_act_dact(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item, int act);
-void    nf_manage_create_httpc_cmd_conn_add(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item);
-void    nf_manage_create_httpc_cmd_conn_del(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item);
+int     nf_manage_create_httpc_cmd_conn_act_dact(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item, int act);
+int     nf_manage_create_httpc_cmd_conn_add(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item);
+int     nf_manage_create_httpc_cmd_conn_del(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item);
 int     nf_manage_create_lb_list_get_load(json_object *nf_profile, char *service_name);
 int     nf_manage_create_lb_list_get_priority(json_object *nf_profile, char *service_name);
 void    nf_manage_create_lb_list_pkt(main_ctx_t *MAIN_CTX, conn_list_status_t *conn_raw, int nfType, nf_type_info *nf_specific_info, int allowdPlmnsNum, nf_comm_plmn *allowdPlmns, nf_conn_info_t *nf_conn, json_object *nf_profile, nf_list_pkt_t *my_avail_nfs);
 int     nf_manage_fill_nrfm_mml(nrfm_mml_t *nrfm_cmd, const char *service, const char *scheme, const char *ip, int port);
-int     nf_manage_get_allowd_plmns(json_object *nf_profile, nf_comm_plmn *allowdPlmns);
-void    nf_manage_get_specific_info(int nfType, json_object *js_specific_info, nf_type_info *nf_specific_info);
 void    nf_manage_handle_cmd_res(nrfm_mml_t *httpc_cmd_res);
 void    nf_manage_handle_httpc_alive(nrfm_noti_t *httpc_noti);
-void    nf_manage_print_my_avail_nfs(nf_list_pkt_t *avail_nfs);
-int     nf_manage_search_specific_info(json_object *nf_profile, json_object **js_specific_info);
 void    nf_manage_send_httpc_cmd(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item);
 void    nf_manage_send_nfs_status_to_fep(assoc_t *node_elem, nf_service_info *nf_info);
 
 /* ------------------------- main.c --------------------------- */
 int     get_httpc_shm();
+int     get_https_shm(main_ctx_t *MAIN_CTX);
 int     get_my_profile(main_ctx_t *MAIN_CTX);
 int     get_my_qid(main_ctx_t *MAIN_CTX);
 int     get_my_service_list(main_ctx_t *MAIN_CTX);
@@ -332,14 +361,12 @@ void    start_watching_dir(struct event_base *evbase);
 
 /* ------------------------- heartbeat.c --------------------------- */
 void    https_save_recv_fep_status(main_ctx_t *MAIN_CTX);
-void    isif_save_recv_fep_status(service_info_t *fep_svc_info);
 void    nf_heartbeat_clear_status(main_ctx_t *MAIN_CTX);
 int     nf_heartbeat_create_body(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ahifPkt);
 void    nf_heartbeat_create_pkt(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ahifPkt);
 void    nf_heartbeat_handle_resp_proc(AhifHttpCSMsgType *ahifPkt);
 void    nf_heartbeat_send_proc(evutil_socket_t fd, short what, void *arg);
 void    nf_heartbeat_start_process(main_ctx_t *MAIN_CTX);
-void    shmq_recv_handle(evutil_socket_t fd, short what, void *arg);
 
 /* ------------------------- subscribe.c --------------------------- */
 void    nf_subscribe_check_time(evutil_socket_t fd, short what, void *arg);
@@ -365,7 +392,9 @@ void    nf_subscribe_start_process(main_ctx_t *MAIN_CTX);
 /* ------------------------- command.c --------------------------- */
 void    mml_function(IxpcQMsgType *rxIxpcMsg);
 void    adjust_loglevel(TrcLibSetPrintMsgType *trcMsg);
-int     func_dis_acc_token(IxpcQMsgType *rxIxpcMsg);
+int     func_dis_nf_acc_token(IxpcQMsgType *rxIxpcMsg);
+int     func_dis_nf_profile(IxpcQMsgType *rxIxpcMsg);
+int     func_chg_nf_status(IxpcQMsgType *rxIxpcMsg);
 
 /* ------------------------- notify.c --------------------------- */
 int     nf_notify_handle_check_req(AhifHttpCSMsgType *ahifPkt, char **problemDetail);
@@ -382,7 +411,11 @@ int     nf_notify_send_resp(AhifHttpCSMsgType *ahifPktRecv, int respCode, char *
 /* ------------------------- regi.c --------------------------- */
 int     nf_regi_check_registered_status(main_ctx_t *MAIN_CTX);
 void    nf_regi_create_pkt(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ahifPkt);
+void    nf_regi_handle_save_footprint(main_ctx_t *MAIN_CTX, int resp_code);
 void    nf_regi_handle_resp_proc(AhifHttpCSMsgType *ahifPkt);
+int     nf_regi_select_httpc(main_ctx_t *MAIN_CTX, AhifHttpCSMsgHeadType *head);
+void    nf_regi_save_httpc_info(main_ctx_t *MAIN_CTX, AhifHttpCSMsgHeadType *head);
+void    nf_regi_restore_httpc_info(main_ctx_t *MAIN_CTX, AhifHttpCSMsgHeadType *head);
 void    nf_regi_init_proc(main_ctx_t *MAIN_CTX);
 void    nf_regi_recall_cb(evutil_socket_t fd, short what, void *arg);
 void    nf_regi_retry_after_while();
@@ -393,7 +426,6 @@ void    nf_regi_save_recv_nf_profile(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ah
 /* ------------------------- util.c --------------------------- */
 int     check_number(char *ptr);
 void    dump_pkt_log(void *msg, ssize_t size);
-int     get_file_contents(const char* filename, char** outbuffer);
 void    get_svc_ipv4_addr(const char *nic_name, char *nic_addr);
 void    handle_ctx_timeout(evutil_socket_t fd, short what, void *arg);
 void    LOG_JSON_OBJECT(const char *banner, json_object *js_obj);

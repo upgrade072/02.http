@@ -162,8 +162,12 @@ void release_conncb(sock_ctx_t *sock_ctx)
 
     struct bufferevent *bev = sock_ctx->bev;
 
+    APPLOG(APPLOG_DETAIL, "{{{LB}}} %s() try unset pushed item(remain size:%ld)", __func__, sock_ctx->push_items.item_bytes);
+
     // remove whole push item, unset caller ctx
     unset_pushed_item(&sock_ctx->push_items, sock_ctx->push_items.item_bytes, __func__);
+
+    APPLOG(APPLOG_DETAIL, "{{{LB}}} %s() try remove events(flush:hb)", __func__);
 
 	// CHECK event first? bev first?
     if (sock_ctx->event_flush_cb) 
@@ -173,12 +177,18 @@ void release_conncb(sock_ctx_t *sock_ctx)
     if (sock_ctx->event_chk_hb) 
         event_del(sock_ctx->event_chk_hb);
 
+    APPLOG(APPLOG_DETAIL, "{{{LB}}} %s() try remove events(sock rw)", __func__);
+
     // remove event, close sock
 	if (sock_ctx->bev) 
 		bufferevent_free(bev);
 
+    APPLOG(APPLOG_DETAIL, "{{{LB}}} %s() try remove node", __func__);
+
     // remove conn info 
     remove_node(sock_ctx->my_conn);
+
+    APPLOG(APPLOG_DETAIL, "{{{LB}}} %s() process all creared", __func__);
 }
 
 void svr_sock_eventcb(struct bufferevent *bev, short events, void *user_data)

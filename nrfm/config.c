@@ -17,15 +17,15 @@ int cfg_get_nrf_stat_code(main_ctx_t *MAIN_CTX)
 
 int cfg_get_access_token_shm_key(main_ctx_t *MAIN_CTX)
 {
-	config_setting_t *setting_acc_token_shm_key = NULL;
-	if ((setting_acc_token_shm_key = config_lookup(&MAIN_CTX->CFG, CF_ACC_TOKEN_SHM)) == NULL) {
-		fprintf(stderr, "TODO| cant find .cfg(%s)\n", CF_ACC_TOKEN_SHM);
-		return (-1);
-	}
+	char fname[1024] = {0,};
+    sprintf(fname,"%s/%s", getenv(IV_HOME), SYSCONF_FILE);
 
-	int access_token_shm_key = config_setting_get_int(setting_acc_token_shm_key);
+    char tmp[1024] = {0,};
+    if (conflib_getNthTokenInFileSection (fname, "SHARED_MEMORY_KEY", "SHM_NRFM_ACC_TOKEN", 1, tmp) < 0 )
+        return -1;
+    int access_token_shm_key = strtol(tmp,(char**)0,0);
 
-	return access_token_shm_key;
+    return access_token_shm_key;
 }
 
 char *cfg_get_my_ip(main_ctx_t *MAIN_CTX)
@@ -82,7 +82,7 @@ char *cfg_get_my_noti_uri(main_ctx_t *MAIN_CTX)
 
 	// TODO!!! change NOTI PATH
 	char temp[1024] = {0,};
-	sprintf(temp, "https://%s:%d%s", ipv4_address, config_setting_get_int(setting_svc_port), PATH_HTTPS_RECV_NOTIFY);
+	sprintf(temp, "http://%s:%d%s", ipv4_address, config_setting_get_int(setting_svc_port), PATH_HTTPS_RECV_NOTIFY);
 	char *res = strdup(temp);
 
 	return res;
@@ -139,8 +139,8 @@ char *cfg_get_nf_info(nf_retrieve_info_t *nf_retr_info)
 	char temp[1024] = {0,};
 	if (!strcmp(nf_retr_info->nf_type, "UDM")) {
 		sprintf(temp, "/udmInfo");
-	} else if (!strcmp(nf_retr_info->nf_type, "UDR")) {
-		sprintf(temp, "/udrInfo");
+	} else if (!strcmp(nf_retr_info->nf_type, "AMF")) {
+		sprintf(temp, "/amfInfo");
 	} else {
 		sprintf(temp, "/unknwon");
 	}
@@ -155,8 +155,8 @@ char *cfg_get_nf_type(nf_retrieve_info_t *nf_retr_info)
 	char temp[1024] = {0,};
 	if (!strcmp(nf_retr_info->nf_type, "UDM")) {
 		sprintf(temp, "UDM");
-	} else if (!strcmp(nf_retr_info->nf_type, "UDR")) {
-		sprintf(temp, "UDR");
+	} else if (!strcmp(nf_retr_info->nf_type, "AMF")) {
+		sprintf(temp, "AMF");
 	} else {
 		sprintf(temp, "UNKNOWN");
 	}
@@ -251,7 +251,7 @@ void fep_service_log(fep_service_t *svc_elem)
 int init_cfg(config_t *CFG)
 {
 	char conf_path[1024] = {0,};
-	sprintf(conf_path,"%s/data/nrfm.cfg", getenv(IV_HOME));
+	sprintf(conf_path,"%s/data/STACK/HTTP/nrfm.cfg", getenv(IV_HOME));
 	if (!config_read_file(CFG, conf_path)) {
 		fprintf(stderr, "config read fail! (%s|%d - %s)\n",
 				config_error_file(CFG),
@@ -267,7 +267,7 @@ int init_cfg(config_t *CFG)
 
 	// save with indent
 	config_set_tab_width(CFG, 4);
-	config_write_file(CFG, conf_path);
+	//config_write_file(CFG, conf_path);
 
 	// set info to cfg
 	set_cfg_sys_info(CFG);
@@ -399,13 +399,13 @@ int load_cfg_retrieve_list(main_ctx_t *MAIN_CTX)
 			continue;
 		}
 
-		nf_retrieve_info_t *retrieve_item = malloc(sizeof(nf_retrieve_info_t));
-		memset(retrieve_item, 0x00, sizeof(nf_retrieve_info_t));
+		nf_retrieve_info_t *subscribe_item = malloc(sizeof(nf_retrieve_info_t));
+		memset(subscribe_item, 0x00, sizeof(nf_retrieve_info_t));
 
-		sprintf(retrieve_item->nf_type, config_setting_get_string(cf_nf_type));
-		retrieve_item->limit = config_setting_get_int(cf_limit);
+		sprintf(subscribe_item->nf_type, config_setting_get_string(cf_nf_type));
+		subscribe_item->limit = config_setting_get_int(cf_limit);
 
-		MAIN_CTX->nf_retrieve_list = g_slist_append(MAIN_CTX->nf_retrieve_list, retrieve_item);
+		MAIN_CTX->nf_retrieve_list = g_slist_append(MAIN_CTX->nf_retrieve_list, subscribe_item);
 	}
 
 	return nf_type_num;
@@ -488,7 +488,12 @@ void recurse_json_obj(json_object *input_obj, main_ctx_t *MAIN_CTX, nf_retrieve_
 						/* hold index & replace it */
 						json_object_array_del_idx(obj, i, 1);
 						char *replace_val = replace_json_val(js_val, MAIN_CTX, nf_retr_info);
+#if 0
 						json_object_array_put_idx(obj, i, json_object_new_string(replace_val));
+#else
+                        // don't replace, add to last
+						json_object_array_add(obj, json_object_new_string(replace_val));
+#endif
 						free(replace_val);
 					}
 				}
@@ -537,6 +542,18 @@ int save_sysconfig(config_t *CFG, main_ctx_t *MAIN_CTX)
 {
     if (config_lookup_int(CFG, CF_SYS_DBG_MODE, &MAIN_CTX->sysconfig.debug_mode) == CONFIG_FALSE) {
         APPLOG(APPLOG_ERR, "DBG| (%s) .cfg [%s] not exist!", __func__, CF_SYS_DBG_MODE);
+        return -1;
+    }
+    if (config_lookup_int(CFG, CF_ISIFCS_MODE, &MAIN_CTX->sysconfig.isifcs_mode) == CONFIG_FALSE) {
+        APPLOG(APPLOG_ERR, "DBG| (%s) .cfg [%s] not exist!", __func__, CF_ISIFCS_MODE);
+        return -1;
+    }
+    if (config_lookup_int(CFG, CF_NFS_SHM_CREATE, &MAIN_CTX->sysconfig.nfs_shm_create) == CONFIG_FALSE) {
+        APPLOG(APPLOG_ERR, "DBG| (%s) .cfg [%s] not exist!", __func__, CF_NFS_SHM_CREATE);
+        return -1;
+    }
+    if (config_lookup_int(CFG, CF_OAUTH_ENABLE, &MAIN_CTX->sysconfig.oauth_enable) == CONFIG_FALSE) {
+        APPLOG(APPLOG_ERR, "DBG| (%s) .cfg [%s] not exist!", __func__, CF_OAUTH_ENABLE);
         return -1;
     }
 

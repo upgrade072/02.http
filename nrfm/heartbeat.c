@@ -1,7 +1,6 @@
 #include <nrfm.h>
 
 extern main_ctx_t MAIN_CTX;
-extern nrf_stat_t NRF_STAT;
 
 void https_save_recv_fep_status(main_ctx_t *MAIN_CTX)
 {
@@ -14,25 +13,6 @@ void https_save_recv_fep_status(main_ctx_t *MAIN_CTX)
  * ...
  * fep[0], not use
  */
-void isif_save_recv_fep_status(service_info_t *fep_svc_info)
-{
-	if (fep_svc_info->sys_mp_id <= 0 || fep_svc_info->sys_mp_id >= MAX_FEP_NUM) {
-		APPLOG(APPLOG_ERR, "%s() receive invalid sys_mp_id (%d)!", fep_svc_info->sys_mp_id);
-		return;
-	}
-
-	int service_num = g_slist_length(MAIN_CTX.fep_service_list);
-	for (int i = 0; i < service_num; i++) {
-		fep_service_t *service_elem = g_slist_nth_data(MAIN_CTX.fep_service_list, i);
-		if (!strcmp(service_elem->service_name, fep_svc_info->service_name)) {
-			memcpy(&service_elem->fep_svc_info[fep_svc_info->sys_mp_id], fep_svc_info, sizeof(service_info_t));
-			return;
-		}
-	}
-
-	APPLOG(APPLOG_ERR, "%s() receive invalud sys_mp_id (%d)!", fep_svc_info->sys_mp_id);
-	return;
-}
 
 void nf_heartbeat_clear_status(main_ctx_t *MAIN_CTX)
 {
@@ -56,15 +36,17 @@ json_object *js_temp = json_tokener_parse(JS_HB_INSTANCE_STATUS);
 json_object_array_add(js_heartbeat_body, js_temp);
 	- dont release *js_temp via js_object_put(), if parent free, all child auto free
 */
-#define JS_HB_INSTANCE_STATUS "{ \"op\": \"replace\", \"path\": \"/nfStatus\", \"value\": \"REGISTERED\" }"
-#define JS_HB_SERVICE_STATUS "{ \"op\": \"replace\", \"path\": \"/nfServiceStatus/%d/nfStatus\", \"value\": \"REGISTERED\" }"
-#define JS_HB_SERVICE_CAPACITY "{ \"op\": \"replace\", \"path\": \"/nfServiceStatus/%d/capacity\", \"value\": %d }"
-#define JS_HB_SERVICE_LOAD "{ \"op\": \"replace\", \"path\": \"/nfServiceStatus/%d/load\", \"value\": %d }"
+#define JS_HB_INSTANCE_STATUS_REGI "{ \"op\": \"replace\", \"path\": \"/nfStatus\", \"value\": \"REGISTERED\" }"
+#define JS_HB_INSTANCE_STATUS_UNDISCOVER "{ \"op\": \"replace\", \"path\": \"/nfStatus\", \"value\": \"UNDISCOVERABLE\" }"
+#define JS_HB_SERVICE_STATUS_REGI "{ \"op\": \"replace\", \"path\": \"/nfServices/%d/nfServiceStatus\", \"value\": \"REGISTERED\" }"
+#define JS_HB_SERVICE_STATUS_UNDISCOVER "{ \"op\": \"replace\", \"path\": \"/nfServices/%d/nfServiceStatus\", \"value\": \"UNDISCOVERABLE\" }"
+#define JS_HB_SERVICE_CAPACITY "{ \"op\": \"replace\", \"path\": \"/nfServices/%d/capacity\", \"value\": %d }"
+#define JS_HB_SERVICE_LOAD "{ \"op\": \"replace\", \"path\": \"/nfServices/%d/load\", \"value\": %d }"
 int nf_heartbeat_create_body(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ahifPkt)
 {
 	json_object *js_heartbeat_body = json_object_new_array();
 
-	json_object *js_temp = json_tokener_parse(JS_HB_INSTANCE_STATUS);
+	json_object *js_temp = json_tokener_parse(MAIN_CTX->prefer_undiscover_set ? JS_HB_INSTANCE_STATUS_UNDISCOVER : JS_HB_INSTANCE_STATUS_REGI);
 	json_object_array_add(js_heartbeat_body, js_temp);
 
 	int service_num = g_slist_length(MAIN_CTX->fep_service_list);
@@ -92,7 +74,7 @@ int nf_heartbeat_create_body(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ahifPkt)
 
 		char temp_buff[1024 * 12] = {0,};
 		/* service status */
-		sprintf(temp_buff, JS_HB_SERVICE_STATUS, ii);
+		sprintf(temp_buff, MAIN_CTX->prefer_undiscover_set ? JS_HB_SERVICE_STATUS_UNDISCOVER : JS_HB_SERVICE_STATUS_REGI, ii);
 		js_temp = json_tokener_parse(temp_buff);
 		json_object_array_add(js_heartbeat_body, js_temp);
 
@@ -143,8 +125,12 @@ void nf_heartbeat_create_pkt(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ahifPkt)
 	free(my_uuid);
 #endif
 
+#if 0
     /* destType */
     sprintf(head->destType, "%s", "NRF");
+#else
+    nf_regi_restore_httpc_info(MAIN_CTX, head);
+#endif
 
     /* vheader */
     head->vheaderCnt = 2;
@@ -175,11 +161,11 @@ void nf_heartbeat_handle_resp_proc(AhifHttpCSMsgType *ahifPkt)
             
     switch (head->respCode) {
         case 204: // No Content
-			NRF_STAT_INC(&NRF_STAT, NFUpdate, NRFS_SUCCESS);
+			NRF_STAT_INC(MAIN_CTX.NRF_STAT, head->destHost, NFUpdate, NRFS_SUCCESS);
 			// TODO
             break;
 		case 200: // with nfProfile
-			NRF_STAT_INC(&NRF_STAT, NFUpdate, NRFS_SUCCESS);
+			NRF_STAT_INC(MAIN_CTX.NRF_STAT, head->destHost, NFUpdate, NRFS_SUCCESS);
 
 			/* save received nf_profile */
 			nf_regi_save_recv_nf_profile(&MAIN_CTX, ahifPkt);
@@ -188,13 +174,11 @@ void nf_heartbeat_handle_resp_proc(AhifHttpCSMsgType *ahifPkt)
 				return nf_regi_retry_after_while();
 			if (nf_regi_save_location_header(&MAIN_CTX, ahifPkt) < 0)
 				return nf_regi_retry_after_while();
-			if (nf_regi_check_registered_status(&MAIN_CTX) < 0)
-				return nf_regi_retry_after_while();
 
 			nf_heartbeat_start_process(&MAIN_CTX);
             break;
         default:
-			NRF_STAT_INC(&NRF_STAT, NFUpdate, NRFS_FAIL);
+			NRF_STAT_INC(MAIN_CTX.NRF_STAT, head->destHost, NFUpdate, NRFS_FAIL);
             break;
     }
 }
@@ -214,9 +198,9 @@ void nf_heartbeat_send_proc(evutil_socket_t fd, short what, void *arg)
 
 	size_t shmqlen = AHIF_APP_MSG_HEAD_LEN + AHIF_VHDR_LEN + ahifPkt->head.queryLen + ahifPkt->head.bodyLen;
 
-	int res = msgsnd(MAIN_CTX.my_qid.httpc_qid, msg, shmqlen, 0);
+	int res = msgsnd(MAIN_CTX.my_qid.httpc_qid, msg, shmqlen, IPC_NOWAIT);
 
-	NRF_STAT_INC(&NRF_STAT, NFUpdate, NRFS_ATTEMPT);
+	NRF_STAT_INC(MAIN_CTX.NRF_STAT, ahifPkt->head.destHost, NFUpdate, NRFS_ATTEMPT);
 
 	nf_heartbeat_clear_status(&MAIN_CTX);
 
@@ -249,31 +233,5 @@ void nf_heartbeat_start_process(main_ctx_t *MAIN_CTX)
     MAIN_CTX->heartbeat_ctx.ev_action = event_new(MAIN_CTX->EVBASE, -1, EV_PERSIST, nf_heartbeat_send_proc, NULL);
     event_add(MAIN_CTX->heartbeat_ctx.ev_action, &tm_hb_interval);
 
-	APPLOG(APPLOG_ERR, "%s() will send heartbeat every (%d) sec", __func__, tm_hb_interval.tv_sec);
-}
-
-void shmq_recv_handle(evutil_socket_t fd, short what, void *arg)
-{
-	char msgBuff[1024*64];
-	IsifMsgType *rxIsifMsg = (IsifMsgType *)msgBuff;
-
-	int ret = 0;
-
-	while ((ret = shmqlib_getMsg(MAIN_CTX.my_qid.isifs_rx_qid, (char *)rxIsifMsg)) > 0) {
-
-		if (ret > sizeof(IsifMsgType)) {
-			APPLOG(APPLOG_ERR, "%s() receive unknown size(%d) msg!", __func__, ret);
-			continue;
-		}
-
-		switch (rxIsifMsg->head.mtype) {
-			case MTYPE_NRFC_BROAD_STATUS_TO_LB:
-				isif_save_recv_fep_status((service_info_t *)rxIsifMsg->body);
-				continue;
-			default:
-				APPLOG(APPLOG_ERR, "%s() receive unknown type(%d) msg!", __func__, rxIsifMsg->head.mtype);
-				continue;
-		}
-	}
-	return;
+	APPLOG(APPLOG_ERR, "%s() will send heartbeat every (%ld) sec", __func__, tm_hb_interval.tv_sec);
 }

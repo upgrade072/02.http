@@ -3,6 +3,7 @@
 #include <string.h>
 #include <sys/time.h>
 #include <http_comm.h>
+#include <ctype.h>
 
 void DumpHex(const void* data, size_t size) {
 	char ascii[17];
@@ -156,4 +157,79 @@ char *replaceAll(char *s, const char *olds, const char *news)
 	*sr = '\0';
 
 	return result;
+}
+
+/* cation! we overwrite input as lower case character */
+char *strlwr(char *input, int str_len)
+{
+    for (int i = 0; i < str_len; i++) {
+        input[i] = tolower(input[i]);
+    }
+    return input;
+}
+char *strupr(char *input, int str_len)
+{
+    for (int i = 0; i < str_len; i++) {
+        input[i] = toupper(input[i]);
+    }
+    return input;
+}
+
+char *read_file_stream(char *filename)
+{
+	FILE *fh = fopen(filename, "rb");
+	int length = 0;
+
+	if (fh != NULL) {
+		fseek(fh, 0L, SEEK_END);
+		length = ftell(fh);
+		rewind(fh);
+		char *buffer = malloc(length);
+		if (buffer != NULL) { 
+			fread(buffer, length, 1, fh);
+		}
+		if (fh != NULL) 
+			fclose(fh);
+		return buffer;
+	}
+
+	return NULL;
+}
+
+int search_c_in_str(char *str, char c)
+{
+    char *res = strchr(str, c);
+    if (res == NULL)
+        return -1;
+    else
+        return 0;
+}
+
+// caution! orin str will replaced 
+int divide_c_in_str(char *str, char c, char **div_a, char **div_b)
+{
+    char *ptr = strchr(str, c);
+
+    if (ptr == NULL)
+        return -1;
+
+    *ptr = '\0'; // divide
+
+    *div_a = str;
+    *div_b = ptr + 1;
+
+    return 0;
+}
+
+int get_time_str(char *time_string)
+{
+    time_t  now=time((time_t*)0);
+    char    tmp[128];
+    struct tm tms;
+    struct timeval  curr;
+
+    localtime_r(&now, &tms);
+    gettimeofday(&curr, NULL);
+    strftime(tmp, 128, "%Y-%m-%d %T", &tms);
+    return sprintf(time_string, "%s.%03d", tmp, (uint)(curr.tv_usec/1000));
 }

@@ -12,6 +12,8 @@ extern thrd_context_t THRD_WORKER[MAX_THRD_NUM];
 extern int THREAD_NO[MAX_THRD_NUM];
 extern conn_list_t CONN_LIST[MAX_SVR_NUM];
 extern conn_list_status_t CONN_STATUS[MAX_CON_NUM];
+extern config_t CFG;
+extern char CONFIG_PATH[256];
 
 char respMsg[MAX_MML_RESULT_LEN], respBuff[MAX_MML_RESULT_LEN];
 
@@ -24,8 +26,8 @@ typedef enum client_cmd {
 	chg_http_server,
 	del_http_svr_ip,
 	del_http_server,
-	dis_http_svr_ping,
-	chg_http_svr_ping,
+    dis_httpc_config,
+    chg_httpc_config,
 	MAX_CMD_NUM
 } client_cmd_t;
 
@@ -39,8 +41,8 @@ MmcHdlrVector   mmcHdlrVecTbl[MAX_CMD_NUM] =
 	{ "CHG-NF-SERVER",     func_chg_http_server},
 	{ "DEL-NF-SVR-IP",     func_del_http_svr_ip},
 	{ "DEL-NF-SERVER",     func_del_http_server},
-	{ "DIS-NF-SVR-PING",   func_dis_http_svr_ping},
-	{ "CHG-NF-SVR-PING",   func_chg_http_svr_ping}
+	{ "DIS-HTTPC-CONFIG",  func_dis_httpc_config},
+	{ "CHG-HTTPC-CONFIG",  func_chg_httpc_config}
 };
 
 void handle_nrfm_request(GeneralQMsgType *msg)
@@ -90,7 +92,7 @@ void handle_nrfm_request(GeneralQMsgType *msg)
 
 	set_intl_req_msg(&intl_req, thrd_idx, ctx_idx, sess_idx, session_id, 0, HTTP_INTL_SND_REQ);
 
-	if (msgsnd(THRD_WORKER[thrd_idx].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0) == -1) {
+	if (msgsnd(THRD_WORKER[thrd_idx].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), IPC_NOWAIT) == -1) {
 		APPLOG(APPLOG_ERR, "%s() internal msgsnd to worker [%d] failed!!!", __func__, thrd_idx);
 		clear_and_free_ctx(httpc_ctx);
 		Free_CtxId(thrd_idx, ctx_idx);
@@ -106,7 +108,7 @@ HNR_ERROR_REPLY:
 	msg->mtype = (long)MSGID_HTTPC_NRFM_RESPONSE;
 	size_t shmqlen = AHIF_APP_MSG_HEAD_LEN + AHIF_VHDR_LEN + ahifPkt->head.queryLen + ahifPkt->head.bodyLen;
 
-	int res = msgsnd(nrfmQid, msg, shmqlen, 0);
+	int res = msgsnd(nrfmQid, msg, shmqlen, IPC_NOWAIT);
 	if (res < 0) {
 		APPLOG(APPLOG_ERR, "%s(), fail to send resp to NRFM! (res:%d)", __func__, res);
 	}
@@ -115,24 +117,27 @@ HNR_ERROR_REPLY:
 void handle_nrfm_mmc(nrfm_mml_t *nrfm_cmd)
 {
 	APPLOG(APPLOG_ERR, "{{{DBG}}} %s called, cmdType(%d) [%s]",
-			__func__, nrfm_cmd->command, get_nrfm_cmd_str(nrfm_cmd->command));
+			__func__, nrfm_cmd->command, get_http_cmd_str(nrfm_cmd->command));
 	print_nrfm_mml_raw(nrfm_cmd);
 
 	switch (nrfm_cmd->command) {
-		case NRFM_MML_HTTPC_ADD:
+		case HTTP_MML_HTTPC_ADD:
 			nrfm_mmc_add_proc(nrfm_cmd);
 			break;
-		case NRFM_MML_HTTPC_ACT:
+		case HTTP_MML_HTTPC_ACT:
 			nrfm_mmc_act_dact_proc(nrfm_cmd, 1);
 			break;
-		case NRFM_MML_HTTPC_DACT:
+		case HTTP_MML_HTTPC_DACT:
 			nrfm_mmc_act_dact_proc(nrfm_cmd, 0);
 			break;
-		case NRFM_MML_HTTPC_DEL:
+		case HTTP_MML_HTTPC_DEL:
 			nrfm_mmc_del_proc(nrfm_cmd);
 			break;
-		case NRFM_MML_HTTPC_CLEAR: /* NRFM restarted ! */
+		case HTTP_MML_HTTPC_CLEAR: /* NRFM restarted ! */
 			nrfm_mmc_clear_proc();
+			break;
+		case HTTP_MML_HTTPC_TOMBSTONE:
+			nrfm_mmc_tombstone_proc(nrfm_cmd);
 			break;
 	}
 }
@@ -154,6 +159,10 @@ void nrfm_mmc_res_log()
 
 void nrfm_mmc_send_resp(nrfm_mml_t *nrfm_cmd_req)
 {
+	// this type is one-way cmd
+	if (nrfm_cmd_req->nrfm_auto_added == NF_ADD_CALLBACK)
+		return;
+
     char msgBuff[sizeof(GeneralQMsgType)] = {0,};
 
     GeneralQMsgType *msg = (GeneralQMsgType *)msgBuff;
@@ -162,26 +171,42 @@ void nrfm_mmc_send_resp(nrfm_mml_t *nrfm_cmd_req)
     msg->mtype = (long)MSGID_HTTPC_NRFM_MMC_RESPONSE;
     memcpy(httpc_cmd_res, nrfm_cmd_req, sizeof(nrfm_mml_t));
 
-	int res = msgsnd(nrfmQid, msg, sizeof(nrfm_mml_t), 0);
+	int res = msgsnd(nrfmQid, msg, sizeof(nrfm_mml_t), IPC_NOWAIT);
 	if (res < 0) {
 		APPLOG(APPLOG_ERR, "%s(), fail to send resp to NRFM! (res:%d)", __func__, res);
 	} 
 }
 
+void nrfm_handle_session(http2_session_data_t *session_data)
+{
+	/* disconnect must act in worker */
+	intl_req_t intl_req = {0,};
+	int thrd_index = session_data->thrd_index;
+	set_intl_req_msg(&intl_req, thrd_index, 0, session_data->session_index,
+			session_data->session_id, 0, HTTP_INTL_SESSION_DEL);
+	if (-1 == msgsnd(THRD_WORKER[thrd_index].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), IPC_NOWAIT)) {
+		APPLOG(APPLOG_DEBUG, "%s() msgsnd fail!!!", __func__);
+	}
+}
+
 void nrfm_mmc_add_proc(nrfm_mml_t *nrfm_cmd)
 {
-	int list_index = new_list(nrfm_cmd->host);
+	int list_index = get_list(nrfm_cmd->host);
+	if (list_index <= 0)
+		list_index = new_list(nrfm_cmd->host);
+	if (list_index < 0)
+		return; 
 	
-#if 0
-	for (int i = 0; i < nrfm_cmd->info_cnt; i++) {
-#else
 	for (int i = 0; (list_index > 0) && (i < nrfm_cmd->info_cnt); i++) {
-#endif
 		nf_conn_info_t *nf_conn = &nrfm_cmd->nf_conns[i];
-		int item_index = new_item(list_index, nf_conn->ip, nf_conn->port);
 
+		int item_index = get_item(list_index, nf_conn->ip, nf_conn->port);
+		if (item_index > 0) /* already exist case, add fail */
+			continue;
+		else
+			item_index = new_item(list_index, nf_conn->ip, nf_conn->port);
 		if (item_index < 0) {
-			APPLOG(APPLOG_ERR, "{{{DBG}}} %s cause full of list[%d] or item[%d] skip", __func__, list_index, item_index);
+			APPLOG(APPLOG_ERR, "{{{DBG}}} %s cause full of list[%d] or item[%d] skipped", __func__, list_index, item_index);
 			continue;
 		}
 
@@ -200,9 +225,17 @@ void nrfm_mmc_add_proc(nrfm_mml_t *nrfm_cmd)
 				CONN_LIST[k].port = nf_conn->port;
 				CONN_LIST[k].token_id = nrfm_cmd->token_id;
 				CONN_LIST[k].act = 1;
-				CONN_LIST[k].nrfm_auto_added = 1; /* this list is added by nrfm */
-				APPLOG(APPLOG_ERR, "{{{DBG}}} [%s] [%s][%d] added cnt[%d] CONN_LIST[%d] INDEX[%d:%d]", 
-						nrfm_cmd->host, nf_conn->ip, nf_conn->port, added_cnt, k, list_index, item_index);
+				CONN_LIST[k].nrfm_auto_added = nrfm_cmd->nrfm_auto_added; /*  RAW | NRF | (MML) | CB */
+                APPLOG(APPLOG_ERR, "{{{DBG}}} %s() add new connlist by nrfm [scheme:%s type:%s host:%s ip:%s port:%d token_id:%d auto_add:%d]",
+                    __func__, 
+                    CONN_LIST[k].scheme,
+                    CONN_LIST[k].type,
+                    CONN_LIST[k].host,
+                    CONN_LIST[k].ip,
+                    CONN_LIST[k].port,
+                    CONN_LIST[k].token_id,
+                    CONN_LIST[k].nrfm_auto_added);
+
 				if (++added_cnt == nf_conn->cnt) break;
 			}
 		}
@@ -223,7 +256,7 @@ void nrfm_mmc_act_dact_proc(nrfm_mml_t *nrfm_cmd, int act)
 	for (int k = 1; k < MAX_SVR_NUM; k++) {
 		if (CONN_LIST[k].used == 0)
 			continue;
-		if (CONN_LIST[k].nrfm_auto_added == 0)
+		if (CONN_LIST[k].nrfm_auto_added == NF_ADD_RAW)
 			continue;
 		if (CONN_LIST[k].list_index == list_index) {
 			if (act) {
@@ -235,7 +268,7 @@ void nrfm_mmc_act_dact_proc(nrfm_mml_t *nrfm_cmd, int act)
 				http2_session_data_t *session_data = get_session(CONN_LIST[k].thrd_index,
 						CONN_LIST[k].session_index, CONN_LIST[k].session_id);
 				if (session_data != NULL) {
-					delete_http2_session_data(session_data);
+					nrfm_handle_session(session_data);
 				}
 			}
 		}
@@ -252,27 +285,36 @@ void nrfm_mmc_act_dact_proc(nrfm_mml_t *nrfm_cmd, int act)
 void nrfm_mmc_del_proc(nrfm_mml_t *nrfm_cmd)
 {
 	int list_index = nrfm_cmd->id;
+	if (list_index == 0)
+		list_index = get_list(nrfm_cmd->host);
+	if (list_index < 0)
+		return;
 
-	for (int k = 1; k < MAX_SVR_NUM; k++) {
-		if (CONN_LIST[k].used == 0)
+	for (int i = 0; (list_index > 0) && (i < nrfm_cmd->info_cnt); i++) {
+		nf_conn_info_t *nf_conn = &nrfm_cmd->nf_conns[i];
+
+		int item_index = get_item(list_index, nf_conn->ip, nf_conn->port);
+		if (item_index <= 0)
 			continue;
-		if (CONN_LIST[k].nrfm_auto_added == 0)
-			continue;
-		if (CONN_LIST[k].list_index == list_index) {
-			http2_session_data_t *session_data = get_session(CONN_LIST[k].thrd_index,
-					CONN_LIST[k].session_index, CONN_LIST[k].session_id);
-			if (session_data != NULL) {
-				delete_http2_session_data(session_data);
+		for (int k = 1; k < MAX_SVR_NUM; k++) {
+			if (CONN_LIST[k].used == 0)
+				continue;
+			if (CONN_LIST[k].nrfm_auto_added == NF_ADD_RAW)
+				continue;
+			if (CONN_LIST[k].list_index == list_index && CONN_LIST[k].item_index == item_index) {
+				http2_session_data_t *session_data = get_session(CONN_LIST[k].thrd_index,
+						CONN_LIST[k].session_index, CONN_LIST[k].session_id);
+				if (session_data != NULL) {
+					nrfm_handle_session(session_data);
+				}
+				memset(&CONN_LIST[k], 0x00, sizeof(conn_list_t));
+				del_item(list_index, nf_conn->ip, nf_conn->port);
 			}
-			memset(&CONN_LIST[k], 0x00, sizeof(conn_list_t));
 		}
 	}
-	/* clear list / item index */
-	for (int i = 0; i < nrfm_cmd->info_cnt; i++) {
-		nf_conn_info_t *nf_conn = &nrfm_cmd->nf_conns[i];
-		del_item(list_index, nf_conn->ip, nf_conn->port);
-	}
-	del_list(nrfm_cmd->host);
+
+	if (get_item_num(list_index) == 0)
+		del_list(nrfm_cmd->host);
 
 	nrfm_mmc_res_log();
 	nrfm_cmd->id = -1; // replay added ID 
@@ -289,7 +331,7 @@ void nrfm_mmc_clear_proc()
 	for (int k = 1; k < MAX_SVR_NUM; k++) {
 		if (CONN_LIST[k].used == 0)
 			continue;
-		if (CONN_LIST[k].nrfm_auto_added == 0)
+		if (CONN_LIST[k].nrfm_auto_added != NF_ADD_NRF) // only nrf triggered connection clear
 			continue;
 
 		int list_index = get_list(CONN_LIST[k].host);
@@ -302,14 +344,7 @@ void nrfm_mmc_clear_proc()
 		http2_session_data_t *session_data = get_session(CONN_LIST[k].thrd_index,
 				CONN_LIST[k].session_index, CONN_LIST[k].session_id);
 		if (session_data != NULL) {
-			/* disconnect must act in worker */
-			intl_req_t intl_req = {0,};
-			int thrd_index = session_data->thrd_index;
-			set_intl_req_msg(&intl_req, thrd_index, 0, session_data->session_index,
-					session_data->session_id, 0, HTTP_INTL_SESSION_DEL);
-			if (-1 == msgsnd(THRD_WORKER[thrd_index].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0)) {
-				APPLOG(APPLOG_DEBUG, "%s() msgsnd fail!!!", __func__);
-			}
+			nrfm_handle_session(session_data);
 		}
 		/* for fast delete */
 		memset(&CONN_LIST[k], 0x00, sizeof(conn_list_t));
@@ -320,6 +355,43 @@ void nrfm_mmc_clear_proc()
 
 	// node change, remake
 	trig_refresh_select_node(&CLIENT_CONF);
+}
+
+void nrfm_mmc_tombstone_proc(nrfm_mml_t *nrfm_cmd)
+{
+	int list_index = get_list(nrfm_cmd->host);
+	int item_index = get_item(list_index, nrfm_cmd->nf_conns[0].ip, nrfm_cmd->nf_conns[0].port);
+
+	if (list_index <= 0 || item_index <= 0) {
+		APPLOG(APPLOG_ERR, "{{{DBG}}} %s() called but list_index(%d) item_index(%d), (%s:%s:%d)",
+				__func__, list_index, item_index, nrfm_cmd->host, nrfm_cmd->nf_conns[0].ip, nrfm_cmd->nf_conns[0].port);
+		return;
+	} else {
+		APPLOG(APPLOG_ERR, "{{{DBG}}} %s() called try to find & del list_index(%d) item_index(%d), (%s:%s:%d)",
+				__func__, list_index, item_index, nrfm_cmd->host, nrfm_cmd->nf_conns[0].ip, nrfm_cmd->nf_conns[0].port);
+	}
+
+	for (int k = 1; k < MAX_SVR_NUM; k++) {
+		if (CONN_LIST[k].list_index == list_index && 
+				CONN_LIST[k].item_index == item_index) {
+
+			APPLOG(APPLOG_ERR, "{{{DBG}}} %s try to clear CONN_LIST[index:%d host:%s ip:%s port:%d]", 
+					__func__, k, CONN_LIST[k].host, CONN_LIST[k].ip, CONN_LIST[k].port);
+
+			http2_session_data_t *session_data = get_session(CONN_LIST[k].thrd_index,
+					CONN_LIST[k].session_index, CONN_LIST[k].session_id);
+
+			if (session_data != NULL) {
+				nrfm_handle_session(session_data);
+			}
+			/* for fast delete */
+			memset(&CONN_LIST[k], 0x00, sizeof(conn_list_t));
+			break;
+		}
+	}
+	del_item(list_index, nrfm_cmd->nf_conns[0].ip, nrfm_cmd->nf_conns[0].port);
+	if (get_item_num(list_index) == 0)
+		del_list(nrfm_cmd->host);
 }
 
 int set_nrfm_response_msg(int ahif_msg_type) 
@@ -365,7 +437,7 @@ void message_handle(evutil_socket_t fd, short what, void *arg)
 	char msgBuff[1024*64];
 	GeneralQMsgType *msg = (GeneralQMsgType *)msgBuff;
 
-	while (msgrcv(httpcQid, msg, sizeof(GeneralQMsgType), 0, IPC_NOWAIT) >= 0) {
+	while (msgrcv(httpcQid, msg, sizeof(GeneralQMsgType), 0, IPC_NOWAIT|MSG_NOERROR) >= 0) {
 		switch (msg->mtype) {
 			case MTYPE_MMC_REQUEST:
 				mml_function((IxpcQMsgType *)msg->body);
@@ -406,7 +478,7 @@ void mml_function(IxpcQMsgType *rxIxpcMsg)
 	APPLOG(APPLOG_DEBUG, "%s() receive cmdName(%s)", __func__, mmlReq->head.cmdName);
 
 	for (i = 0; i < MAX_CMD_NUM; i++) {
-		if (!strcmp(mmlReq->head.cmdName, mmcHdlrVecTbl[i].cmdName)) {
+		if (!strcasecmp(mmlReq->head.cmdName, mmcHdlrVecTbl[i].cmdName)) {
 			mmcHdlr.func = mmcHdlrVecTbl[i].func;
 			break;
 		}
@@ -432,14 +504,27 @@ int func_dis_http_server(IxpcQMsgType *rxIxpcMsg)
 {
 	APPLOG(APPLOG_DEBUG, "%s() called", __func__);
 
+	MMLReqMsgType   *mmlReq=(MMLReqMsgType*)rxIxpcMsg->body;
+
 	char *resBuf = malloc(1024 * 1024);
 	resBuf[0] = '\0';
 	conn_list_status_t CONN_STATUS[MAX_CON_NUM];
 
 	memset(CONN_STATUS, 0x00, sizeof(conn_list_status_t) * MAX_CON_NUM);
-
 	gather_list(CONN_STATUS);
+
+    // get specific type
+    char nf_type[64] = {0,};
+    if (get_mml_para_str(mmlReq, "TYPE", nf_type) > 0) {
+        strupr(nf_type, strlen(nf_type));
+        select_list(CONN_STATUS, nf_type);
+    }
+
 	write_list(CONN_STATUS, resBuf);
+
+    sprintf(resBuf + strlen(resBuf), "  ------------------------------------------\n");
+    sprintf(resBuf + strlen(resBuf), "        OAuth2 enable status=[%s]\n", CLIENT_CONF.oauth_enable == 1 ? "ON" : "OFF");
+    sprintf(resBuf + strlen(resBuf), "  ------------------------------------------\n");
 
 	print_list(CONN_STATUS);
 
@@ -459,18 +544,19 @@ int func_add_http_server(IxpcQMsgType *rxIxpcMsg)
 	char HOSTNAME[64];
 	char TYPE[64];
 	conn_list_status_t CONN_STATUS[MAX_CON_NUM];
+    const char *error_reason = NULL;
 
 	memset(HOSTNAME, 0x00, sizeof(HOSTNAME));
 	memset(TYPE, 0x00, sizeof(TYPE));
 	memset(CONN_STATUS, 0x00, sizeof(conn_list_status_t) * MAX_CON_NUM);
 
 	if (get_mml_para_str(mmlReq, "HOSTNAME", HOSTNAME) < 0)
-		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(HOSTNAME)");
+		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [HOSTNAME]");
 	if (get_mml_para_str(mmlReq, "TYPE", TYPE) < 0)
-		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(TYPE)");
+		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [TYPE]");
 
-	if (addcfg_server_hostname(HOSTNAME, TYPE) < 0)
-		return send_mml_res_failMsg(rxIxpcMsg, "HOSTNAME ADD FAIL");
+	if (addcfg_server_hostname(HOSTNAME, TYPE, &error_reason) < 0)
+		return send_mml_res_failMsg(rxIxpcMsg, error_reason);
 
 	char *resBuf = malloc(1024 * 1024);
 	resBuf[0] = '\0';
@@ -504,27 +590,28 @@ int func_add_http_svr_ip(IxpcQMsgType *rxIxpcMsg)
 	struct sockaddr_in sa;
 	struct sockaddr_in6 sa6;
 	conn_list_status_t CONN_STATUS[MAX_CON_NUM];
+    const char *error_reason = NULL;
 
 	memset(IPADDR, 0x00, sizeof(IPADDR));
 	memset(CONN_STATUS, 0x00, sizeof(conn_list_status_t) * MAX_CON_NUM);
 
 	if ((ID = get_mml_para_int(mmlReq, "ID")) < 0)
-		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(ID)");
+		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [ID]");
 	if (get_mml_para_str(mmlReq, "SCHEME", SCHEME) < 0)
-		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(SCHEME)");
+		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [SCHEME]");
 	if (get_mml_para_str(mmlReq, "IPADDR", IPADDR) < 0)
-		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(IPADDR)");
+		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [IPADDR]");
 	if ((PORT = get_mml_para_int(mmlReq, "PORT")) < 0)
-		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(PORT)");
+		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [PORT]");
 	if ((CONN_CNT = get_mml_para_int(mmlReq, "CONN_CNT")) < 0)
-		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(CONN_CNT)");
+		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [CONN_CNT]");
 	if ((TOKEN_ID = get_mml_para_int(mmlReq, "TOKEN_ID")) < 0)
-		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(TOKEN_ID)");
+		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [TOKEN_ID]");
 
 	if (ID >= HTTP_MAX_HOST)
 		return send_mml_res_failMsg(rxIxpcMsg, "INVALID ID");
 	if (strcmp(SCHEME, "https") && strcmp(SCHEME, "http")) {
-		return send_mml_res_failMsg(rxIxpcMsg, "INVALID SCHEME (https|http)");
+		return send_mml_res_failMsg(rxIxpcMsg, "INVALID SCHEME [https|http]");
 	}
 	if (inet_pton(AF_INET, IPADDR, &(sa.sin_addr))) {
 	} else if (inet_pton(AF_INET6, IPADDR, &(sa6.sin6_addr))) {
@@ -538,8 +625,8 @@ int func_add_http_svr_ip(IxpcQMsgType *rxIxpcMsg)
 	if (TOKEN_ID < 0 || TOKEN_ID >= MAX_ACC_TOKEN_NUM)
 		return send_mml_res_failMsg(rxIxpcMsg, "INVALID TOKEN_ID");
 
-	if (addcfg_server_ipaddr(ID, SCHEME, IPADDR, PORT, CONN_CNT, TOKEN_ID) < 0)
-		return send_mml_res_failMsg(rxIxpcMsg, "IPADDR ADD FAIL");
+	if (addcfg_server_ipaddr(ID, SCHEME, IPADDR, PORT, CONN_CNT, TOKEN_ID, &error_reason) < 0)
+		return send_mml_res_failMsg(rxIxpcMsg, error_reason);
 
 	char *resBuf = malloc(1024 * 1024);
 	resBuf[0] = '\0';
@@ -581,11 +668,12 @@ int func_chg_http_server_act(IxpcQMsgType *rxIxpcMsg, int change_to_act)
 	int PORT = -1;
 	struct sockaddr_in sa;
 	struct sockaddr_in6 sa6;
+    const char *error_reason = NULL;
 
 	memset(IPADDR, 0x00, sizeof(IPADDR));
 
 	if ((ID = get_mml_para_int(mmlReq, "ID")) < 0)
-		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(ID)");
+		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [ID]");
 
 	ip_exist = get_mml_para_str(mmlReq, "IPADDR", IPADDR);
 	PORT = get_mml_para_int(mmlReq, "PORT");
@@ -606,8 +694,8 @@ int func_chg_http_server_act(IxpcQMsgType *rxIxpcMsg, int change_to_act)
 			return send_mml_res_failMsg(rxIxpcMsg, "INVALID PORT");
 	}
 
-	if (actcfg_http_server(ID, ip_exist, IPADDR, PORT, change_to_act) < 0)
-		return send_mml_res_failMsg(rxIxpcMsg, "ACT HTTP SERVER FAIL");
+	if (actcfg_http_server(ID, ip_exist, IPADDR, PORT, change_to_act, &error_reason) < 0)
+		return send_mml_res_failMsg(rxIxpcMsg, error_reason);
 
 	sprintf(resBuf, "\n[INPUT PARAM]\n\
 			ID        : %d\n\
@@ -634,27 +722,28 @@ int func_chg_http_server(IxpcQMsgType *rxIxpcMsg)
 	struct sockaddr_in sa;
 	struct sockaddr_in6 sa6;
 	conn_list_status_t CONN_STATUS[MAX_CON_NUM];
+    const char *error_reason = NULL;
 
 	memset(IPADDR, 0x00, sizeof(IPADDR));
 	memset(CONN_STATUS, 0x00, sizeof(conn_list_status_t) * MAX_CON_NUM);
 
 	if ((ID = get_mml_para_int(mmlReq, "ID")) < 0)
-		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(ID)");
+		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [ID]");
 	if (get_mml_para_str(mmlReq, "IPADDR", IPADDR) < 0)
-		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(IPADDR)");
+		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [IPADDR]");
 	if (get_mml_para_str(mmlReq, "SCHEME", SCHEME) < 0)
-		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(SCHEME)");
+		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [SCHEME]");
 	if ((PORT = get_mml_para_int(mmlReq, "PORT")) < 0)
-		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(PORT)");
+		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [PORT]");
 	if ((CONN_CNT = get_mml_para_int(mmlReq, "CONN_CNT")) < 0)
-		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(CONN_CNT)");
+		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [CONN_CNT]");
 	if ((TOKEN_ID = get_mml_para_int(mmlReq, "TOKEN_ID")) < 0)
-		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(TOKEN_ID)");
+		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [TOKEN_ID]");
 
 	if (ID >= HTTP_MAX_HOST)
 		return send_mml_res_failMsg(rxIxpcMsg, "INVALID ID");
 	if (strcmp(SCHEME, "https") && strcmp(SCHEME, "http")) {
-		return send_mml_res_failMsg(rxIxpcMsg, "INVALID SCHEME (https|http)");
+		return send_mml_res_failMsg(rxIxpcMsg, "INVALID SCHEME [https|http]");
 	}
 	if (inet_pton(AF_INET, IPADDR, &(sa.sin_addr))) {
 	} else if (inet_pton(AF_INET6, IPADDR, &(sa6.sin6_addr))) {
@@ -668,8 +757,8 @@ int func_chg_http_server(IxpcQMsgType *rxIxpcMsg)
 	if (TOKEN_ID < 0 || TOKEN_ID >= MAX_ACC_TOKEN_NUM)
 		return send_mml_res_failMsg(rxIxpcMsg, "INVALID TOKEN_ID");
 
-	if (chgcfg_server_conn_cnt(ID, SCHEME, IPADDR, PORT, CONN_CNT, TOKEN_ID) < 0)
-		return send_mml_res_failMsg(rxIxpcMsg, "CONN COUNT CHG FAIL");
+	if (chgcfg_server_conn_cnt(ID, SCHEME, IPADDR, PORT, CONN_CNT, TOKEN_ID, &error_reason) < 0)
+		return send_mml_res_failMsg(rxIxpcMsg, error_reason);
 
 	char *resBuf = malloc(1024 * 1024);
 	resBuf[0] = '\0';
@@ -700,16 +789,17 @@ int func_del_http_svr_ip(IxpcQMsgType *rxIxpcMsg)
 	struct sockaddr_in sa;
 	struct sockaddr_in6 sa6;
 	conn_list_status_t CONN_STATUS[MAX_CON_NUM];
+    const char *error_reason = NULL;
 
 	memset(IPADDR, 0x00, sizeof(IPADDR));
 	memset(CONN_STATUS, 0x00, sizeof(conn_list_status_t) * MAX_CON_NUM);
 
 	if ((ID = get_mml_para_int(mmlReq, "ID")) < 0)
-		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(ID)");
+		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [ID]");
 	if (get_mml_para_str(mmlReq, "IPADDR", IPADDR) < 0)
-		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(IPADDR)");
+		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [IPADDR]");
 	if ((PORT = get_mml_para_int(mmlReq, "PORT")) < 0)
-		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(PORT)");
+		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [PORT]");
 
 	if (ID >= HTTP_MAX_HOST)
 		return send_mml_res_failMsg(rxIxpcMsg, "INVALID ID");
@@ -721,8 +811,9 @@ int func_del_http_svr_ip(IxpcQMsgType *rxIxpcMsg)
 	if (PORT <= 0 || PORT >= 65535)
 		return send_mml_res_failMsg(rxIxpcMsg, "INVALID PORT");
 
-	if (delcfg_server_ipaddr(ID, IPADDR, PORT) < 0)
-		return send_mml_res_failMsg(rxIxpcMsg, "IPADDR DEL FAIL");
+	if (delcfg_server_ipaddr(ID, IPADDR, PORT, &error_reason) < 0) {
+		return send_mml_res_failMsg(rxIxpcMsg, error_reason);
+    }
 
 	char *resBuf = malloc(1024 * 1024);
 	resBuf[0] = '\0';
@@ -749,17 +840,18 @@ int func_del_http_server(IxpcQMsgType *rxIxpcMsg)
 
 	int ID = -1;
 	conn_list_status_t CONN_STATUS[MAX_CON_NUM];
+    const char *error_reason = NULL;
 
 	memset(CONN_STATUS, 0x00, sizeof(conn_list_status_t) * MAX_CON_NUM);
 
 	if ((ID = get_mml_para_int(mmlReq, "ID")) < 0)
-		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING(ID)");
+		return send_mml_res_failMsg(rxIxpcMsg, "PARAMETER MISSING [ID]");
 
 	if (ID >= HTTP_MAX_HOST)
 		return send_mml_res_failMsg(rxIxpcMsg, "INVALID ID");
 
-	if (delcfg_server_hostname(ID) < 0)
-		return send_mml_res_failMsg(rxIxpcMsg, "HOSTNAME DEL FAIL");
+	if (delcfg_server_hostname(ID, &error_reason) < 0)
+		return send_mml_res_failMsg(rxIxpcMsg, error_reason);
 
 	char *resBuf = malloc(1024 * 1024);
 	resBuf[0] = '\0';
@@ -778,47 +870,85 @@ int func_del_http_server(IxpcQMsgType *rxIxpcMsg)
 	return res;
 }
 
-int func_dis_http_svr_ping(IxpcQMsgType *rxIxpcMsg)
+int func_dis_httpc_config(IxpcQMsgType *rxIxpcMsg)
 {
-	APPLOG(APPLOG_DEBUG, "%s() called", __func__);
+    APPLOG(APPLOG_DEBUG, "%s() called", __func__);
 
-	char *resBuf=respMsg;
+    char *resBuf=respMsg;
 
-	sprintf(resBuf, "  PING INTERVAL (%d) sec\n", CLIENT_CONF.ping_interval);
-	sprintf(resBuf + strlen(resBuf), "  PING TIMEOUT (%d) sec\n", CLIENT_CONF.ping_timeout);
-	sprintf(resBuf + strlen(resBuf), "  PING ALARM LATENCY (%d) ms", CLIENT_CONF.ping_event_ms);
+    int res = print_single_http_cfg(&CFG, "client_cfg.http_config", "http_config = ", "httpc - http/2 config", resBuf);
 
-	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
-	return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
+    if (res < 0)
+        return send_mml_res_failMsg(rxIxpcMsg, ".CFG LOADING FAIL");
+    else
+        return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
 }
 
-int func_chg_http_svr_ping(IxpcQMsgType *rxIxpcMsg)
+void relaod_http_config(char *conf_name, int conf_val)
 {
-	APPLOG(APPLOG_DEBUG, "%s() called", __func__);
+    if (!strcmp(conf_name, CF_TIMEOUT_SEC))
+        CLIENT_CONF.timeout_sec = conf_val;
+    else if (!strcmp(conf_name, CF_PING_INTERVAL))
+        CLIENT_CONF.ping_interval = conf_val;
+    else if (!strcmp(conf_name, CF_PING_TIMEOUT))
+        CLIENT_CONF.ping_timeout = conf_val;
+    else if (!strcmp(conf_name, CF_PING_EVENT_MS))
+        CLIENT_CONF.ping_event_ms = conf_val;
+    else if (!strcmp(conf_name, CF_TRACE_ENABLE))
+        CLIENT_CONF.trace_enable = conf_val;
+    else if (!strcmp(conf_name, CF_OAUTH_ENABLE))
+        CLIENT_CONF.oauth_enable = conf_val;
+}
+
+int func_chg_httpc_config(IxpcQMsgType *rxIxpcMsg)
+{
+    APPLOG(APPLOG_DEBUG, "%s() called", __func__);
 
 	MMLReqMsgType   *mmlReq=(MMLReqMsgType*)rxIxpcMsg->body;
-
 	char *resBuf=respMsg;
 
-	int interval = get_mml_para_int(mmlReq, "INTERVAL");
-	int timeout = get_mml_para_int(mmlReq, "TIMEOUT");
-	int ms = get_mml_para_int(mmlReq, "MS");
+    char apply_config[1024] = {0,};
+    config_setting_t *setting = NULL;
+    char err_reply_text[1024] = {0,};
 
-	int old_interval = CLIENT_CONF.ping_interval;
-	int old_timeout = CLIENT_CONF.ping_timeout;
-	int old_ms = CLIENT_CONF.ping_event_ms;
+    char before_apply[10240] = {0,};
+    print_single_http_cfg(&CFG, "client_cfg.http_config", "http_config = ", "httpc - http/2 config", before_apply);
 
-	if (chgcfg_server_ping(interval, timeout, ms) < 0)
-		return send_mml_res_failMsg(rxIxpcMsg, "PING MS CHANGE FAIL");
+    for(int i=0; i < mmlReq->head.paraCnt; i++ ) {
+#ifdef MMLPARA_TYPESTR
+        sprintf(apply_config, "client_cfg.http_config.%s", 
+                strlwr(mmlReq->head.para[i].typeStr, strlen(mmlReq->head.para[i].typeStr)));
+        int apply_value = atoi(mmlReq->head.para[i].paraStr);
+#else
+        sprintf(apply_config, "client_cfg.http_config.%s", 
+                strlwr(mmlReq->head.para[i].paraName, strlen(mmlReq->head.para[i].paraName)));
+        int apply_value = atoi(mmlReq->head.para[i].paraVal);
+#endif
 
-	if (interval >= 0) CLIENT_CONF.ping_interval = interval;
-	if (timeout >= 0) CLIENT_CONF.ping_timeout = timeout;
-	if (ms >= 0) CLIENT_CONF.ping_event_ms = ms;
+        if ((setting = config_lookup(&CFG, apply_config)) == NULL) {
+            sprintf(err_reply_text, "ERROR> fail to find (%s) in config", apply_config);
+            goto FCHC_RET_ERR;
+        }
 
-	sprintf(resBuf, "  PING INTERVAL (%d) --> (%d) sec\n", old_interval, CLIENT_CONF.ping_interval);
-	sprintf(resBuf + strlen(resBuf), "  PING TIMEOUT (%d) --> (%d) sec\n", old_timeout, CLIENT_CONF.ping_timeout);
-	sprintf(resBuf + strlen(resBuf), "  PING ALARM LATENCY (%d) --> (%d) ms\n", old_ms, CLIENT_CONF.ping_event_ms);
+        /* skip value check because omp already do it */
+        if (config_setting_set_int(setting, apply_value) < 0) {
+            sprintf(err_reply_text, "ERROR> fail to change(%s) to val(%d)", apply_config, apply_value);
+            goto FCHC_RET_ERR;
+        }
 
-	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
-	return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
+        relaod_http_config(apply_config, apply_value);
+    }
+
+    // save to file
+    config_write_file(&CFG, CONFIG_PATH);
+
+    char after_apply[10240] = {0,};
+    print_single_http_cfg(&CFG, "client_cfg.http_config", "http_config = ", "httpc - http/2 config", after_apply);
+
+    print_dual_http_cfg(before_apply, after_apply, resBuf);
+
+    return send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
+
+FCHC_RET_ERR:
+    return send_mml_res_failMsg(rxIxpcMsg, err_reply_text);
 }

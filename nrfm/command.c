@@ -9,13 +9,17 @@ char myProcName[COMM_MAX_NAME_LEN];
 char respMsg[MAX_MML_RESULT_LEN], respBuff[MAX_MML_RESULT_LEN];
 
 typedef enum nrfm_cmd {
-	dis_acc_token,
+	dis_nf_acc_token,
+	dis_nf_profile,
+	chg_nf_status,
 	MAX_CMD_NUM
 } nrfm_cmd_t;
 
 MmcHdlrVector   mmcHdlrVecTbl[MAX_CMD_NUM] =
 {
-	{ "DIS-ACC-TOKEN",     func_dis_acc_token}
+	{ "DIS-NF-ACC-TOKEN",     func_dis_nf_acc_token},
+	{ "DIS-NF-PROFILE",       func_dis_nf_profile},
+	{ "CHG-NF-STATUS",        func_chg_nf_status}
 };
 
 void mml_function(IxpcQMsgType *rxIxpcMsg)
@@ -27,7 +31,10 @@ void mml_function(IxpcQMsgType *rxIxpcMsg)
     APPLOG(APPLOG_DEBUG, "%s() receive cmdName(%s)", __func__, mmlReq->head.cmdName);
 
     for (i = 0; i < MAX_CMD_NUM; i++) {
-        if (!strcmp(mmlReq->head.cmdName, mmcHdlrVecTbl[i].cmdName)) {
+        if (!strcasecmp(mmlReq->head.cmdName, mmcHdlrVecTbl[i].cmdName)) {
+            sprintf(mySysName, "%s", MAIN_CTX.my_info.mySysName);
+            sprintf(myProcName, "%s", MAIN_CTX.my_info.myProcName);
+
             mmcHdlr.func = mmcHdlrVecTbl[i].func;
             break;
         }
@@ -55,15 +62,12 @@ void adjust_loglevel(TrcLibSetPrintMsgType *trcMsg)
     }
 }
 
-int func_dis_acc_token(IxpcQMsgType *rxIxpcMsg)
+int func_dis_nf_acc_token(IxpcQMsgType *rxIxpcMsg)
 {   
 	APPLOG(APPLOG_DEBUG, "%s() called", __func__);
 
 	char *resBuf=malloc(1024 * 1024);
 	resBuf[0] = '\0';
-
-	sprintf(mySysName, "%s", MAIN_CTX.my_info.mySysName);
-	sprintf(myProcName, "%s", MAIN_CTX.my_info.myProcName);
 
 	print_token_info_raw(MAIN_CTX.nrf_access_token.ACC_TOKEN_LIST, resBuf);
 
@@ -75,3 +79,98 @@ int func_dis_acc_token(IxpcQMsgType *rxIxpcMsg)
 	return res;
 }  
 
+int func_dis_nf_profile(IxpcQMsgType *rxIxpcMsg)
+{   
+	APPLOG(APPLOG_DEBUG, "%s() called", __func__);
+
+	char *resBuf=malloc(1024 * 1024);
+	resBuf[0] = '\0';
+
+    char key_name[128] = "my_profile";
+    json_object *request_nf_profile = search_json_object(MAIN_CTX.my_nf_profile, key_name);
+
+    ft_table_t *table = ft_create_table();
+    ft_set_border_style(table, FT_PLAIN_STYLE);
+    ft_set_cell_prop(table, 0, FT_ANY_COLUMN, FT_CPROP_ROW_TYPE, FT_ROW_HEADER);
+    ft_set_cell_prop(table, 0, 0, FT_CPROP_MIN_WIDTH, 55);
+    ft_set_cell_prop(table, 0, 1, FT_CPROP_MIN_WIDTH, 55);
+    ft_write_ln(table, "[Request to NRF]", "[Response from NRF]");
+    ft_printf_ln(table, "%s|%s",  
+            json_object_to_json_string_ext(request_nf_profile, JSON_C_PRETTY_NOSLASH),
+            json_object_to_json_string_ext(MAIN_CTX.received_nf_profile, JSON_C_PRETTY_NOSLASH));
+
+    ft_add_separator(table);
+
+    ft_printf_ln(table, "Regi Status=[%s]",
+       MAIN_CTX.last_regi_resp_code < 0 ? "Trying" :
+       MAIN_CTX.last_regi_resp_code >= 200 && MAIN_CTX.last_regi_resp_code < 300 ? "Registered" : "Error");
+    ft_printf_ln(table, "Last RespCode=[%d]", MAIN_CTX.last_regi_resp_code);
+    ft_printf_ln(table, "Last RecvTime=[%.24s]",
+       MAIN_CTX.last_regi_resp_code >= 200 && MAIN_CTX.last_regi_resp_code < 300 ? ctime(&MAIN_CTX.last_regi_resp_time) : "Not Registered");
+    ft_printf_ln(table, ">>>> NF Undiscoverable Set=[%d] <<<<",
+        MAIN_CTX.prefer_undiscover_set);
+
+    ft_add_separator(table);
+
+    sprintf(resBuf, ft_to_string(table));
+
+	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
+
+	int res = send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
+
+	free(resBuf);
+    ft_destroy_table(table);
+    return res;
+}
+
+int func_chg_nf_status(IxpcQMsgType *rxIxpcMsg)
+{   
+	APPLOG(APPLOG_DEBUG, "%s() called", __func__);
+
+    MMLReqMsgType   *mmlReq=(MMLReqMsgType*)rxIxpcMsg->body;
+
+    /* error handle */
+    char *err_txt_para_cnt = "err) para count must 1";
+    char *err_txt_para_format = "err) para string must be \"REGI\" or \"UNDISCOVER\"";
+    char *err_txt_not_registered = "err) NF status not regi, can't change to \"UNDISCOVER\"";
+
+    if (mmlReq->head.paraCnt != 1) {
+        return send_mml_res_failMsg(rxIxpcMsg, err_txt_para_cnt);
+    }
+
+#ifdef MMLPARA_TYPESTR
+    char *apply_value = mmlReq->head.para[0].paraStr;
+#else
+    char *apply_value = mmlReq->head.para[0].paraVal;
+#endif
+    if (strcasecmp(apply_value, "REGI") && strcasecmp(apply_value, "UNDISCOVER")) {
+        return send_mml_res_failMsg(rxIxpcMsg, err_txt_para_format);
+    }
+
+    if (!strcasecmp(apply_value, "UNDISCOVER")) {
+        if (MAIN_CTX.last_regi_resp_code < 200 || MAIN_CTX.last_regi_resp_code >= 300) {
+            return send_mml_res_failMsg(rxIxpcMsg, err_txt_not_registered);
+        }
+    }
+
+    /* malloc - send & free */
+	char *resBuf=malloc(1024 * 1024);
+	resBuf[0] = '\0';
+
+    if (!strcasecmp(apply_value, "REGI")) {
+        MAIN_CTX.prefer_undiscover_set = 0;
+        sprintf(resBuf, "\n\n[ change NF STATUS as REGISTERED, with HEARTBEAT to NRF ]\n\n");
+    } else {
+        MAIN_CTX.prefer_undiscover_set = 1;
+        sprintf(resBuf, "\n\n[ change NF STATUS is UNDISCOVERABLE, with HEARTBEAT to NRF ]\n\n");
+    }
+
+	event_base_once(MAIN_CTX.EVBASE, -1, EV_TIMEOUT, nf_heartbeat_send_proc, NULL, NULL);
+
+	APPLOG(APPLOG_DETAIL, "%s() response is >>>\n%s", __func__, resBuf);
+
+	int res = send_mml_res_succMsg(rxIxpcMsg, resBuf, FLAG_COMPLETE, 0, 0);
+
+	free(resBuf);
+    return res;
+}

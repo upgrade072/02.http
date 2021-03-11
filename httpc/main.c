@@ -15,7 +15,7 @@ int THREAD_NO[MAX_THRD_NUM] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
 int SESSION_ID;
 int SESS_IDX;
 
-shm_http_t *SHM_HTTP_PTR;
+shm_http_t *SHM_HTTPC_PTR;
 client_conf_t CLIENT_CONF;
 thrd_context_t THRD_WORKER[MAX_THRD_NUM];
 http2_session_data_t SESS[MAX_THRD_NUM][MAX_SVR_NUM];
@@ -63,6 +63,7 @@ static http2_session_data_t * create_http2_session_data()
 	return session_data;
 }
 
+/* caution!!! this func must called by worker */
 void delete_http2_session_data(http2_session_data_t *session_data) 
 {
 	pthread_mutex_lock(&ONLY_CRT_SESS_LOCK);
@@ -99,6 +100,9 @@ void delete_http2_session_data(http2_session_data_t *session_data)
 	CONN_LIST[session_data->conn_index].thrd_index = 0;
 	CONN_LIST[session_data->conn_index].session_index = 0;
 	CONN_LIST[session_data->conn_index].session_id = 0;
+	/* save last conn => disconn time */
+	if (CONN_LIST[session_data->conn_index].conn == CN_CONNECTED)
+		CONN_LIST[session_data->conn_index].tombstone_date = time(NULL);
 	CONN_LIST[session_data->conn_index].conn = CN_NOT_CONNECTED;
 	CONN_LIST[session_data->conn_index].reconn_candidate = 0;
 
@@ -316,7 +320,7 @@ static int submit_request(http2_session_data_t *session_data, httpc_ctx_t *httpc
 		MAKE_NV(HDR_PATH, request_path, strlen(request_path))};
 	int hdrs_len = 4; /* :method :scheme :authority :path */
 
-#ifdef OAUTH
+    /* oauth 2.0 */
 	if (httpc_ctx->access_token[0]) {
 		char token_buffer[1024] = {0,};
 		sprintf(token_buffer, "Bearer %s", httpc_ctx->access_token);
@@ -324,30 +328,24 @@ static int submit_request(http2_session_data_t *session_data, httpc_ctx_t *httpc
 		memcpy(&hdrs[hdrs_len], &auth_hdr, sizeof(nghttp2_nv));
 		hdrs_len ++;
 	}
-#endif
 
 	hdrs_len = assign_more_headers(VHDR_INDEX[0], &hdrs[0], MAX_HDR_RELAY_CNT + 5, hdrs_len, &httpc_ctx->user_ctx);
 
 	nghttp2_data_provider data_prd = {0,};
-	char log_pfx[1024] = {0,};
 
 	if (httpc_ctx->user_ctx.head.bodyLen > 0) {
 		data_prd.source.ptr = httpc_ctx;
 		data_prd.read_callback = ptr_read_callback; // clear ctx after body send
 		stream_id = nghttp2_submit_request(session_data->session, NULL, hdrs, 
 				hdrs_len, &data_prd, stream_data);
-		sprintf(log_pfx, "HTTPC SEND ahifcid(%d) http sess/stream(%d:%d)]", 
-				httpc_ctx->user_ctx.head.ahifCid, httpc_ctx->session_id, stream_id);
-		log_pkt_send(log_pfx, hdrs, hdrs_len, 
+		log_pkt_send(httpc_ctx, hdrs, hdrs_len, 
 				httpc_ctx->user_ctx.data + httpc_ctx->user_ctx.head.queryLen, 
 				httpc_ctx->user_ctx.head.bodyLen);
 
 	} else {
 		stream_id = nghttp2_submit_request(session_data->session, NULL, hdrs, 
 				hdrs_len, NULL, stream_data);
-		sprintf(log_pfx, "HTTPC SEND ahifcid(%d) http sess/stream(%d:%d)]", 
-				httpc_ctx->user_ctx.head.ahifCid, httpc_ctx->session_id, stream_id);
-		log_pkt_send(log_pfx, hdrs, hdrs_len, 
+		log_pkt_send(httpc_ctx, hdrs, hdrs_len, 
 				httpc_ctx->user_ctx.data + httpc_ctx->user_ctx.head.queryLen, 
 				httpc_ctx->user_ctx.head.bodyLen);
 
@@ -435,7 +433,7 @@ void send_response_to_nrfm(httpc_ctx_t *httpc_ctx)
 	size_t shmqlen = AHIF_APP_MSG_HEAD_LEN + AHIF_VHDR_LEN + ahifPkt_recv->head.queryLen + ahifPkt_recv->head.bodyLen;
 	memcpy(ahifPkt_send, ahifPkt_recv, shmqlen);
 
-	int res = msgsnd(nrfmQid, msg, shmqlen, 0);
+	int res = msgsnd(nrfmQid, msg, shmqlen, IPC_NOWAIT);
 	if (res < 0) {
 		APPLOG(APPLOG_ERR, "%s() msgsnd fail err=%d(%s)", __func__, errno, strerror(errno));
 	}
@@ -471,9 +469,11 @@ static int on_stream_close_callback(nghttp2_session *session, int32_t stream_id,
 
 	// Whole data Reveived
 
-	log_pkt_end_stream(stream_id, httpc_ctx);
+	log_pkt_end_stream(httpc_ctx);
 
 	if (httpc_ctx->inflight_ref_cnt > 0) {
+        APPLOG(APPLOG_ERR, "%s() (ahifCid=%d from_fep=%d) stream closed but already timeouted!",
+                __func__, httpc_ctx->user_ctx.head.ahifCid, httpc_ctx->fep_tag);
 		/* timeout case */
 		clear_and_free_ctx(httpc_ctx);
 		Free_CtxId(thrd_idx, idx);
@@ -732,6 +732,7 @@ static void eventcb(struct bufferevent *bev, short events, void *ptr) {
 		/* session connected */
 		pthread_mutex_lock(&ONLY_CRT_SESS_LOCK);
 		CONN_LIST[session_data->conn_index].conn = CN_CONNECTED;
+		CONN_LIST[session_data->conn_index].tombstone_date = 0;
 		session_data->connected = 1;
 		gettimeofday(&session_data->ping_rcv_time, NULL);
 		APPLOG(APPLOG_DETAIL, "%s() Connected conn_index %5d thrd_index %2d session_index %5d ip %s port %d",
@@ -860,7 +861,7 @@ void chk_tmout_callback(evutil_socket_t fd, short what, void *arg)
 					httpc_ctx->inflight_ref_cnt ++;
 				}
                 set_intl_req_msg(&intl_req, index, i, httpc_ctx->sess_idx, httpc_ctx->session_id, 0, HTTP_INTL_TIME_OUT);
-                if (-1 == msgsnd(THRD_WORKER[index].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0)) {
+                if (-1 == msgsnd(THRD_WORKER[index].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), IPC_NOWAIT)) {
 					APPLOG(APPLOG_DEBUG, "%s() msgsnd fail!!!", __func__);
                 }
 				/* if tmout sended num exceed 1/10 total ctx, wait to next turn */
@@ -890,14 +891,14 @@ void send_ping_callback(evutil_socket_t fd, short what, void *arg)
             if ((tm_curr.tv_sec - session_data->ping_rcv_time.tv_sec) > CLIENT_CONF.ping_timeout) {
                 APPLOG(APPLOG_ERR, "%s() session (id: %d) goaway~!", __func__, session_data->session_id);
                 set_intl_req_msg(&intl_req, thrd_idx, 0, sess_idx, session_data->session_id, 0, HTTP_INTL_SESSION_DEL);
-                if (-1 == msgsnd(THRD_WORKER[thrd_idx].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0)) {
+                if (-1 == msgsnd(THRD_WORKER[thrd_idx].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), IPC_NOWAIT)) {
 					APPLOG(APPLOG_ERR, "%s():%d msgsnd fail!!!", __func__, __LINE__);
                 }
 				continue;
 			}
 			if (session_data->ping_cnt ++ % CLIENT_CONF.ping_interval == 0) { 
 				set_intl_req_msg(&intl_req, thrd_idx, 0, sess_idx, session_data->session_id, 0, HTTP_INTL_SEND_PING);
-				if (-1 == msgsnd(THRD_WORKER[thrd_idx].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0)) {
+				if (-1 == msgsnd(THRD_WORKER[thrd_idx].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), IPC_NOWAIT)) {
 					APPLOG(APPLOG_ERR, "%s():%d msgsnd fail!!!", __func__, __LINE__);
 				}
 			}
@@ -940,15 +941,24 @@ void send_status_to_omp(evutil_socket_t fd, short what, void *arg)
 
 conn_list_t *check_sess_group_prepair_reconn(conn_list_t *conn_list)
 {
+    int same_info_list_exist = 0;
 	for (int i = 0; i < MAX_SVR_NUM; i++) {
 		conn_list_t *compare_list =  &CONN_LIST[i];
 
 		if (i == conn_list->index) continue; // it's me
 		if (compare_list->used == 0) continue;
 		if (compare_list->act == 0) continue;
+#if 0
 		if (compare_list->conn != CN_CONNECTED) continue;
+#else
+        if (CONN_LIST[i].conn != CN_CONNECTED) continue;
+#endif
 
+#if 0
 		if ((compare_list->reconn_candidate > 0) &&
+#else
+		if ((CONN_LIST[i].reconn_candidate > 0) &&
+#endif
 				(compare_list->port == conn_list->port) &&
 				!strcmp(compare_list->scheme, conn_list->scheme) &&
 				!strcmp(compare_list->type, conn_list->type) &&
@@ -956,9 +966,15 @@ conn_list_t *check_sess_group_prepair_reconn(conn_list_t *conn_list)
 				!strcmp(compare_list->ip, conn_list->ip)) {
 			return compare_list;
 		}
+        if (compare_list->list_index == conn_list->list_index) {
+            same_info_list_exist = 1; // that CONNECTED
+        }
 	}
 
-	return NULL;
+    if (same_info_list_exist != 0)
+        return NULL; // OK. release conn
+    else
+        return conn_list; // NO. don't release conn, we only have this one
 }
 
 void inspect_stream_id(int stream_id, http2_session_data_t *session_data)
@@ -980,7 +996,11 @@ void inspect_stream_id(int stream_id, http2_session_data_t *session_data)
 			APPLOG(APPLOG_ERR, "%s() SESSION[%d] (%s:%s:%s:%d) REACH TO STREAM_ID LIMIT[%d], PREPARE RECONNECT!!!",
 					__func__, session_data->session_id, 
 					conn_list->type, conn_list->host, conn_list->ip, conn_list->port, CLIENT_CONF.prepare_close_stream_limit);
+#if 0
 			conn_list->reconn_candidate = 1;
+#else
+            CONN_LIST[session_data->conn_index].reconn_candidate = 1;
+#endif
 		}
 #endif
 	}
@@ -994,7 +1014,7 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 	http2_session_data_t *session_data = NULL;
 	httpc_ctx_t *httpc_ctx = NULL;
 
-	int thrd_index, session_index, ctx_id, session_id;
+	int thrd_index, session_index, ctx_id, session_id, stream_id;
 	int msg_type;
 
 	while (1)
@@ -1022,6 +1042,7 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 
 		switch (msg_type) {
 			case HTTP_INTL_SND_REQ:
+#if 0
 				if (session_data  == NULL) {
 					/* legacy session expired and new one already created case */
 					APPLOG(APPLOG_DEBUG, "%s():%d send req case) get_session(id:%d) fail", __func__, __LINE__, session_id);
@@ -1037,6 +1058,27 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 				} else {
 					inspect_stream_id(stream_id, session_data);
 				}
+#else
+                if (httpc_ctx == NULL) {
+					APPLOG(APPLOG_DEBUG, "%s():%d get_context fail", __func__, __LINE__);
+					continue;
+                }
+                if (session_data != NULL &&
+                    ((stream_id = send_request(session_data, thrd_index, ctx_id)) >= 0) &&
+                    session_send(session_data) == 0) {
+					inspect_stream_id(stream_id, session_data);
+                } else {
+					APPLOG(APPLOG_DEBUG, "%s():%d send_request fail ahifCid=(%d) session [%s]", 
+                            __func__, __LINE__, httpc_ctx->user_ctx.head.ahifCid, 
+                            session_data != NULL ? "exist" : "goaway");
+                    clear_and_free_ctx(httpc_ctx);
+                    Free_CtxId(thrd_index, ctx_id);
+                }
+                if (session_data == NULL) {
+					APPLOG(APPLOG_DEBUG, "%s():%d get_session fail", __func__, __LINE__);
+                    continue;
+                }
+#endif
 
 				/* stat HTTP_TX_REQ */
 				http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_TX_REQ);
@@ -1054,6 +1096,7 @@ void recv_msgq_callback(evutil_socket_t fd, short what, void *arg)
 					/* legacy session expired and new one already created case */
 					APPLOG(APPLOG_DEBUG, "%s():%d timeout case) get_session(id:%d) fail", __func__, __LINE__, session_id);
 				} else {
+                    log_pkt_httpc_reset(httpc_ctx);
 					/* it's same session and alive, send reset */
 					nghttp2_submit_rst_stream(session_data->session, NGHTTP2_FLAG_NONE,
 							httpc_ctx->stream.stream_id,
@@ -1172,7 +1215,8 @@ void conn_func(evutil_socket_t fd, short what, void *arg)
 		/* stat HTTP_CONN */
 		http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_CONN);
 
-		// schlee, create session authority data
+        sprintf(session_data->host, CONN_LIST[i].host);
+
 		/* authority   = [ userinfo "@" ] host [ ":" port ] */
 		sprintf(session_data->scheme, "%s", CONN_LIST[i].scheme);
 		sprintf(session_data->authority, "%s", CONN_LIST[i].ip);
@@ -1205,7 +1249,7 @@ void candidate_session_del(evutil_socket_t fd, short what, void *arg)
 					CONN_LIST[i].session_id, 0, HTTP_INTL_SESSION_DEL);
 			APPLOG(APPLOG_ERR, "%s() SESSION[%d] enough wait, now disconnect!",
 					__func__, CONN_LIST[i].session_id);
-			if (-1 == msgsnd(THRD_WORKER[thrd_index].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), 0)) {
+			if (-1 == msgsnd(THRD_WORKER[thrd_index].msg_id, &intl_req, sizeof(intl_req) - sizeof(long), IPC_NOWAIT)) {
 				APPLOG(APPLOG_DEBUG, "%s() msgsnd fail!!!", __func__);
 			}
 			goto CANDIDATE_RECONN_END_JOB;
@@ -1266,11 +1310,11 @@ void monitor_worker()
 
 void main_tick_callback(evutil_socket_t fd, short what, void *arg)
 {
-#ifndef TEST
 	keepalivelib_increase();
-#endif
 
+    /* if command changed */
 	if (CLIENT_CONF.refresh_node_requested) {
+        APPLOG(APPLOG_ERR, "%s() rebuild lb thread's select node, this trigger from command", __func__);
 		once_refresh_select_node(LB_CTX.fep_rx_thrd);
 		once_refresh_select_node(LB_CTX.peer_rx_thrd);
 		CLIENT_CONF.refresh_node_requested = 0;
@@ -1298,7 +1342,7 @@ void send_nrfm_notify(evutil_socket_t fd, short what, void *arg)
 
 	/* if NRFM not exist, discard */
 	if (nrfmQid > 0) {
-		int res = msgsnd(nrfmQid, msg, sizeof(nrfm_noti_t), 0);
+		int res = msgsnd(nrfmQid, msg, sizeof(nrfm_noti_t), IPC_NOWAIT);
 		if (res < 0) {
 			APPLOG(APPLOG_ERR, "%s(), fail to send resp to NRFM! (res:%d)", __func__, res);
 		}
@@ -1361,13 +1405,11 @@ void main_loop()
     ev_status = event_new(evbase, -1, EV_PERSIST, send_status_to_omp, NULL);
     event_add(ev_status, &tm_status);
 
-#ifndef TEST
 	/* system message handle */
 	struct timeval tm_milisec = {0, 100000}; // 100 ms
 	struct event *ev_msg_handle;
 	ev_msg_handle = event_new(evbase, -1, EV_PERSIST, message_handle, NULL);
 	event_add(ev_msg_handle, &tm_milisec);
-#endif
 
 	/* LB stat print */
 	struct timeval lbctx_print_interval = {1, 0};
@@ -1406,34 +1448,19 @@ int set_http2_option(client_conf_t *CLIENT_CONF)
 
 void directory_watch_action(const char *file_name) { } 
 
-#define NRFM_ACC_TOKEN_SHM_KEY "nrfm_cfg.sys_config.access_token_shm_key"
 int get_acc_token_shm(client_conf_t *CLIENT_CONF)
 {
-	config_t CFG_LOCAL = {0,};
+    char fname[1024] = {0,};
+    sprintf(fname,"%s/%s", getenv(IV_HOME), SYSCONF_FILE);
 
-	// load nrfm.cfg
-	char conf_path[1024] = {0,};
-	sprintf(conf_path, "%s/data/nrfm.cfg", getenv(IV_HOME));
-
-    if (!config_read_file(&CFG_LOCAL, conf_path)) {
-        fprintf(stderr, "config read fail! (%s|%d - %s)\n",
-                config_error_file(&CFG_LOCAL),
-                config_error_line(&CFG_LOCAL),
-                config_error_text(&CFG_LOCAL));
-        return (-1);
-    } else {
-        fprintf(stderr, "TODO| config read from ./nrfm.cfg success!\n");
-    }
-
-	int nrfm_acc_token_shm_key = 0;
-	if (config_lookup_int(&CFG_LOCAL, NRFM_ACC_TOKEN_SHM_KEY, &nrfm_acc_token_shm_key) < 0) {
-        fprintf(stderr, "TODO| fail to get (%s) shm key fail!\n", NRFM_ACC_TOKEN_SHM_KEY);
-		return (-1);
-	}
+    char tmp[1024] = {0,};
+    if (conflib_getNthTokenInFileSection (fname, "SHARED_MEMORY_KEY", "SHM_NRFM_ACC_TOKEN", 1, tmp) < 0 )
+        return -1;
+	int nrfm_acc_token_shm_key = strtol(tmp,(char**)0,0);
 
 	int nrfm_acc_token_id = shmget((size_t)nrfm_acc_token_shm_key, SHM_ACC_TOKEN_TABLE_SIZE, IPC_CREAT|0666);
 	if (nrfm_acc_token_id < 0) {
-        fprintf(stderr, "TODO| fail to get (%s) shm id fail!\n", NRFM_ACC_TOKEN_SHM_KEY);
+        fprintf(stderr, "TODO| fail to get (%s) shm id fail!\n", "SHM_NRFM_ACC_TOKEN");
 		return (-1);
 	}
 
@@ -1442,8 +1469,6 @@ int get_acc_token_shm(client_conf_t *CLIENT_CONF)
         fprintf(stderr, "TODO| fail to attach to access token shm fail!\n");
 		return (-1);
 	}
-
-	config_destroy(&CFG_LOCAL);
 
 	return 0;
 }
@@ -1480,10 +1505,10 @@ int initialize()
 	}
 #ifdef LOG_LIB
 	char log_path[1024] = {0,};
-	sprintf(log_path, "%s/log/ERR_LOG/%s", getenv(IV_HOME), myProcName);
+	sprintf(log_path, "%s/log/STACK/%s", getenv(IV_HOME), myProcName);
 	initlog_for_loglib(myProcName, log_path);
 #elif LOG_APP
-	sprintf(fname, "%s/log", getenv(IV_HOME));
+	sprintf(fname, "%s/log/STACK", getenv(IV_HOME));
 	LogInit(myProcName, fname);
 #endif
     if (config_load_just_log() < 0) {
@@ -1492,6 +1517,24 @@ int initialize()
 	}
 	*lOG_FLAG = CLIENT_CONF.log_level;
 	APPLOG(APPLOG_ERR, "\n\n[[[[[ Welcome Process Started ]]]]]");
+
+	/* create httpc conn status shm */
+    sprintf(fname,"%s/%s", getenv(IV_HOME), SYSCONF_FILE);
+
+    if (conflib_getNthTokenInFileSection (fname, "SHARED_MEMORY_KEY", "SHM_HTTPC_CONN", 1, tmp) < 0 )
+        return -1;
+    int shm_httpc_conn_key = strtol(tmp,(char**)0,0);
+
+	if (get_http_shm(shm_httpc_conn_key) < 0) {
+		fprintf(stderr,"{{{INIT}}} httpc conn status shm create fail!\n");
+		return (-1);
+	}
+
+	/* get access token shm */
+	if (get_acc_token_shm(&CLIENT_CONF) < 0) {
+		fprintf(stderr,"{{{INIT}}} fail to get (nrfm) acc token shm!\n");
+		return (-1);
+	}
 
     if (config_load() < 0) {
         APPLOG(APPLOG_ERR, "{{{INIT}}} fail to read config file!");
@@ -1502,19 +1545,6 @@ int initialize()
 		gather_list(CONN_STATUS);
 		print_list(CONN_STATUS);
 	}
-
-	/* get status shm */
-	if (get_http_shm(CLIENT_CONF.httpc_status_shmkey) < 0) {
-		fprintf(stderr,"{{{INIT}}} sem shm create fail!\n");
-		return (-1);
-	}
-
-	/* get access token shm */
-	if (get_acc_token_shm(&CLIENT_CONF) < 0) {
-		fprintf(stderr,"{{{INIT}}} fail to get (nrfm) acc token shm!\n");
-		return (-1);
-	}
-
 
 	for ( i = 0; i < CLIENT_CONF.worker_num; i++) {
 		if ( -1 == (THRD_WORKER[i].msg_id = msgget((key_t)(CLIENT_CONF.worker_shmkey + i), IPC_CREAT | 0666))) {
@@ -1529,10 +1559,15 @@ int initialize()
 		}
 	}
 
+#ifdef SYSCONF_LEGACY
+    int PROC_NAME_LOC = 1; // some old sysconf : eir ...
+#else
+    int PROC_NAME_LOC = 3;
+#endif
+
 	/* create recv-mq */
-#ifndef TEST
 	sprintf(fname,"%s/%s", env, SYSCONF_FILE);
-	if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", myProcName, 3, tmp) < 0) {
+	if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", myProcName, PROC_NAME_LOC, tmp) < 0) {
 		APPLOG(APPLOG_ERR, "{{{INIT}}} configlib get token APPLICATIONS fail!");
 		return -1;
 	}
@@ -1541,17 +1576,9 @@ int initialize()
 		APPLOG(APPLOG_ERR,"{{{INIT}}} [%s] msgget fail; key=0x%x,err=%d(%s)!", __func__, key, errno, strerror(errno));
 		return -1;
 	}
-#if 0
-	/* flushing & remake */
-	msgctl(httpcQid, IPC_RMID, NULL);
-	if ((httpcQid = msgget(key,IPC_CREAT|0666)) < 0) {
-		APPLOG(APPLOG_ERR, "{{{INIT}}} [%s] msgget fail; key=0x%x,err=%d(%s)!", __func__, key, errno, strerror(errno));
-		return -1;
-	}
-#endif
 
 	/* create send-(ixpc) mq */
-	if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", "IXPC", 3, tmp) < 0)
+	if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", "IXPC", PROC_NAME_LOC, tmp) < 0)
 		return -1;
 	key = strtol(tmp,0,0);
 	if ((ixpcQid = msgget(key,IPC_CREAT|0666)) < 0) {
@@ -1560,7 +1587,7 @@ int initialize()
 	}
 
 	/* create send-(nrfm) mq */
-	if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", "NRFM", 3, tmp) >= 0) {
+	if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", "NRFM", PROC_NAME_LOC, tmp) >= 0) {
 		key = strtol(tmp,0,0);
 		if ((nrfmQid = msgget(key,IPC_CREAT|0666)) < 0) {
 			APPLOG(APPLOG_ERR, "{{{INIT}}} [%s] msgget fail; key=0x%x,err=%d(%s)! NRFM QID will 0", __func__, key, errno, strerror(errno));
@@ -1568,7 +1595,6 @@ int initialize()
 	} else {
 		APPLOG(APPLOG_ERR, "{{{INIT}}} can't find NRFM info in sysconfig APPLICATION!, NRFM QID will 0");
 	}
-#endif
 
 	/* alloc context memory */
 	for ( i = 0; i < CLIENT_CONF.worker_num; i++) {
@@ -1604,14 +1630,11 @@ int initialize()
 		return -1;
 	}
 
-
 	/* process start run */
-#ifndef TEST
 	if (keepalivelib_init (myProcName) < 0) {
 		APPLOG(APPLOG_ERR, "{{{INIT}}} keepalive init fail!");
 		return -1;
 	}
-#endif
 
 #ifdef OVLD_API
 	/* for nssf overload control */
@@ -1642,6 +1665,7 @@ int main(int argc, char **argv)
 	SSL_load_error_strings();
 	SSL_library_init();
 
+    /* create httpc send --> ahif conn */
 	create_httpc_worker();
 	create_lb_thread();
 

@@ -52,6 +52,25 @@
 #define TM_INTERVAL		20000   // every 20 ms check, 
 #define TMOUT_VECTOR    50      // CLIENT_CONF.tmout_sec * TMOUT_VECTOR = N sec
 
+/* CONFIG */
+#define CF_CLIENT_CONF      "client.cfg"
+#define CF_LOG_LEVEL        "client_cfg.sys_config.log_level"
+#define CF_DEBUG_MODE       "client_cfg.sys_config.debug_mode"
+#define CF_WORKER_SHMKEY    "client_cfg.sys_config.worker_shmkey_base"
+#define CF_MAX_WORKER_NUM   "client_cfg.http_config.worker_num"
+#define CF_TIMEOUT_SEC      "client_cfg.http_config.timeout_sec"
+#define CF_PING_INTERVAL    "client_cfg.http_config.ping_interval"
+#define CF_PING_TIMEOUT     "client_cfg.http_config.ping_timeout"
+#define CF_PING_EVENT_MS    "client_cfg.http_config.ping_event_ms"
+#define CF_PING_EVENT_CODE  "client_cfg.http_config.ping_event_code"
+#define CF_PKT_LOG          "client_cfg.http_config.pkt_log"
+#define CF_TRACE_ENABLE     "client_cfg.http_config.trace_enable"
+#define CF_OAUTH_ENABLE     "client_cfg.http_config.oauth_enable"
+#define CF_LB_CONFIG        "client_cfg.lb_config"
+#define CF_CONNECT_LIST     "connect_list"
+#define CF_HTTP_OPT_HDR_TABLE_SIZE  "client_cfg.http_option.setting_header_table_size"
+#define CF_HTTP_PREPARE_STREAM_ID   "client_cfg.http_option.prepare_close_stream_limit"
+
 /* For LOG */
 extern char lOG_PATH[64];
 
@@ -60,13 +79,14 @@ typedef struct client_conf {
 	int log_level;
     int worker_num;
     int worker_shmkey;
-    int httpc_status_shmkey;
     int timeout_sec;
 	int ping_interval;
 	int ping_timeout;
 	int ping_event_ms;
 	int ping_event_code;
 	int pkt_log;
+    int trace_enable;
+    int oauth_enable;
 	config_setting_t *lb_config;
 
 	int http_opt_header_table_size;
@@ -98,7 +118,7 @@ typedef enum loadshare_mode {
 typedef struct conn_list {
 	int index;	// 0, 1, 2, 3, ....
 	int used;	// if 1 : conn retry, 0 : don't do anything
-	int conn;	// if 0 : disconnected, 1 : connected
+	volatile int conn;	// if 0 : disconnected, 1 : connected
 	int act;	// 1: act, 0: deact
 
 	char scheme[12];					// https (over TLS) | http (over TCP)
@@ -115,9 +135,10 @@ typedef struct conn_list {
 	int session_id;
 
 	int token_id;
-	int reconn_candidate;				// stream_id is full, trigger reconnect
+	volatile int reconn_candidate;				// stream_id is full, trigger reconnect
 
 	int nrfm_auto_added;				// this conn list added by nrfm 
+	time_t tombstone_date;				// last (conn->disconn) time
 } conn_list_t;
 
 typedef enum conn_status {
@@ -145,9 +166,8 @@ typedef struct httpc_ctx {
 	int	 recv_time_index;
 	http2_stream_data stream;
 
-#ifdef OAUTH
 	char access_token[MAX_ACC_TOKEN_LEN];
-#endif
+
 	iovec_item_t push_req;
 
 	/* for lb-fep-peer */
@@ -156,10 +176,15 @@ typedef struct httpc_ctx {
 	// if iovec pushed into tcp queue, worker can't cancel this
 	char tcp_wait;
 
-	/* for recv log */
+	FILE *send_log_file;
+	size_t send_file_size;
+	char *send_log_ptr;
+    char send_time[128];
+
 	FILE *recv_log_file;
-	size_t file_size;
-	char *log_ptr;
+	size_t recv_file_size;
+	char *recv_log_ptr;
+    char recv_time[128];
 
 	/* for NRFM CTX */
 	char for_nrfm_ctx;
@@ -187,6 +212,7 @@ typedef struct http2_session_data {
 	char scheme[12];
 	char authority[128];
 	int authority_len;
+    char host[AHIF_MAX_DESTHOST_LEN];
 
 	int list_index;		// hostname index
 
@@ -195,7 +221,7 @@ typedef struct http2_session_data {
 	int session_index; 
 	int session_id;		// unique id
 	int used;			// 1 : used, 0 : free
-	int connected;
+	volatile int connected;
 
 	int ping_cnt;
 	struct timeval ping_snd_time;
@@ -257,32 +283,31 @@ typedef enum select_node_depth {
 int     init_cfg();
 int     config_load_just_log();
 int     config_load();
-int     addcfg_server_hostname(char *hostname, char *type);
-int     addcfg_server_ipaddr(int id, char *scheme, char *ipaddr, int port, int conn_cnt, int token_id);
-int     actcfg_http_server(int id, int ip_exist, char *ipaddr, int port, int change_to_act);
-int     chgcfg_server_conn_cnt(int id, char *scheme, char *ipaddr, int port, int conn_cnt, int token_id);
-int     delcfg_server_ipaddr(int id, char *ipaddr, int port);
-int     delcfg_server_hostname(int id);
-int     chgcfg_server_ping(int interval, int timeout, int ms);
+config_setting_t        *conf_group_get_by_hostname(config_setting_t *setting, char *hostname);
+int     addcfg_server_hostname(char *hostname, char *type, const char **error_reason);
+int     addcfg_server_ipaddr(int id, char *scheme, char *ipaddr, int port, int conn_cnt, int token_id, const char **error_reason);
+int     actcfg_http_server(int id, int ip_exist, char *ipaddr, int port, int change_to_act, const char **error_reason);
+int     chgcfg_server_conn_cnt(int id, char *scheme, char *ipaddr, int port, int conn_cnt, int token_id, const char **error_reason);
+int     delcfg_server_ipaddr(int id, char *ipaddr, int port, const char **error_reason);
+int     delcfg_server_hostname(int id, const char **error_reason);
 
 /* ------------------------- list.c --------------------------- */
 httpc_ctx_t     *get_context(int thrd_idx, int ctx_idx, int used);
 void    clear_send_ctx(httpc_ctx_t *httpc_ctx);
 void    clear_and_free_ctx(httpc_ctx_t *httpc_ctx);
 void    set_intl_req_msg(intl_req_t *intl_req, int thrd_idx, int ctx_idx, int sess_idx, int session_id, int stream_id, int msg_type);
-http2_session_data_t      *get_session(int thrd_idx, int sess_idx, int session_id);
+http2_session_data_t    *get_session(int thrd_idx, int sess_idx, int session_id);
 void    save_session_info(httpc_ctx_t *httpc_ctx, int thrd_idx, int sess_idx, int session_id, int ctx_idx, conn_list_t *conn_list);
-int		find_least_conn_worker();
+int     find_least_conn_worker();
+void    select_list(conn_list_status_t CONN_STATUS[], char *type);
 void    print_list(conn_list_status_t conn_status[]);
-void    print_raw_list();
 void    write_list(conn_list_status_t CONN_STATUS[], char *buff);
 void    gather_list(conn_list_status_t CONN_STATUS[]);
-void    prepare_order(int list_index);
-void    order_list();
-void    log_pkt_send(char *prefix, nghttp2_nv *hdrs, int hdrs_len, char *body, int body_len);
+void    log_pkt_send(httpc_ctx_t *httpc_ctx, nghttp2_nv *hdrs, int hdrs_len, const char *body, int body_len);
 void    log_pkt_head_recv(httpc_ctx_t *httpc_ctx, const uint8_t *name, size_t namelen, const uint8_t *value, size_t valuelen);
-void    log_pkt_end_stream(int stream_id, httpc_ctx_t *httpc_ctx);
-void	log_pkt_httpc_error_reply(httpc_ctx_t *httpc_ctx, int resp_code);
+void    log_pkt_end_stream(httpc_ctx_t *httpc_ctx);
+void    log_pkt_httpc_error_reply(httpc_ctx_t *httpc_ctx, int resp_code);
+void    log_pkt_httpc_reset(httpc_ctx_t *httpc_ctx);
 
 /* ------------------------- client.c --------------------------- */
 int     send_request(http2_session_data_t *session_data, int thrd_index, int ctx_id);
@@ -303,7 +328,6 @@ void    main_loop();
 int     initialize();
 int     main(int argc, char **argv);
 
-
 /* ------------------------- command.c --------------------------- */
 void    handle_nrfm_request(GeneralQMsgType *msg);
 void    handle_nrfm_mmc(nrfm_mml_t *nrfm_cmd);
@@ -313,6 +337,7 @@ void    nrfm_mmc_add_proc(nrfm_mml_t *nrfm_cmd);
 void    nrfm_mmc_act_dact_proc(nrfm_mml_t *nrfm_cmd, int act);
 void    nrfm_mmc_del_proc(nrfm_mml_t *nrfm_cmd);
 void    nrfm_mmc_clear_proc();
+void    nrfm_mmc_tombstone_proc(nrfm_mml_t *nrfm_cmd);
 int     set_nrfm_response_msg(int ahif_msg_type) ;
 void    adjust_loglevel(TrcLibSetPrintMsgType *trcMsg);
 void    message_handle(evutil_socket_t fd, short what, void *arg);
@@ -326,10 +351,9 @@ int     func_chg_http_server_act(IxpcQMsgType *rxIxpcMsg, int change_to_act);
 int     func_chg_http_server(IxpcQMsgType *rxIxpcMsg);
 int     func_del_http_svr_ip(IxpcQMsgType *rxIxpcMsg);
 int     func_del_http_server(IxpcQMsgType *rxIxpcMsg);
-int     func_dis_http_svr_ping(IxpcQMsgType *rxIxpcMsg);
-int     func_chg_http_svr_ping(IxpcQMsgType *rxIxpcMsg);
-
-
+int     func_dis_httpc_config(IxpcQMsgType *rxIxpcMsg);
+void    relaod_http_config(char *conf_name, int conf_val);
+int     func_chg_httpc_config(IxpcQMsgType *rxIxpcMsg);
 
 /* ------------------------- lb.c --------------------------- */
 httpc_ctx_t     *get_null_recv_ctx(tcp_ctx_t *tcp_ctx);

@@ -1,7 +1,6 @@
 #include <nrfm.h>
 
 extern main_ctx_t MAIN_CTX;
-extern nrf_stat_t NRF_STAT;
 
 #define ERROR_NRFM_NOTIFICATION "\
 {\
@@ -78,7 +77,13 @@ int nf_notify_handle_check_req(AhifHttpCSMsgType *ahifPkt, char **problemDetail)
 		goto NNHCR_RET;
 	}
 	nf_retrieve_item_t temp_nf_item = {0,};
+#if 0
 	nf_retrieve_parse_list(js_uri, &temp_nf_item);
+#else
+    // schlee 20201109 test code
+    memset(&temp_nf_item, 0x00, sizeof(nf_retrieve_item_t));
+    sscanf(json_object_get_string(js_uri), "../nf-instances/%128s", temp_nf_item.nf_uuid);
+#endif
 	nf_retrieve_item_t *nf_item = nf_notify_search_item_by_uuid(&MAIN_CTX, temp_nf_item.nf_uuid);
 
 	if (strcmp(event_value, "NF_REGISTERED") && nf_item == NULL) {
@@ -171,7 +176,7 @@ void nf_notify_handle_request_proc(AhifHttpCSMsgType *ahifPkt)
 	char *problemDetail = NRFM_NOTI_ERR_MSG_EMPTY;
 	int respCode = nf_notify_handle_check_req(ahifPkt, &problemDetail);
 
-	NRF_STAT_INC(&NRF_STAT, NFStatusNotify, NRFS_ATTEMPT);
+	NRF_STAT_INC(MAIN_CTX.NRF_STAT, ahifPkt->head.destHost, NFStatusNotify, NRFS_ATTEMPT);
 
 	/* send response */
 	int sndRes = nf_notify_send_resp(ahifPkt, respCode, problemDetail);
@@ -180,12 +185,18 @@ void nf_notify_handle_request_proc(AhifHttpCSMsgType *ahifPkt)
 		struct timeval cur_time = {0,};
 		gettimeofday(&cur_time, NULL);
 
-		// increase tps
+#ifdef OVLD_LEGACY // eir
+		ovldlib_isOvldCtrl(cur_time.tv_sec, OVLDLIB_MODE_DONT_CTRL, MAIN_CTX.sysconfig.ovld_notify_code);
+#elif OVLD_2TEAM // epcc
+		int ovld_ret_code = 0;
+		ovldlib_isOvldCtrl(0, cur_time.tv_sec, OVLDLIB_MODE_DONT_CTRL, &ovld_ret_code);
+#else
 		ovldlib_isOvldCtrl(cur_time.tv_sec, OVLDLIB_MODE_DONT_CTRL, MAIN_CTX.sysconfig.ovld_notify_code, "NOTIFY");
 
 		if (respCode != 204 || sndRes < 0) { // increase fail cnt
 			ovldlib_increaseFailCnt(MAIN_CTX.sysconfig.ovld_notify_code);
 		}
+#endif
 	}
 
 	return;
@@ -213,31 +224,33 @@ int nf_notify_profile_add(nf_retrieve_item_t *nf_older_item, json_object *js_nf_
 
 	if (nf_older_item != NULL) {
 		nf_retr_info->nf_retrieve_items = g_slist_remove(nf_retr_info->nf_retrieve_items, nf_older_item);
-		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s remove item addr(%x)", __func__, nf_older_item);
+		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s remove item addr(%p)", __func__, nf_older_item);
 
 		if (nf_older_item->item_nf_profile) {
-			APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s remove nf_profile addr(%x)", __func__, nf_older_item->item_nf_profile);
+			APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s remove nf_profile addr(%p)", __func__, nf_older_item->item_nf_profile);
 			json_object_put(nf_older_item->item_nf_profile);
+            nf_older_item->item_nf_profile = NULL;
 		}
 		if (nf_older_item) {
 			NF_MANAGE_NF_DEL(&MAIN_CTX, nf_older_item);
-			APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s free nf_item addr(%x)", __func__, nf_older_item);
+			APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s free nf_item addr(%p)", __func__, nf_older_item);
 			free(nf_older_item);
 		}
 	}
 
-	nf_retrieve_item_t *nf_item = malloc(sizeof(nf_retrieve_item_t));
+	nf_retrieve_item_t *nf_item = malloc(sizeof(nf_retrieve_item_t)); // 1- malloc
 	memset(nf_item, 0x00, sizeof(nf_retrieve_item_t));
 
 	sprintf(nf_item->nf_uuid, "%s", json_object_get_string(js_uuid));
 
 	if ((nf_item->item_nf_profile = json_tokener_parse(json_object_get_string(js_nf_profile))) == NULL) {
 		APPLOG(APPLOG_ERR, "{{{DBG}}} %s fail to create json_nf_profile!", __func__);
+        free(nf_item); // <-- 2-1 fail free
 		return -1;
 	}
 
 	nf_retr_info->nf_retrieve_items = g_slist_append(nf_retr_info->nf_retrieve_items, nf_item);
-	NF_MANAGE_NF_ADD(&MAIN_CTX, nf_item);
+	NF_MANAGE_NF_ADD(&MAIN_CTX, nf_item); // <-- 2-2 success add to list
 
 	return 0;
 }
@@ -291,7 +304,7 @@ int nf_notify_profile_modify(nf_retrieve_item_t *nf_item, json_object *js_profil
 		sprintf(path_value, "%s", json_object_get_string(js_path));
 		json_object *js_target_path = search_json_object(nf_item->item_nf_profile, path_value);
 		if (js_target_path == NULL) {
-			APPLOG(APPLOG_ERR, "{{{DBG}}} %s nf_profile not exist [%s]", path_value);
+			APPLOG(APPLOG_ERR, "{{{DBG}}} %s nf_profile not exist [%s]", __func__, path_value);
 			return -1;
 		}
 
@@ -316,15 +329,16 @@ int nf_notify_profile_remove(nf_retrieve_item_t *nf_item)
 	nf_retrieve_info_t *nf_retr_info = nf_notify_search_info_by_uuid(&MAIN_CTX, nf_item->nf_uuid);
 
 	nf_retr_info->nf_retrieve_items = g_slist_remove(nf_retr_info->nf_retrieve_items, nf_item);
-	APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s remove item addr(%x)", __func__, nf_item);
+	APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s remove item addr(%p)", __func__, nf_item);
 
 	if (nf_item->item_nf_profile) {
-		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s remove nf_profile addr(%x)", __func__, nf_item->item_nf_profile);
+		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s remove nf_profile addr(%p)", __func__, nf_item->item_nf_profile);
 		json_object_put(nf_item->item_nf_profile);
+        nf_item->item_nf_profile = NULL;
 	}
 	if (nf_item) {
 		NF_MANAGE_NF_DEL(&MAIN_CTX, nf_item);
-		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s free nf_item addr(%x)", __func__, nf_item);
+		APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s free nf_item addr(%p)", __func__, nf_item);
 		free(nf_item);
 	}
 
@@ -358,13 +372,20 @@ nf_retrieve_info_t *nf_notify_search_info_by_uuid(main_ctx_t *MAIN_CTX, const ch
 	int nf_type_num = g_slist_length(MAIN_CTX->nf_retrieve_list);
 	for (int ii = 0; ii < nf_type_num; ii++) {
 		nf_retrieve_info_t *nf_retr_info = g_slist_nth_data(MAIN_CTX->nf_retrieve_list, ii);
-		int nf_item_num = g_slist_length(nf_retr_info->nf_retrieve_items);
-		for (int jj = 0; jj < nf_item_num; jj++) {
-			nf_retrieve_item_t *nf_item = g_slist_nth_data(nf_retr_info->nf_retrieve_items, jj);
-			if (!strcmp(nf_item->nf_uuid, nf_uuid)) {
-				return nf_retr_info;
-			}
-		}
+#if 0
+        int nf_item_num = g_slist_length(nf_retr_info->nf_retrieve_items);
+        for (int jj = 0; jj < nf_item_num; jj++) {
+            nf_retrieve_item_t *nf_item = g_slist_nth_data(nf_retr_info->nf_retrieve_items, jj);
+            if (!strcmp(nf_item->nf_uuid, nf_uuid)) {
+                return nf_retr_info;
+            }
+        }
+#else
+        nf_retrieve_item_t *nf_item = nf_retrieve_search_item_by_uuid(nf_retr_info->nf_retrieve_items, nf_uuid);
+        if (nf_item != NULL) {
+            return nf_retr_info;
+        }
+#endif
 	}
 	return NULL;
 }
@@ -374,13 +395,20 @@ nf_retrieve_item_t *nf_notify_search_item_by_uuid(main_ctx_t *MAIN_CTX, const ch
 	int nf_type_num = g_slist_length(MAIN_CTX->nf_retrieve_list);
 	for (int ii = 0; ii < nf_type_num; ii++) {
 		nf_retrieve_info_t *nf_retr_info = g_slist_nth_data(MAIN_CTX->nf_retrieve_list, ii);
-		int nf_item_num = g_slist_length(nf_retr_info->nf_retrieve_items);
-		for (int jj = 0; jj < nf_item_num; jj++) {
-			nf_retrieve_item_t *nf_item = g_slist_nth_data(nf_retr_info->nf_retrieve_items, jj);
-			if (!strcmp(nf_item->nf_uuid, nf_uuid)) {
-				return nf_item;
-			}
-		}
+#if 0
+        int nf_item_num = g_slist_length(nf_retr_info->nf_retrieve_items);
+        for (int jj = 0; jj < nf_item_num; jj++) {
+            nf_retrieve_item_t *nf_item = g_slist_nth_data(nf_retr_info->nf_retrieve_items, jj);
+            if (!strcmp(nf_item->nf_uuid, nf_uuid)) {
+                return nf_item;
+            }
+        }
+#else
+        nf_retrieve_item_t *nf_item = nf_retrieve_search_item_by_uuid(nf_retr_info->nf_retrieve_items, nf_uuid);
+        if (nf_item != NULL) {
+            return nf_item;
+        }
+#endif
 	}
 	return NULL;
 }
@@ -407,18 +435,29 @@ int nf_notify_send_resp(AhifHttpCSMsgType *ahifPktRecv, int respCode, char *prob
 	head->respCode = respCode;
 
     /* vheader */
+#if 0
     head->vheaderCnt = 2;
+#endif
+
+#if 0
     ahifPkt->vheader[0].vheader_id = VH_CONTENT_TYPE;
     sprintf(ahifPkt->vheader[0].vheader_body, "%s", "application/json");
     ahifPkt->vheader[1].vheader_id = VH_ACCEPT_ENCODING;;
     sprintf(ahifPkt->vheader[1].vheader_body, "%s", "application/json");
+#endif
 
 	switch(respCode) {
 		case 204: // no contents
-			NRF_STAT_INC(&NRF_STAT, NFStatusNotify, NRFS_SUCCESS);
+			NRF_STAT_INC(MAIN_CTX.NRF_STAT, head->destHost, NFStatusNotify, NRFS_SUCCESS);
 			break;
 		default:
-			NRF_STAT_INC(&NRF_STAT, NFStatusNotify, NRFS_FAIL);
+			NRF_STAT_INC(MAIN_CTX.NRF_STAT, head->destHost, NFStatusNotify, NRFS_FAIL);
+
+            head->vheaderCnt = 2;
+            ahifPkt->vheader[0].vheader_id = VH_CONTENT_TYPE;
+            sprintf(ahifPkt->vheader[0].vheader_body, "%s", "application/json");
+            ahifPkt->vheader[1].vheader_id = VH_ACCEPT_ENCODING;;
+            sprintf(ahifPkt->vheader[1].vheader_body, "%s", "application/json");
 
 			head->bodyLen = sprintf(ahifPkt->data, ERROR_NRFM_NOTIFICATION, respCode, problemDetail);
 			APPLOG(APPLOG_ERR, "{{{TEST}}} AHIF DATA is (%s)", ahifPkt->data);
@@ -427,7 +466,7 @@ int nf_notify_send_resp(AhifHttpCSMsgType *ahifPktRecv, int respCode, char *prob
 
 	size_t shmqlen = AHIF_APP_MSG_HEAD_LEN + AHIF_VHDR_LEN + ahifPkt->head.queryLen + ahifPkt->head.bodyLen;
 
-	int res = msgsnd(MAIN_CTX.my_qid.https_qid, msg, shmqlen, 0);
+	int res = msgsnd(MAIN_CTX.my_qid.https_qid, msg, shmqlen, IPC_NOWAIT);
 
 	if (res < 0) {
 		APPLOG(APPLOG_ERR, "{{{DBG}}} %s called, res (%d:fail), will discard, httpsQid(%d) err(%s)",

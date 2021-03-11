@@ -2,21 +2,23 @@
 
 extern main_ctx_t MAIN_CTX;
 
-extern shm_http_t *SHM_HTTP_PTR;
+extern shm_http_t *SHM_HTTPC_PTR;
 
 void NF_MANAGE_NF_ACT(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item)
 {
-	nf_manage_create_httpc_cmd_conn_act_dact(MAIN_CTX, nf_item, 1);
-	print_nrfm_mml_raw(&nf_item->httpc_cmd);
-	nf_manage_send_httpc_cmd(MAIN_CTX, nf_item);
+    if (nf_manage_create_httpc_cmd_conn_act_dact(MAIN_CTX, nf_item, 1) >= 0) {
+        print_nrfm_mml_raw(&nf_item->httpc_cmd);
+        nf_manage_send_httpc_cmd(MAIN_CTX, nf_item);
+    }
 }
 
 void NF_MANAGE_NF_ADD(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item)
 {
 	nf_retrieve_item_token_add(MAIN_CTX, nf_item);
-	nf_manage_create_httpc_cmd_conn_add(MAIN_CTX, nf_item);
-	print_nrfm_mml_raw(&nf_item->httpc_cmd);
-	nf_manage_send_httpc_cmd(MAIN_CTX, nf_item);
+    if (nf_manage_create_httpc_cmd_conn_add(MAIN_CTX, nf_item) >= 0) {
+        print_nrfm_mml_raw(&nf_item->httpc_cmd);
+        nf_manage_send_httpc_cmd(MAIN_CTX, nf_item);
+    }
 }
 
 void NF_MANAGE_NF_CLEAR(main_ctx_t *MAIN_CTX)
@@ -27,9 +29,9 @@ void NF_MANAGE_NF_CLEAR(main_ctx_t *MAIN_CTX)
     nrfm_mml_t *httpc_cmd = (nrfm_mml_t *)msg->body;
         
     msg->mtype = (long)MSGID_NRFM_HTTPC_MMC_REQUEST;
-    httpc_cmd->command = NRFM_MML_HTTPC_CLEAR;
+    httpc_cmd->command = HTTP_MML_HTTPC_CLEAR;
             
-    int res = msgsnd(MAIN_CTX->my_qid.httpc_qid, msg, sizeof(nrfm_mml_t), 0);
+    int res = msgsnd(MAIN_CTX->my_qid.httpc_qid, msg, sizeof(nrfm_mml_t), IPC_NOWAIT);
             
     if (res < 0) {
         APPLOG(APPLOG_ERR, "{{{DBG}}} %s called, res (%d:fail), will retry {httpc_qid:%d}",
@@ -39,17 +41,19 @@ void NF_MANAGE_NF_CLEAR(main_ctx_t *MAIN_CTX)
 
 void NF_MANAGE_NF_DACT(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item)
 {
-	nf_manage_create_httpc_cmd_conn_act_dact(MAIN_CTX, nf_item, 0);
-	print_nrfm_mml_raw(&nf_item->httpc_cmd);
-	nf_manage_send_httpc_cmd(MAIN_CTX, nf_item);
+	if (nf_manage_create_httpc_cmd_conn_act_dact(MAIN_CTX, nf_item, 0) >= 0) {
+        print_nrfm_mml_raw(&nf_item->httpc_cmd);
+        nf_manage_send_httpc_cmd(MAIN_CTX, nf_item);
+    }
 }
 
 void NF_MANAGE_NF_DEL(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item)
 {
     nf_retrieve_item_token_del(MAIN_CTX, nf_item);
-	nf_manage_create_httpc_cmd_conn_del(MAIN_CTX, nf_item);
-	print_nrfm_mml_raw(&nf_item->httpc_cmd);
-	nf_manage_send_httpc_cmd(MAIN_CTX, nf_item);
+    if (nf_manage_create_httpc_cmd_conn_del(MAIN_CTX, nf_item) >= 0) {
+        print_nrfm_mml_raw(&nf_item->httpc_cmd);
+        nf_manage_send_httpc_cmd(MAIN_CTX, nf_item);
+    }
 }
 
 void NF_MANAGE_RESTORE_HTTPC_CONN(main_ctx_t *MAIN_CTX)
@@ -75,7 +79,7 @@ void nf_manage_collect_avail_each_nf(nf_retrieve_item_t *nf_item, nf_list_pkt_t 
 	int nfType = nf_search_specific_info(nf_item->item_nf_profile, &js_specific_info);
 
 	if (nfType < 0) {
-		APPLOG(APPLOG_ERR, "{{{DBG}}} %s fail to search nf_info [uuid:%s]", __func__, nf_item->nf_uuid);
+		//APPLOG(APPLOG_ERR, "{{{DBG}}} %s fail to search nf_info [uuid:%s]", __func__, nf_item->nf_uuid);
 		return;
 	}
 
@@ -85,21 +89,18 @@ void nf_manage_collect_avail_each_nf(nf_retrieve_item_t *nf_item, nf_list_pkt_t 
 	nf_comm_plmn allowdPlmns[NF_MAX_ALLOWD_PLMNS] = {0,};
 	int allowdPlmnsNum = nf_get_allowd_plmns(nf_item->item_nf_profile, &allowdPlmns[0]);
 
-	int pos = SHM_HTTP_PTR->current;
+	int pos = SHM_HTTPC_PTR->current;
 	nrfm_mml_t *nf_mml = &nf_item->httpc_cmd;
 
 	for (int i = 0; i < nf_mml->info_cnt; i++) {
 		nf_conn_info_t *nf_conn = &nf_mml->nf_conns[i];
 
 		for (int k = 0; k < MAX_CON_NUM; k++) {
-			conn_list_status_t *conn_raw = &SHM_HTTP_PTR->connlist[pos][k];
+			conn_list_status_t *conn_raw = &SHM_HTTPC_PTR->connlist[pos][k];
 
-			if (conn_raw->nrfm_auto_added <= 0) continue;
-
+			if (conn_raw->nrfm_auto_added <= NF_ADD_RAW) continue; /* report only auto added */
 			if (conn_raw->occupied <= 0) continue;
-			if (conn_raw->act <= 0) continue;
-			if (conn_raw->conn_cnt <= 0) continue;
-			if (conn_raw->token_acquired <= 0) continue;
+
 			if (!strcmp(conn_raw->host, nf_item->nf_uuid) &&
 					!strcmp(conn_raw->scheme, nf_conn->scheme) &&
 					!strcmp(conn_raw->ip, nf_conn->ip) &&
@@ -128,7 +129,13 @@ void nf_manage_broadcast_nfs_to_fep(main_ctx_t *MAIN_CTX, nf_list_pkt_t *my_avai
 		nf_info->lastIndex = (my_avail_nfs->nf_avail_num - 1);
 
 		/* broad cast to fep */
-		g_slist_foreach(MAIN_CTX->fep_assoc_list, (GFunc)nf_manage_send_nfs_status_to_fep, nf_info);
+		if (MAIN_CTX->sysconfig.isifcs_mode == 1) {
+			g_slist_foreach(MAIN_CTX->fep_assoc_list, (GFunc)nf_manage_send_nfs_status_to_fep, nf_info);
+		} else {
+			assoc_t fep_assoc = {0,};
+			memset(&fep_assoc, 0x00, sizeof(assoc_t));
+			nf_manage_send_nfs_status_to_fep(&fep_assoc, nf_info);
+		}
 	}
 }
 
@@ -144,9 +151,6 @@ void nf_manage_collect_httpc_conn_status(main_ctx_t *MAIN_CTX)
 		/* collect auto added */
 		g_slist_foreach(MAIN_CTX->nf_retrieve_list, (GFunc)nf_manage_collect_avail_each_type, &my_avail_nfs);
 
-		if (MAIN_CTX->sysconfig.debug_mode)
-			printf_avail_nfs(&my_avail_nfs);
-
 		nf_manage_broadcast_nfs_to_fep(MAIN_CTX, &my_avail_nfs);
 	}
 
@@ -158,182 +162,342 @@ void nf_manage_collect_httpc_conn_status_cb(evutil_socket_t fd, short what, void
 	nf_manage_collect_httpc_conn_status(&MAIN_CTX);
 }
 
-int nf_manage_setting_opr_type(char *type)
+void nf_manage_httpc_remove_tombstone(main_ctx_t *MAIN_CTX, conn_list_status_t *httpc_conn)
 {
-	if (!strcmp(type, "NRF"))
-		return NF_TYPE_NRF;
-	else if (!strcmp(type, "UDM"))
-		return NF_TYPE_UDM;
-	else if (!strcmp(type, "AMF"))
-		return NF_TYPE_AMF;
-	else if (!strcmp(type, "SMF"))
-		return NF_TYPE_SMF;
-	else if (!strcmp(type, "AUSF"))
-		return NF_TYPE_AUSF;
-	else if (!strcmp(type, "NEF"))
-		return NF_TYPE_NEF;
-	else if (!strcmp(type, "PCF"))
-		return NF_TYPE_PCF;
-	else if (!strcmp(type, "SMSF"))
-		return NF_TYPE_SMSF;
-	else if (!strcmp(type, "NSSF"))
-		return NF_TYPE_NSSF;
-	else if (!strcmp(type, "UDR"))
-		return NF_TYPE_UDR;
-	else if (!strcmp(type, "LMF"))
-		return NF_TYPE_LMF;
-	else if (!strcmp(type, "GMLC"))
-		return NF_TYPE_GMLC;
-	else if (!strcmp(type, "EIR"))
-		return NF_TYPE_5G_EIR;
-	else if (!strcmp(type, "SEPP"))
-		return NF_TYPE_SEPP;
-	else if (!strcmp(type, "UPF"))
-		return NF_TYPE_UPF;
-	else if (!strcmp(type, "N3IWF"))
-		return NF_TYPE_N3IWF;
-	else if (!strcmp(type, "AF"))
-		return NF_TYPE_AF;
-	else if (!strcmp(type, "UDSF"))
-		return NF_TYPE_UDSF;
-	else if (!strcmp(type, "BSF"))
-		return NF_TYPE_BSF;
-	else if (!strcmp(type, "CHF"))
-		return NF_TYPE_CHF;
-	else 
-		return NF_TYPE_UNKNOWN;
+	char msgBuff[sizeof(GeneralQMsgType)] = {0,}; 
+
+	GeneralQMsgType *msg = (GeneralQMsgType *)msgBuff;
+	nrfm_mml_t *httpc_cmd = (nrfm_mml_t *)msg->body;
+
+	msg->mtype = (long)MSGID_NRFM_HTTPC_MMC_REQUEST;
+	httpc_cmd->command = HTTP_MML_HTTPC_TOMBSTONE;
+
+    httpc_cmd->seqNo = ++MAIN_CTX->MAIN_SEQNO;
+
+    sprintf(httpc_cmd->host, httpc_conn->host);
+    sprintf(httpc_cmd->type, httpc_conn->type);
+
+    httpc_cmd->info_cnt = 1;
+    httpc_cmd->nf_conns[0].occupied = 1;
+    sprintf(httpc_cmd->nf_conns[0].scheme, httpc_conn->scheme);
+    sprintf(httpc_cmd->nf_conns[0].ip, httpc_conn->ip);
+    httpc_cmd->nf_conns[0].port = httpc_conn->port;
+
+    /* dump log */
+    print_nrfm_mml_raw(httpc_cmd);
+
+    /* send */
+    int res = msgsnd(MAIN_CTX->my_qid.httpc_qid, msg, sizeof(nrfm_mml_t), IPC_NOWAIT);
+    if (res < 0) {
+		APPLOG(APPLOG_ERR, "{{{DBG}}} %s called, msgsnd res (%d:fail) httpc_qid(%d)", __func__, res, MAIN_CTX->my_qid.httpc_qid);
+	}
+}
+
+void nf_manage_httpc_conn_status_cb(evutil_socket_t fd, short what, void *arg)
+{
+	APPLOG(APPLOG_DEBUG, "{{{DBG}}} %s called", __func__);
+
+    int tombstone_expire_min = 0;
+    time_t curr_tm = time(NULL);
+
+    /* if timer(min) == 0, just leave */
+    config_setting_t *setting = config_lookup(&MAIN_CTX.CFG, CF_HTTPC_DISCONN_TM);
+	if (setting == NULL) {
+		APPLOG(APPLOG_ERR, "%s() cant find config [%s] in ~/nrfm.cfg", __func__, CF_HTTPC_DISCONN_TM);
+		return;
+	}
+    if ((tombstone_expire_min = config_setting_get_int(setting)) <= 0)  {
+        return;
+    }
+
+	int pos = SHM_HTTPC_PTR->current;
+
+	for (int k = 0; k < MAX_CON_NUM; k++) {
+		conn_list_status_t *httpc_conn = &SHM_HTTPC_PTR->connlist[pos][k];
+
+		if (httpc_conn->occupied <= 0) continue;
+		if (httpc_conn->nrfm_auto_added == NF_ADD_RAW) continue;
+		if (httpc_conn->conn_cnt > 0) continue;
+		if (httpc_conn->tombstone_date == 0) continue;
+
+		if ((curr_tm - httpc_conn->tombstone_date) >= (tombstone_expire_min * 60)) {
+			APPLOG(APPLOG_ERR, "%s() remove old tombstone httpc conn [%.24s + %d min] host (%s)",
+					__func__, ctime(&httpc_conn->tombstone_date), tombstone_expire_min, httpc_conn->host);
+			if (httpc_conn->nrfm_auto_added == NF_ADD_NRF) {
+				nf_retrieve_item_t *nf_item = nf_notify_search_item_by_uuid(&MAIN_CTX, httpc_conn->host);
+				if (nf_item != NULL)
+					nf_notify_profile_remove(nf_item);
+			} else if (httpc_conn->nrfm_auto_added == NF_ADD_CALLBACK) {
+				acc_token_info_t *token_info = get_acc_token_info(MAIN_CTX.nrf_access_token.ACC_TOKEN_LIST, httpc_conn->token_id, 1);
+				if (token_info != NULL)
+					nf_token_del_shm_by_nf(token_info);
+				nf_manage_httpc_remove_tombstone(&MAIN_CTX, httpc_conn);
+			}
+		}
+	}
+}
+
+void nf_manage_https_conn_status_cb(evutil_socket_t fd, short what, void *arg)
+{
+    int tombstone_expire_min = 0;
+    time_t curr_tm = time(NULL);
+
+    /* if timer(min) == 0, just leave */
+    config_setting_t *setting = config_lookup(&MAIN_CTX.CFG, CF_HTTPS_DISCONN_TM);
+	if (setting == NULL) {
+		APPLOG(APPLOG_ERR, "%s() cant find config [%s] in ~/nrfm.cfg", __func__, CF_HTTPS_DISCONN_TM);
+		return;
+	}
+    if ((tombstone_expire_min = config_setting_get_int(setting)) <= 0)  {
+        return;
+    }
+
+    for (int i = 0; i < MAX_LIST_NUM; i++) {
+        allow_list_t *https_conn = &MAIN_CTX.HTTPS_ALLOW_STATUS[i];
+
+        if (https_conn->used == 0 || https_conn->auto_added != 1 || https_conn->curr > 0) 
+            continue;
+
+        if ((curr_tm - https_conn->tombstone_date) >= (tombstone_expire_min * 60)) {
+            APPLOG(APPLOG_ERR, "%s() remove old tombstone https conn [%.24s + %d min] host (%s)",
+                __func__, ctime(&https_conn->tombstone_date), tombstone_expire_min, https_conn->host);
+
+            GeneralQMsgType msg = { .mtype = MSGID_NRFM_HTTPS_REQUEST };
+            nrfm_https_remove_conn_t *remove_direct = (nrfm_https_remove_conn_t *)msg.body;
+            size_t size = sizeof(nrfm_https_remove_conn_t);
+            remove_direct->list_index = https_conn->list_index;
+            remove_direct->item_index = https_conn->item_index;
+            sprintf(remove_direct->host, https_conn->host);
+
+            APPLOG(APPLOG_ERR, "%s() create remove directive pkt [list:%d item:%d host:%s]",
+                    __func__, remove_direct->list_index, remove_direct->item_index, remove_direct->host);
+
+            int res = msgsnd(MAIN_CTX.my_qid.https_qid, &msg, size, 0);
+
+            if (res < 0) {
+                APPLOG(APPLOG_ERR, "{{{DBG}}} %s called, res (%d:fail), will discard, httpsQid(%d) err(%s)",
+                        __func__, res, MAIN_CTX.my_qid.https_qid, strerror(errno));
+            }
+        }
+    }
+
 }
 
 void nf_manage_collect_oper_added_nf(main_ctx_t *MAIN_CTX, nf_list_pkt_t *my_avail_nfs)
 {
-	int pos = SHM_HTTP_PTR->current;
+	int pos = SHM_HTTPC_PTR->current;
 
 	for (int k = 0; k < MAX_CON_NUM; k++) {
-		conn_list_status_t *conn_raw = &SHM_HTTP_PTR->connlist[pos][k];
+		conn_list_status_t *conn_raw = &SHM_HTTPC_PTR->connlist[pos][k];
 
 		if (my_avail_nfs->nf_avail_num >= NF_MAX_AVAIL_LIST)
 			return;
 
-		if (conn_raw->nrfm_auto_added >= 1) continue;
-
+#if 0
+		if (conn_raw->nrfm_auto_added > NF_ADD_RAW) continue; /* report only operator added raw */
+#else
+		if (conn_raw->nrfm_auto_added == NF_ADD_NRF) continue; /* report only operator added raw */
+#endif
 		if (conn_raw->occupied <= 0) continue;
-		if (conn_raw->act <= 0) continue;
-		if (conn_raw->conn_cnt <= 0) continue;
-		if (conn_raw->token_acquired <= 0) continue;
 
 		nf_service_info *nf_avail = &my_avail_nfs->nf_avail[my_avail_nfs->nf_avail_num++];
+
+        if (conn_raw->act <= 0 ||
+            conn_raw->conn_cnt <= 0 ||
+#if 0
+            conn_raw->token_acquired <= 0) {
+#else
+            ((MAIN_CTX->sysconfig.oauth_enable == 1) && (conn_raw->token_acquired <= 0))) {
+#endif
+            nf_avail->available = 0;
+        } else {
+            nf_avail->available = 1;
+        }
 
 		nf_avail->occupied = 1;
 		nf_avail->lbId = MAIN_CTX->my_info.myLabelNum;
 
 		sprintf(nf_avail->hostname, "%s", conn_raw->host);
-		nf_avail->nfType = nf_manage_setting_opr_type(conn_raw->type);
+		nf_avail->nfType = nf_type_to_enum(conn_raw->type);
 		sprintf(nf_avail->type, "%s", conn_raw->type);
 		sprintf(nf_avail->scheme, "%s", conn_raw->scheme);
 		sprintf(nf_avail->ipv4Address, "%s", conn_raw->ip);
 		nf_avail->port = conn_raw->port;
+		nf_avail->auto_add = conn_raw->nrfm_auto_added;
 	}
 }
 
-void nf_manage_create_httpc_cmd_conn_act_dact(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item, int act)
+int nf_manage_create_httpc_cmd_conn_act_dact(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item, int act)
 {
 	nrfm_mml_t *httpc_cmd = &nf_item->httpc_cmd;
 
 	/* never added */
 	if (httpc_cmd->id <= 0)
-		return;
+		return -1;
 	if (httpc_cmd->info_cnt <= 0)
-		return;
+		return -1;
 
 	if (act)
-		httpc_cmd->command = NRFM_MML_HTTPC_ACT;
+		httpc_cmd->command = HTTP_MML_HTTPC_ACT;
 	else
-		httpc_cmd->command = NRFM_MML_HTTPC_DACT;
+		httpc_cmd->command = HTTP_MML_HTTPC_DACT;
 
 	httpc_cmd->seqNo = nf_item->httpc_cmd_ctx.seqNo = ++MAIN_CTX->MAIN_SEQNO;
 
-	return;
+	return 0;
 }
 
-void nf_manage_create_httpc_cmd_conn_add(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item)
+int nf_manage_create_httpc_cmd_conn_add(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item)
 {
 	nrfm_mml_t httpc_add_cmd = {0,};
 
-	httpc_add_cmd.command = NRFM_MML_HTTPC_ADD;
+	httpc_add_cmd.command = HTTP_MML_HTTPC_ADD;
+	httpc_add_cmd.nrfm_auto_added = NF_ADD_NRF; /* this connection created by NRF (AUTO) */
+
 	httpc_add_cmd.seqNo = nf_item->httpc_cmd_ctx.seqNo = ++MAIN_CTX->MAIN_SEQNO;
 
 	sprintf(httpc_add_cmd.host, "%s", nf_item->nf_uuid);
 
 	char key_nfType[128] = "nfType";
 	json_object *js_nfType = search_json_object(nf_item->item_nf_profile, key_nfType);
-	sprintf(httpc_add_cmd.type, "%s", json_object_get_string(js_nfType));
+    if (js_nfType == NULL)
+        return -1;
+    else
+        sprintf(httpc_add_cmd.type, "%s", json_object_get_string(js_nfType));
 
 	char key_services[128] = "nfServices";
 	json_object *js_services = search_json_object(nf_item->item_nf_profile, key_services);
+    if (js_services == NULL)
+        return -1;
 
 	int array_length = json_object_array_length(js_services);
 	for (int i = 0; i < array_length; i++) {
-		json_object *js_elem = json_object_array_get_idx(js_services, i);
-		char key_service[128] = "serviceName";
-		char key_scheme[128] = "scheme";
-		char key_ip[128] = "/ipEndPoints/0/ipv4Address"; // we use only 0th index in ipEndPoints
-		char key_port[128] = "/ipEndPoints/0/port";
-		json_object *js_service = search_json_object(js_elem, key_service);
-		json_object *js_scheme = search_json_object(js_elem, key_scheme);
-		json_object *js_ip = search_json_object(js_elem, key_ip);
-		json_object *js_port = search_json_object(js_elem, key_port);
+        json_object *js_elem = json_object_array_get_idx(js_services, i);
+        char key_service[128] = "serviceName";
+        char key_scheme[128] = "scheme";
+        char key_allowed_nf_types[128] = "allowedNfTypes";
+        json_object *js_service = search_json_object(js_elem, key_service);
+        json_object *js_scheme = search_json_object(js_elem, key_scheme);
+        json_object *js_allowed_nf_types = search_json_object(js_elem, key_allowed_nf_types);
 
-		if (js_scheme == NULL || js_ip == NULL) {
-			APPLOG(APPLOG_ERR, "{{{DBG}}} %s can't find scheme or ipv4Address in nfServices!", __func__);
-			continue;
-		}
-		const char *service = json_object_get_string(js_service);
-		const char *scheme = json_object_get_string(js_scheme);
-		const char *ip = json_object_get_string(js_ip);
-		int port = json_object_get_int(js_port);
+        if (js_service == NULL || js_scheme == NULL) {
+            APPLOG(APPLOG_ERR, "{{{DBG}}} %s can't find serviceName or scheme in nfServices!", __func__);
+            continue;
+        }
+        const char *service = json_object_get_string(js_service);
+        const char *scheme = json_object_get_string(js_scheme);
+        /* connect only allowed, if exist */
+        if (js_allowed_nf_types != NULL) {
+            int allowd_for_me = 0;
+            char *my_nf_type = cfg_get_mp_nf_type(MAIN_CTX); // free
+            for (int i = 0; i < json_object_array_length(js_allowed_nf_types); i++) {
+                const char *nf_type = json_object_get_string(json_object_array_get_idx(js_allowed_nf_types, i));
+                if (!strcmp(nf_type, my_nf_type)) {
+                    allowd_for_me = 1;
+                }
+            }
+            free(my_nf_type); // free
+            if (allowd_for_me == 0) {
+                APPLOG(APPLOG_ERR, "{{{DBG}}} %s check service=(%s) not allowd for me, skip this!", __func__, service);
+                continue;
+            }
+        }
 
-		if (strcmp(scheme, "https") && strcmp(scheme, "http")) {
-			APPLOG(APPLOG_ERR, "{{{DBG}}} %s scheme invalid [%s]!", __func__, scheme);
-			continue;
-		}
-		struct sockaddr_in sa = {0,};
-		if (inet_pton(AF_INET, ip, &(sa.sin_addr)) == 0) {
-			APPLOG(APPLOG_ERR, "{{{DBG}}} %s ip invalid [%s]!", __func__, ip);
-			continue;
-		}
-		if (port == 0) { /* port can not exist */
-			if (!strcmp(scheme, "https")) 
-				port = 443;
-			else 
-				port = 80;
-			APPLOG(APPLOG_ERR, "{{{DBG}}} %s port setted as [%d]", __func__, port);
-		}
+        if (strcmp(scheme, "https") && strcmp(scheme, "http")) {
+            APPLOG(APPLOG_ERR, "{{{DBG}}} %s scheme invalid [%s]!", __func__, scheme);
+            continue;
+        }
 
-		if (nf_manage_fill_nrfm_mml(&httpc_add_cmd, service, scheme, ip, port) >= HTTP_MAX_CONN) {
-			APPLOG(APPLOG_ERR, "{{{DBG}}} %s httpc conn pkt full num", __func__);
-			break;
-		}
+        // drain conn info from ipEndPoints:[]
+        char key_ip_end_points[128] = "ipEndPoints";
+        json_object *js_ip_end_points = search_json_object(js_elem, key_ip_end_points);
+        if (js_ip_end_points) {
+
+            for (int k = 0; k < json_object_array_length(js_ip_end_points); k++) {
+                char key_ip[128] = {0,};
+                char key_port[128] = {0,};
+                sprintf(key_ip, "/ipEndPoints/%d/ipv4Address", k);
+                sprintf(key_port, "/ipEndPoints/%d/port", k);
+                json_object *js_ip = search_json_object(js_elem, key_ip);
+                json_object *js_port = search_json_object(js_elem, key_port);
+
+                const char *ip = json_object_get_string(js_ip);
+                int port = json_object_get_int(js_port);
+
+                struct sockaddr_in sa = {0,};
+                if (inet_pton(AF_INET, ip, &(sa.sin_addr)) == 0) {
+                    APPLOG(APPLOG_ERR, "{{{DBG}}} %s ip invalid [%s]!", __func__, ip);
+                    continue;
+                }
+                if (port == 0) { /* port can not exist */
+                    if (!strcmp(scheme, "https")) 
+                        port = 443;
+                    else 
+                        port = 80;
+                    APPLOG(APPLOG_ERR, "{{{DBG}}} %s port setted as [%d]", __func__, port);
+                }
+
+                if (nf_manage_fill_nrfm_mml(&httpc_add_cmd, service, scheme, ip, port) >= HTTP_MAX_ADDR) {
+                    APPLOG(APPLOG_ERR, "{{{DBG}}} %s httpc conn pkt full num", __func__);
+                    goto NMCHCCA_END;
+                }
+            }
+        }
+        /* drain conn info from defaultNotificationSubscriptions:[] */
+        char key_def_noti_subsc[128] = "defaultNotificationSubscriptions";
+        json_object *js_def_noti_subsc = search_json_object(js_elem, key_def_noti_subsc);
+        if (js_def_noti_subsc) {
+
+            for (int k = 0; k < json_object_array_length(js_def_noti_subsc); k++) {
+                char key_callback_uri[128] = {0,};
+                char key_notif_type[128] = {0,};
+                sprintf(key_callback_uri, "/defaultNotificationSubscriptions/%d/callbackUri", k);
+                sprintf(key_notif_type, "/defaultNotificationSubscriptions/%d/notificationType", k);
+                json_object *js_callback_uri = search_json_object(js_elem, key_callback_uri);
+                json_object *js_notif_type = search_json_object(js_elem, key_notif_type);
+                if (js_callback_uri == NULL || js_notif_type == NULL) {
+                    continue;
+                }
+                const char *uri = json_object_get_string(js_callback_uri);
+                const char *notif_type = json_object_get_string(js_notif_type);
+                char scheme[128] = {0,};
+                char ip[128] ={0,};
+                char portstr[128] = {0,};
+                sscanf(uri, "%127[^:/]://%127[^:]:%127[^/]", scheme, ip, portstr);
+                int port = atoi(portstr);
+                if (nf_manage_fill_nrfm_mml(&httpc_add_cmd, notif_type, scheme, ip, port) >= HTTP_MAX_ADDR) {
+                    APPLOG(APPLOG_ERR, "{{{DBG}}} %s httpc conn pkt full num", __func__);
+                    goto NMCHCCA_END;
+                } else {
+                    APPLOG(APPLOG_ERR, "{{{DBG}}} %s create http/2 conn for [%s] to [%s://%s:%d]", __func__,
+                            notif_type, scheme, ip, port);
+                }
+            }
+        }
 	}
 
+NMCHCCA_END:
 	httpc_add_cmd.token_id = nf_item->token_id;
 
 	memcpy(&nf_item->httpc_cmd, &httpc_add_cmd, sizeof(nrfm_mml_t));
+
+    return 0;
 }
 
-void nf_manage_create_httpc_cmd_conn_del(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item)
+int nf_manage_create_httpc_cmd_conn_del(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item)
 {
 	nrfm_mml_t *httpc_cmd = &nf_item->httpc_cmd;
 
 	/* never added */
 	if (httpc_cmd->id <= 0)
-		return;
+		return -1;
 	if (httpc_cmd->info_cnt <= 0)
-		return;
+		return -1;
 
-	httpc_cmd->command = NRFM_MML_HTTPC_DEL;
+	httpc_cmd->command = HTTP_MML_HTTPC_DEL;
 	httpc_cmd->seqNo = nf_item->httpc_cmd_ctx.seqNo = ++MAIN_CTX->MAIN_SEQNO;
 
-	return;
+	return 0;
 }
 
 int nf_manage_create_lb_list_get_load(json_object *nf_profile, char *service_name)
@@ -393,6 +557,18 @@ void nf_manage_create_lb_list_pkt(main_ctx_t *MAIN_CTX, conn_list_status_t *conn
 		nf_avail->occupied = 1;
 		nf_avail->lbId = MAIN_CTX->my_info.myLabelNum;
 
+        if (conn_raw->act <= 0 ||
+            conn_raw->conn_cnt <= 0 ||
+#if 0
+            conn_raw->token_acquired <= 0) {
+#else
+            ((MAIN_CTX->sysconfig.oauth_enable == 1) && (conn_raw->token_acquired <= 0))) {
+#endif
+            nf_avail->available = 0;
+        } else {
+            nf_avail->available = 1;
+        }
+
 		nf_avail->nfType = nfType;
 		memcpy(&nf_avail->nfTypeInfo, nf_specific_info, sizeof(nf_type_info));
 		nf_avail->allowdPlmnsNum = allowdPlmnsNum;
@@ -408,7 +584,7 @@ void nf_manage_create_lb_list_pkt(main_ctx_t *MAIN_CTX, conn_list_status_t *conn
 		nf_avail->priority = nf_manage_create_lb_list_get_priority(nf_profile, nf_avail->serviceName);
 		nf_avail->load = nf_manage_create_lb_list_get_load(nf_profile, nf_avail->serviceName);
 
-		nf_avail->auto_add = 1;
+		nf_avail->auto_add = conn_raw->nrfm_auto_added;
 	}
 }
 
@@ -465,7 +641,7 @@ void nf_manage_handle_cmd_res(nrfm_mml_t *httpc_cmd_res)
 	stop_ctx_timer(NF_CTX_TYPE_HTTPC_CMD, &nf_item->httpc_cmd_ctx);
 
 	switch (httpc_cmd_res->command) {
-		case NRFM_MML_HTTPC_ADD:
+		case HTTP_MML_HTTPC_ADD:
 			nf_item->httpc_cmd.id = httpc_cmd_res->id;
 			APPLOG(APPLOG_ERR, "{{{DBG}}} %s add success response id (%d)", __func__,  nf_item->httpc_cmd.id);
 			break;
@@ -490,28 +666,6 @@ void nf_manage_handle_httpc_alive(nrfm_noti_t *httpc_noti)
 	}
 }
 
-#if 0
-int nf_manage_search_specific_info(json_object *nf_profile, json_object **js_specific_info)
-{
-	char key_nfType[128] = "nfType";
-	json_object *js_nfType = search_json_object(nf_profile, key_nfType);
-	const char *nfType = json_object_get_string(js_nfType);
-
-	if(!strcmp(nfType, "UDM")) {
-		char key_specific_info[128] = "udmInfo";
-		*js_specific_info = search_json_object(nf_profile, key_specific_info);
-		return NF_TYPE_UDM;
-	} else if(!strcmp(nfType, "UDR")) {
-		char key_specific_info[128] = "udrInfo";
-		*js_specific_info = search_json_object(nf_profile, key_specific_info);
-		return NF_TYPE_UDR;
-	} else {
-		*js_specific_info = NULL;
-		return NF_TYPE_UNKNOWN;
-	}
-}
-#endif
-
 void nf_manage_send_httpc_cmd(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item)
 {
 	char msgBuff[sizeof(GeneralQMsgType)] = {0,};
@@ -522,7 +676,7 @@ void nf_manage_send_httpc_cmd(main_ctx_t *MAIN_CTX, nf_retrieve_item_t *nf_item)
 	msg->mtype = (long)MSGID_NRFM_HTTPC_MMC_REQUEST;
 	memcpy(httpc_cmd, &nf_item->httpc_cmd, sizeof(nrfm_mml_t));
 
-    int res = msgsnd(MAIN_CTX->my_qid.httpc_qid, msg, sizeof(nrfm_mml_t), 0);
+    int res = msgsnd(MAIN_CTX->my_qid.httpc_qid, msg, sizeof(nrfm_mml_t), IPC_NOWAIT);
 
     if (res < 0) {
         /* CHECK !!! after 1 sec will auto retry */

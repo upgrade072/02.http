@@ -1,43 +1,52 @@
 #include <nrfm.h>
 
 main_ctx_t MAIN_CTX;
-nrf_stat_t NRF_STAT;
 
 int logLevel = APPLOG_DEBUG;
 int *lOG_FLAG = &logLevel;
 
 int ixpcQid; // for MML CMD
-shm_http_t *SHM_HTTP_PTR; // httpc conn status shm
+shm_http_t *SHM_HTTPC_PTR; // httpc conn status shm
 
-#define HTTPC_CONN_STATUS_KEY "client_cfg.sys_config.httpc_status_shmkey"
 int get_httpc_shm()
 {
-    config_t CFG = {0,};
+    char fname[1024] = {0,};
+    sprintf(fname,"%s/%s", getenv(IV_HOME), SYSCONF_FILE);
 
-    // load nrfm.cfg
-    char conf_path[1024] = {0,};
-    sprintf(conf_path, "%s/data/client.cfg", getenv(IV_HOME));
+    char tmp[1024] = {0,};
+    if (conflib_getNthTokenInFileSection (fname, "SHARED_MEMORY_KEY", "SHM_HTTPC_CONN", 1, tmp) < 0 )
+        return -1;
+    int shm_httpc_conn_key = strtol(tmp,(char**)0,0);
 
-    if (!config_read_file(&CFG, conf_path)) {
-        APPLOG(APPLOG_ERR, "config read fail! (%s|%d - %s)",
-                config_error_file(&CFG),
-                config_error_line(&CFG),
-                config_error_text(&CFG));
+    if (get_http_shm(shm_httpc_conn_key) < 0) {
+        fprintf(stderr,"{{{INIT}}} httpc conn status shm create fail!\n");
         return (-1);
-    } else {
-        APPLOG(APPLOG_ERR, "TODO| config read from ./client.cfg success!\n");
     }
 
-    int httpc_shm_key = 0;
-    if (config_lookup_int(&CFG, HTTPC_CONN_STATUS_KEY, &httpc_shm_key) < 0) {
-        fprintf(stderr, "TODO| fail to get (%s) shm key fail!\n", HTTPC_CONN_STATUS_KEY);
-		config_destroy(&CFG);
-        return (-1);
-    } else {
-		APPLOG(APPLOG_ERR, "{{{FUCK}}} SHM KEY IS [%x]", httpc_shm_key);
-		config_destroy(&CFG);
-		return get_http_shm(httpc_shm_key);
-	}
+    return 0;
+}
+
+int get_https_shm(main_ctx_t *MAIN_CTX)
+{
+    char fname[1024] = {0,};
+    sprintf(fname,"%s/%s", getenv(IV_HOME), SYSCONF_FILE);
+
+    char tmp[1024] = {0,};
+    if (conflib_getNthTokenInFileSection (fname, "SHARED_MEMORY_KEY", "SHM_HTTPS_CONN", 1, tmp) < 0 )
+        return -1;
+    int shm_https_conn_key = strtol(tmp,(char**)0,0);
+
+    int shm_https_conn_id = 0;
+    if ((shm_https_conn_id = (int)shmget (shm_https_conn_key, sizeof(allow_list_t) * MAX_LIST_NUM, 0644|IPC_CREAT)) < 0) {
+        APPLOG(APPLOG_ERR,"[%s] SHM_HTTPS_CONN shmget fail; err=%d(%s)", __func__, errno, strerror(errno));
+        return -1;
+    }
+    if ((void*)(MAIN_CTX->HTTPS_ALLOW_STATUS = (allow_list_t *)shmat(shm_https_conn_id,0,0)) == (void*)-1) {
+        APPLOG(APPLOG_ERR,"[%s] SHM_HTTPS_CONN shmat fail; err=%d(%s)", __func__, errno, strerror(errno));
+        return -1;
+    }
+
+    return 0;
 }
 
 int get_my_profile(main_ctx_t *MAIN_CTX)
@@ -61,12 +70,17 @@ int get_my_qid(main_ctx_t *MAIN_CTX)
 	char fname[1024] = {0,};
 	char tmp[64] = {0,};
 	int key = 0;
+#ifdef SYSCONF_LEGACY
+    int PROC_NAME_LOC = 1; // some old sysconf : eir ...
+#else
+    int PROC_NAME_LOC = 3;
+#endif
 
 	/* ~/data/sysconfig */
 	sprintf(fname,"%s/%s", getenv(IV_HOME), SYSCONF_FILE);
 
 	/* create receive queue */
-	if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", MAIN_CTX->my_info.myProcName, 3, tmp) < 0) {
+	if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", MAIN_CTX->my_info.myProcName, PROC_NAME_LOC, tmp) < 0) {
 		APPLOG(APPLOG_ERR, "{{{INIT}}} configlib get token APPLICATIONS [%s] fail!", MAIN_CTX->my_info.myProcName);
 		return -1;
 	}
@@ -77,7 +91,7 @@ int get_my_qid(main_ctx_t *MAIN_CTX)
 	}
 
 	/* create send request queue */
-	if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", "HTTPC", 3, tmp) < 0) {
+	if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", "HTTPC", PROC_NAME_LOC, tmp) < 0) {
 		APPLOG(APPLOG_ERR, "{{{INIT}}} configlib get token APPLICATIONS [HTTPC] fail!");
 		return -1;
 	}
@@ -88,7 +102,7 @@ int get_my_qid(main_ctx_t *MAIN_CTX)
 	}
 
 	/* create send response queue */
-	if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", "HTTPS", 3, tmp) < 0) {
+	if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", "HTTPS", PROC_NAME_LOC, tmp) < 0) {
 		APPLOG(APPLOG_ERR, "{{{INIT}}} configlib get token APPLICATIONS [HTTPS] fail!");
 		return -1;
 	}
@@ -98,23 +112,42 @@ int get_my_qid(main_ctx_t *MAIN_CTX)
 		return -1;
 	}
 
-	/* ~/data/isif.conf */
-    sprintf(fname,"%s/%s", getenv(IV_HOME), ISIF_CONF_FILE);
-    if ((MAIN_CTX->my_qid.isifs_rx_qid = 
-                shmqlib_getQid (fname, "ISIFS_TO_APP_SHMQ", MAIN_CTX->my_info.myProcName, SHMQLIB_MODE_GETTER)) < 0) {
-        APPLOG(APPLOG_ERR,"{{{INIT}}} fail to get isifs rx qid %s:%s!", fname, MAIN_CTX->my_info.myProcName);
-        return -1;
-    }
+    /* ~/data/isif.conf */
+    if (MAIN_CTX->sysconfig.isifcs_mode == 1) {
+        APPLOG(APPLOG_ERR, "{{{INIT}}} as isifcs mode=[%d], use ISIFC/S SHM from=[%s]",
+            MAIN_CTX->sysconfig.isifcs_mode, ISIF_CONF_FILE);
 
-    if ((MAIN_CTX->my_qid.isifc_tx_qid = 
-                shmqlib_getQid (fname, "APP_TO_ISIFC_SHMQ", MAIN_CTX->my_info.myProcName, SHMQLIB_MODE_PUTTER)) < 0) {
-        APPLOG(APPLOG_ERR,"{{{INIT}}} fail to get isifc tx qid %s:%s!", fname, MAIN_CTX->my_info.myProcName);
-        return -1;
+        sprintf(fname,"%s/%s", getenv(IV_HOME), ISIF_CONF_FILE);
+        if ((MAIN_CTX->my_qid.isifs_rx_qid = 
+                    shmqlib_getQid (fname, "ISIFS_TO_APP_SHMQ", MAIN_CTX->my_info.myProcName, SHMQLIB_MODE_GETTER)) < 0) {
+            APPLOG(APPLOG_ERR,"{{{INIT}}} fail to get isifs rx qid %s:%s! err=%d(%s)!", fname, MAIN_CTX->my_info.myProcName, errno, strerror(errno));
+            return -1;
+        }
+
+        if ((MAIN_CTX->my_qid.isifc_tx_qid = 
+                    shmqlib_getQid (fname, "APP_TO_ISIFC_SHMQ", MAIN_CTX->my_info.myProcName, SHMQLIB_MODE_PUTTER)) < 0) {
+            APPLOG(APPLOG_ERR,"{{{INIT}}} fail to get isifc tx qid %s:%s! err=%d(%s)!", fname, MAIN_CTX->my_info.myProcName, errno, strerror(errno));
+            return -1;
+        }
+    } else {
+        APPLOG(APPLOG_ERR, "{{{INIT}}} as isifcs mode=[%d], use ISIFC/S SHM from=[%s]",
+            MAIN_CTX->sysconfig.isifcs_mode, SYSCONF_FILE);
+
+        sprintf(fname,"%s/%s", getenv(IV_HOME), SYSCONF_FILE);
+        if ((MAIN_CTX->my_qid.isifs_rx_qid = get_shm_comm_key(fname, "NRFM", SHMQLIB_MODE_GETTER)) < 0) {
+            APPLOG(APPLOG_ERR,"{{{INIT}}} fail to get -->NRFM rx qid %s:%s!", fname, "NRFM");
+            return -1;
+        }
+
+        if ((MAIN_CTX->my_qid.isifc_tx_qid = get_shm_comm_key(fname, "NRFC", SHMQLIB_MODE_PUTTER)) < 0) {
+            APPLOG(APPLOG_ERR,"{{{INIT}}} fail to get NRFC<-- tx qid %s:%s!", fname, "NRFC");
+            return -1;
+        }
     }
     
 	/* create ixpc qid for mml */
 	sprintf(fname,"%s/%s", getenv(IV_HOME), SYSCONF_FILE);
-	if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", "IXPC", 3, tmp) < 0) {
+	if (conflib_getNthTokenInFileSection (fname, "APPLICATIONS", "IXPC", PROC_NAME_LOC, tmp) < 0) {
 		APPLOG(APPLOG_ERR, "{{{INIT}}} configlib get token APPLICATIONS [IXPC] fail!");
 		return -1;
 	}
@@ -204,10 +237,10 @@ void init_log(main_ctx_t *MAIN_CTX)
 {
 	char log_path[1024] = {0,};
 #ifdef LOG_LIB
-	sprintf(log_path, "%s/log/ERR_LOG/%s", getenv(IV_HOME), MAIN_CTX->my_info.myProcName);
+	sprintf(log_path, "%s/log/STACK/%s", getenv(IV_HOME), MAIN_CTX->my_info.myProcName);
 	initlog_for_loglib(MAIN_CTX->my_info.myProcName, log_path);
 #elif LOG_APP
-	sprintf(log_path, "%s/log", getenv(IV_HOME));
+	sprintf(log_path, "%s/log/STACK", getenv(IV_HOME));
 	LogInit(MAIN_CTX->my_info.myProcName, log_path);
 #endif
 
@@ -223,7 +256,10 @@ int initialize(main_ctx_t *MAIN_CTX)
 {
 	def_sigaction();
 
-	get_my_info(&MAIN_CTX->my_info, "NRFM");
+	if (get_my_info(&MAIN_CTX->my_info, "NRFM") < 0) {
+        fprintf(stderr, "{{{INIT}}} fail to get my info [MY_SYS_NAME:~associate_config], proc down\n");
+        return -1;
+    }
 
 	init_cfg(&MAIN_CTX->CFG);
 
@@ -232,6 +268,12 @@ int initialize(main_ctx_t *MAIN_CTX)
 	/* httpc conn status (shm) */
 	if (get_httpc_shm() < 0) {
 		APPLOG(APPLOG_ERR, "{{{INIT}}} fail to get httpc conn shm, proc down");
+		return -1;
+	}
+
+	/* https conn status (shm) */
+	if (get_https_shm(MAIN_CTX) < 0) {
+		APPLOG(APPLOG_ERR, "{{{INIT}}} fail to get https conn shm, proc down");
 		return -1;
 	}
 
@@ -249,8 +291,8 @@ int initialize(main_ctx_t *MAIN_CTX)
 
 	/* create my json nf_services ... used for collect load info (heartbeat info) */
 	if (get_my_service_list(MAIN_CTX) < 0) {
-		APPLOG(APPLOG_ERR, "{{{INIT}}} fail to get my_services, proc down");
-		return -1;
+		APPLOG(APPLOG_ERR, "{{{INIT}}} fail to get my_services, may this occur problem");
+		//return -1;
 	}
 
 	/* create access token shm & load operator added config / remove auto added config */
@@ -261,8 +303,10 @@ int initialize(main_ctx_t *MAIN_CTX)
 
 	/* load fep assoc list */
     if ((MAIN_CTX->fep_assoc_list = get_associate_node(MAIN_CTX->fep_assoc_list, "FEP")) == NULL) {
-        APPLOG(APPLOG_ERR, "{{{INIT}}} fail to get associate_fep, proc down");
+        APPLOG(APPLOG_ERR, "{{{INIT}}} fail to get associate_fep, go on");
+#if 0 // VNF INS ISSUE
         return -1;
+#endif
     }
 
 	/* I'm alive */
@@ -295,18 +339,27 @@ int initialize(main_ctx_t *MAIN_CTX)
 
 	/* if overload set = 1, enable it */
 	if (MAIN_CTX->sysconfig.ovld_tps_enabled > 0) {
+#ifdef OVLD_2TEAM
+		if (ovldlib_init(0, MAIN_CTX->my_info.myProcName) < 0) {
+#else
 		if (ovldlib_init(MAIN_CTX->my_info.myProcName) < 0) {
+#endif
 			APPLOG(APPLOG_ERR, "{{{INIT}}} fail to init ovldlib proc=(%s) enabled=(%d) code=(%d)",
 					MAIN_CTX->my_info.myProcName, MAIN_CTX->sysconfig.ovld_tps_enabled, MAIN_CTX->sysconfig.ovld_notify_code);
 			return -1;
 		}
 	}
 
+    /* create STAT structure */
+    MAIN_CTX->NRF_STAT = g_node_new(NULL);
+
 	return 0;
 }
 
 void INITIAL_PROCESS(main_ctx_t *MAIN_CTX)
 {
+    /* reset prefer value as REGISTERED */
+    MAIN_CTX->prefer_undiscover_set = 0;
 	if (MAIN_CTX->init_regi_success != 0) {
 		return;
 	} else {
@@ -320,7 +373,13 @@ void INITIAL_PROCESS(main_ctx_t *MAIN_CTX)
 		nf_subscribe_start_process(MAIN_CTX);
 
 		/* start token acquire */
-		nf_token_start_process(MAIN_CTX);
+#if 0
+        nf_token_start_process(MAIN_CTX);
+#else
+        if (MAIN_CTX->sysconfig.oauth_enable > 0) {
+            nf_token_start_process(MAIN_CTX);
+        }
+#endif
 	}
 }
 
@@ -385,7 +444,7 @@ void message_handle(evutil_socket_t fd, short what, void *arg)
 	AhifHttpCSMsgType *ahifPkt = (AhifHttpCSMsgType *)msg->body;
 
 	/* handle all pending msgs */
-	while (msgrcv(MAIN_CTX.my_qid.nrfm_qid, msg, 65535, 0, IPC_NOWAIT) >= 0) {
+	while (msgrcv(MAIN_CTX.my_qid.nrfm_qid, msg, 65535, 0, IPC_NOWAIT|MSG_NOERROR) >= 0) {
 		switch (msg->mtype) {
 			case MTYPE_SETPRINT:
 				adjust_loglevel((TrcLibSetPrintMsgType *)msg);
@@ -396,7 +455,7 @@ void message_handle(evutil_socket_t fd, short what, void *arg)
 				continue;
 			/* OMP STAT */
 			case MTYPE_STATISTICS_REQUEST:
-				nrf_stat_function(ixpcQid, (IxpcQMsgType *)msg->body, cfg_get_nrf_stat_code(&MAIN_CTX), &NRF_STAT);
+				nrf_stat_function(ixpcQid, (IxpcQMsgType *)msg->body, cfg_get_nrf_stat_code(&MAIN_CTX), MAIN_CTX.NRF_STAT);
 				continue;
 			/* FEP conn status from https */
 			case MSGID_HTTPS_NRFM_FEP_ALIVE_NOTI:
@@ -439,11 +498,21 @@ void start_loop(main_ctx_t *MAIN_CTX)
 	struct timeval tic_sec = {1,0};
 	struct event *ev_tick = event_new(MAIN_CTX->EVBASE, -1, EV_PERSIST, main_tick_callback, NULL);
 	event_add(ev_tick, &tic_sec);
-	struct event *ev_collect_hc_status = event_new(MAIN_CTX->EVBASE, -1, EV_PERSIST, nf_manage_collect_httpc_conn_status_cb, NULL);
-	event_add(ev_collect_hc_status, &tic_sec);
+
+    /* remove httpc/s tombstoned connection info */
+	struct timeval ten_sec = {10, 0};
+    struct event *ev_remove_httpc_tombstone = event_new(MAIN_CTX->EVBASE, -1, EV_PERSIST, nf_manage_httpc_conn_status_cb, NULL);
+    event_add(ev_remove_httpc_tombstone, &ten_sec);
+    struct event *ev_remove_https_tombstone = event_new(MAIN_CTX->EVBASE, -1, EV_PERSIST, nf_manage_https_conn_status_cb, NULL);
+    event_add(ev_remove_https_tombstone, &ten_sec);
+
+    /* publish conn status to fep (or not) */
+    if (MAIN_CTX->sysconfig.nfs_shm_create) {
+        struct event *ev_collect_hc_status = event_new(MAIN_CTX->EVBASE, -1, EV_PERSIST, nf_manage_collect_httpc_conn_status_cb, NULL);
+        event_add(ev_collect_hc_status, &tic_sec);
+    }
 
 	/* message handle */
-	//struct timeval tm_milisec = {0, 100000}; // 100ms
 	struct timeval tm_milisec = {0, 1000}; // 1ms
 	struct event *ev_msgq = event_new(MAIN_CTX->EVBASE, -1, EV_PERSIST, message_handle, NULL);
 	event_add(ev_msgq, &tm_milisec);
@@ -452,7 +521,9 @@ void start_loop(main_ctx_t *MAIN_CTX)
 	event_add(ev_shmq, &tm_milisec);
 
 	/* start watching ~/data directory */
-	start_watching_dir(MAIN_CTX->EVBASE);
+	if (MAIN_CTX->sysconfig.isifcs_mode == 1) {
+		start_watching_dir(MAIN_CTX->EVBASE);
+	}
 
 	/* start trigger */
 	nf_regi_init_proc(MAIN_CTX);
@@ -476,5 +547,5 @@ void start_watching_dir(struct event_base *evbase)
 {
 	char watch_directory[1024] = {0,};
 	sprintf(watch_directory, "%s/data", getenv("IV_HOME"));
-	watch_directory_init(evbase, watch_directory);
+	watch_directory_init(evbase, watch_directory, directory_watch_action);
 }

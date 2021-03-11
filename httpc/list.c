@@ -1,5 +1,9 @@
 #include "client.h"
 
+extern int ixpcQid;
+extern char mySysName[COMM_MAX_NAME_LEN];
+extern char myProcName[COMM_MAX_NAME_LEN];
+
 extern client_conf_t CLIENT_CONF;
 extern httpc_ctx_t *HttpcCtx[MAX_THRD_NUM];
 extern conn_list_t CONN_LIST[MAX_SVR_NUM];
@@ -19,6 +23,7 @@ httpc_ctx_t *get_context(int thrd_idx, int ctx_idx, int used)
 
 	return &HttpcCtx[thrd_idx][ctx_idx];
 }
+
 void clear_send_ctx(httpc_ctx_t *httpc_ctx)
 {
 	httpc_ctx->inflight_ref_cnt = 0;
@@ -28,8 +33,31 @@ void clear_send_ctx(httpc_ctx_t *httpc_ctx)
 	memset(httpc_ctx->user_ctx.vheader, 0x00, sizeof(hdr_relay) * MAX_HDR_RELAY_CNT);
 }
 
+static void clear_trace_resource(httpc_ctx_t *httpc_ctx)
+{
+    if (httpc_ctx->send_log_file) {
+        fclose(httpc_ctx->send_log_file);
+        httpc_ctx->send_log_file = NULL;
+    }
+    if (httpc_ctx->recv_log_file) {
+        fclose(httpc_ctx->recv_log_file);
+        httpc_ctx->recv_log_file = NULL;
+    }
+    if (httpc_ctx->send_log_ptr) {
+        free(httpc_ctx->send_log_ptr);
+        httpc_ctx->send_log_ptr = NULL;
+    }
+    if (httpc_ctx->recv_log_ptr) {
+        free(httpc_ctx->recv_log_ptr);
+        httpc_ctx->recv_log_ptr = NULL;
+    }
+}
+
 void clear_and_free_ctx(httpc_ctx_t *httpc_ctx)
 {
+    clear_trace_resource(httpc_ctx);
+    httpc_ctx->user_ctx.head.subsTraceFlag = 0;
+    memset(httpc_ctx->user_ctx.head.subsTraceId, 0x00, sizeof(httpc_ctx->user_ctx.head.subsTraceId));
 	httpc_ctx->tcp_wait = 0;
 	httpc_ctx->inflight_ref_cnt = 0;
 	httpc_ctx->user_ctx.head.bodyLen = 0;
@@ -75,21 +103,20 @@ void save_session_info(httpc_ctx_t *httpc_ctx, int thrd_idx, int sess_idx, int s
 	httpc_ctx->sess_idx = sess_idx;
 	httpc_ctx->session_id = session_id;
 	httpc_ctx->ctx_idx = ctx_idx;
-#if 0
-	sprintf(httpc_ctx->user_ctx.head.destIp, "%s", conn_list->ip);
-#else
 	sprintf(httpc_ctx->user_ctx.head.destType, "%s", conn_list->type);
 	sprintf(httpc_ctx->user_ctx.head.destHost, "%s", conn_list->host);
 	sprintf(httpc_ctx->user_ctx.head.destIp, "%s", conn_list->ip);
 	httpc_ctx->user_ctx.head.destPort = conn_list->port;
-#endif
-#ifdef OAUTH
+
+    /* oauth 2.0 */
 	char *token = NULL;
-	if (conn_list->token_id > 0) 
-		token = get_access_token(CLIENT_CONF.ACC_TOKEN_LIST, conn_list->token_id);
+    if (CLIENT_CONF.oauth_enable == 1) {
+        if (conn_list->token_id > 0) {
+            token = get_access_token(CLIENT_CONF.ACC_TOKEN_LIST, conn_list->token_id);
+        }
+    }
 
 	sprintf(httpc_ctx->access_token, "%s", token != NULL ? token : "");
-#endif
 }
 
 int find_least_conn_worker()
@@ -134,33 +161,49 @@ void print_list(conn_list_status_t conn_status[]) {
     APPLOG(APPLOG_ERR, "---------------------------------------------------------------------------------------------------------------");
 }
 
+void select_list(conn_list_status_t CONN_STATUS[], char *type) {
+	for ( int i = 0; i < MAX_LIST_NUM; i++) {
+        if (CONN_STATUS[i].occupied != 1)
+            continue;
+        if (strcmp(CONN_STATUS[i].type, type))
+            CONN_STATUS[i].occupied = 0;
+    }
+}
+
 /* watch out for buffer size */
 void write_list(conn_list_status_t CONN_STATUS[], char *buff) {
-	int i, j, resLen;
+	ft_table_t *table = ft_create_table();
+	ft_set_border_style(table, FT_PLAIN_STYLE);
 
-    resLen = sprintf(buff, "\n  ID HOSTNAME                                 TYPE   SCHEME   IP_ADDR                            PORT CONN(max/curr)    STATUS     TOKEN_ID  (AUTO_ADDED)\n");
-    resLen += sprintf(buff + resLen, "----------------------------------------------------------------------------------------------------------------------------------------------------------\n");
-	for ( i = 0; i < MAX_LIST_NUM; i++) {
-		for ( j = 0; j < MAX_CON_NUM; j++) {
+	/* head */
+	ft_set_cell_prop(table, 0, FT_ANY_COLUMN, FT_CPROP_ROW_TYPE, FT_ROW_HEADER);
+
+	ft_write_ln(table, "ID", "HOSTNAME", "TYPE", "SCHEME", "IPADDR", "PORT", "CONN(max/curr)", "STATUS", "TOKEN_ID", "AUTO_ADDED", "TOMBSTONE_DATE");
+	for ( int i = 0; i < MAX_LIST_NUM; i++) {
+		for ( int j = 0; j < MAX_CON_NUM; j++) {
 			if (CONN_STATUS[j].occupied != 1)
 				continue;
 			if (CONN_STATUS[j].list_index != i)
 				continue;
-			resLen += sprintf(buff + resLen, "%4d %-40s %-6s %-6s   %-33s %5d (%4d  / %4d)   %10s     %5d        %s\n",
-					CONN_STATUS[j].list_index,
-					CONN_STATUS[j].host,
-					CONN_STATUS[j].type,
-					CONN_STATUS[j].scheme,
-					CONN_STATUS[j].ip,
-					CONN_STATUS[j].port,
-					CONN_STATUS[j].sess_cnt,
-					CONN_STATUS[j].conn_cnt,
-					(CONN_STATUS[j].conn_cnt > 0) ?  "Connected" : (CONN_STATUS[j].act == 1) ? "Disconnect" : "Deact",
-					CONN_STATUS[j].token_id,
-					(CONN_STATUS[j].nrfm_auto_added > 0) ? "O" : "X");
+			ft_printf_ln(table, "%d|%s|%s|%s|%s|%d|(%d/%d)|%s|%d|%s|%.24s",
+				CONN_STATUS[j].list_index,
+				CONN_STATUS[j].host,
+				CONN_STATUS[j].type,
+				CONN_STATUS[j].scheme,
+				CONN_STATUS[j].ip,
+				CONN_STATUS[j].port,
+				CONN_STATUS[j].sess_cnt,
+				CONN_STATUS[j].conn_cnt,
+				(CONN_STATUS[j].conn_cnt > 0) ?  "Connected" : (CONN_STATUS[j].act == 1) ? "Disconnect" : "Deact",
+				CONN_STATUS[j].token_id,
+				CONN_STATUS[j].nrfm_auto_added == NF_ADD_RAW ? " X " : 
+				CONN_STATUS[j].nrfm_auto_added == NF_ADD_NRF ? "NRF" : "API",
+				CONN_STATUS[j].tombstone_date != 0 ? ctime(&CONN_STATUS[j].tombstone_date) : "");
 		}
 	}
-    resLen += sprintf(buff + resLen, "----------------------------------------------------------------------------------------------------------------------------------------------------------\n");
+	ft_add_separator(table);
+	sprintf(buff, "%s", ft_to_string(table));
+	ft_destroy_table(table);
 }
 
 /* before gather, must be memset! */
@@ -180,7 +223,8 @@ void gather_list(conn_list_status_t CONN_STATUS[]) {
 			CONN_STATUS[index].port = 0;
 			CONN_STATUS[index].act = 0;
 			CONN_STATUS[index].occupied = 1;
-#ifdef OAUTH
+
+            /* oauth 2.0 */
 			int token_id = CONN_LIST[i].token_id;
 			CONN_STATUS[index].token_id = token_id;
 
@@ -190,7 +234,7 @@ void gather_list(conn_list_status_t CONN_STATUS[]) {
 			} else {
 				CONN_STATUS[index].token_acquired = 1;
 			}
-#endif
+
 			CONN_STATUS[index].nrfm_auto_added = CONN_LIST[i].nrfm_auto_added;
 			index++;
 		}
@@ -214,9 +258,17 @@ void gather_list(conn_list_status_t CONN_STATUS[]) {
 							CONN_STATUS[index].occupied = 1;
 						}
 						CONN_STATUS[index].sess_cnt ++;
-						if (CONN_LIST[k].conn == CN_CONNECTED) 
+						if (CONN_LIST[k].conn == CN_CONNECTED) {
 							CONN_STATUS[index].conn_cnt ++;
-#ifdef OAUTH
+						} else {
+							if (CONN_STATUS[index].conn_cnt == 0) { /* save last disconnected time */
+								if (CONN_STATUS[index].tombstone_date <= CONN_LIST[k].tombstone_date) {
+									CONN_STATUS[index].tombstone_date = CONN_LIST[k].tombstone_date;
+								}
+							}
+						}
+
+                        /* oauth 2.0 */
 						int token_id = CONN_LIST[k].token_id;
 						CONN_STATUS[index].token_id = token_id;
 
@@ -226,7 +278,6 @@ void gather_list(conn_list_status_t CONN_STATUS[]) {
 						} else {
 							CONN_STATUS[index].token_acquired = 1;
 						}
-#endif
 						CONN_STATUS[index].nrfm_auto_added = CONN_LIST[k].nrfm_auto_added;
 					}
 				}
@@ -236,102 +287,179 @@ void gather_list(conn_list_status_t CONN_STATUS[]) {
 }
 
 // httpc outbound, log write with in 1step
-void log_pkt_send(char *prefix, nghttp2_nv *hdrs, int hdrs_len, char *body, int body_len)
+void log_pkt_send(httpc_ctx_t *httpc_ctx, nghttp2_nv *hdrs, int hdrs_len, const char *body, int body_len)
 {
-	FILE *temp_file = NULL;
-	size_t file_size = 0;
-	char *ptr = NULL;
-
-	if (CLIENT_CONF.pkt_log != 1)
+	if (CLIENT_CONF.pkt_log != 1 && CLIENT_CONF.trace_enable != 1)
 		return;
 
-	temp_file = open_memstream(&ptr, &file_size); // buff size auto-grow
-	if (temp_file == NULL) {
+    httpc_ctx->send_log_file = open_memstream(&httpc_ctx->send_log_ptr, &httpc_ctx->send_file_size);
+    if (httpc_ctx->send_log_file == NULL) {
 		APPLOG(APPLOG_ERR, "{{{PKT}}} in %s fail to call open_memstream!", __func__);
 		return;
-	}
-	print_headers(temp_file, hdrs, hdrs_len);
-	if (body_len > 0)
-		util_dumphex(temp_file, body, body_len);
+    } else {
+        get_time_str(httpc_ctx->send_time);
+    }
 
-	// 1) close file
-	fclose(temp_file);
-	// 2) use ptr
-	APPLOG(APPLOG_ERR, "{{{PKT}}} %s\n\
---------------------------------------------------------------------------------------------------\n\
-%s\
-==================================================================================================\n",
-	prefix, ptr);
-	// 3) free ptr
-	free(ptr);
+	print_headers(httpc_ctx->send_log_file, hdrs, hdrs_len);
+	if (body_len > 0) {
+        fprintf(httpc_ctx->send_log_file, DUMPHEX_GUIDE_STR, httpc_ctx->user_ctx.head.bodyLen);
+		util_dumphex(httpc_ctx->send_log_file, body, body_len);
+    }
 }
 
 // httpc inbound, logwrite step 1 of 2 (headres receive)
 void log_pkt_head_recv(httpc_ctx_t *httpc_ctx, const uint8_t *name, size_t namelen, const uint8_t *value, size_t valuelen)
 {
-	if (CLIENT_CONF.pkt_log != 1)
+	if (CLIENT_CONF.pkt_log != 1 && CLIENT_CONF.trace_enable != 1)
 		return;
 
 	if (httpc_ctx->recv_log_file == NULL) {
-		httpc_ctx->recv_log_file = open_memstream(&httpc_ctx->log_ptr, &httpc_ctx->file_size);
+		httpc_ctx->recv_log_file = open_memstream(&httpc_ctx->recv_log_ptr, &httpc_ctx->recv_file_size);
 		if (httpc_ctx->recv_log_file == NULL) {
 			APPLOG(APPLOG_ERR, "{{{PKT}}} in %s fail to call open_memstream!", __func__);
-			// TODO fclose (*httpc/s ...)
 			return;
-		}
-	}
+		} else {
+            get_time_str(httpc_ctx->recv_time);
+        }
+    }
 	print_header(httpc_ctx->recv_log_file, name, namelen, value, valuelen);
 }
 
-// httpc inbound, logwrite step 2 of 2 (all of body received or stream closed)
-void log_pkt_end_stream(int stream_id, httpc_ctx_t *httpc_ctx)
+void send_trace_to_omp(httpc_ctx_t *httpc_ctx)
 {
-	if (CLIENT_CONF.pkt_log != 1)
-		return;
+    int msg_len = 0;
+    GeneralQMsgType GeneralMsg = {0,};
+
+    IxpcQMsgType *ixpcMsg = (IxpcQMsgType *)&GeneralMsg.body;
+    TraceMsgInfo *trcMsgInfo = (TraceMsgInfo *)(ixpcMsg->body);
+    memset(trcMsgInfo, 0x00, sizeof(TraceMsgInfo) - TRC_MSG_BODY_MAX_LEN);
+
+    GeneralMsg.mtype = MTYPE_TRACE_NOTIFICATION;
+    strcpy(ixpcMsg->head.srcSysName, mySysName);
+    strcpy(ixpcMsg->head.srcAppName, myProcName);
+    strcpy(ixpcMsg->head.dstSysName, "OMP");
+    strcpy(ixpcMsg->head.dstAppName, "COND");
+    ixpcMsg->head.segFlag = 0;
+    ixpcMsg->head.seqNo = 0;
+    ixpcMsg->head.byteOrderFlag = 0x1234;
+
+    // fflush
+    if (httpc_ctx->send_log_file) {
+        fflush(httpc_ctx->send_log_file);
+    } else {
+        httpc_ctx->send_log_ptr = NULL;
+        httpc_ctx->send_time[0] = '\0';
+    }
+    if (httpc_ctx->recv_log_file) {
+        fflush(httpc_ctx->recv_log_file);
+    } else {
+        httpc_ctx->recv_log_ptr = NULL;
+        httpc_ctx->recv_time[0] = '\0';
+    }
+
+    // info
+    char currTmStr[128] = {0,}; get_time_str(currTmStr);
+    msg_len = sprintf(trcMsgInfo->trcMsg, "[%s] [%s]\n", mySysName, currTmStr);
+    // ... //
+    sprintf(trcMsgInfo->trcTime, "%s", currTmStr);
+    trcMsgInfo->trcMsgType = TRCMSG_INIT_MSG;
+    // ... //
+    // slogan
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "S4000 HTTP/2 SEND-RECV PACKET\n");
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "  OPERATION        : HTTP/2 STACK Send Request / Recv Response\n");
+    http2_session_data_t *session_data = get_session(httpc_ctx->thrd_idx, httpc_ctx->sess_idx, httpc_ctx->session_id);
+    if (session_data != NULL) {
+        msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "  SESS_INFO        : %s://%s (%s)\n",
+                session_data->scheme, session_data->authority, session_data->host);
+    }
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "  STRM_INFO        : SESS=(%d) STRM=(%d) ACID=(%d)\n",
+            httpc_ctx->session_id, httpc_ctx->stream.stream_id, httpc_ctx->user_ctx.head.ahifCid);
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "  SND_TM           : %s\n", httpc_ctx->send_time);
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "  RCV_TM           : %s\n", httpc_ctx->recv_time);
+
+    // check remain size
+    int check_remain = sizeof(trcMsgInfo->trcMsg) - strlen(trcMsgInfo->trcMsg) 
+        - strlen("[Send_Request]\n") 
+        - strlen("[Recv_Response]\n") 
+        - strlen("COMPLETE\n\n\n");
+    int half_size = check_remain / 2;
+
+    // snd msg trace
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "[Send_Request]\n");
+    if (httpc_ctx->send_log_ptr != NULL && strlen(httpc_ctx->send_log_ptr) >= half_size) {
+        msg_len += snprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), half_size - 1, "%s", httpc_ctx->send_log_ptr);
+        msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "\n");
+    } else {
+        msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "%s", httpc_ctx->send_log_ptr);
+    }
+    // rcv msg trace
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "[Recv_Response]\n");
+    if (httpc_ctx->recv_log_ptr != NULL && strlen(httpc_ctx->recv_log_ptr) >= half_size) {
+        msg_len += snprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), half_size - 1, "%s", httpc_ctx->recv_log_ptr);
+        msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "\n");
+    } else {
+        msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "%s", httpc_ctx->recv_log_ptr);
+    }
+    // trace end
+    msg_len += sprintf(trcMsgInfo->trcMsg + strlen(trcMsgInfo->trcMsg), "COMPLETE\n\n\n");
+
+    //ixpcMsg->head.bodyLen = msg_len;
+    ixpcMsg->head.bodyLen = sizeof(TraceMsgInfo)-TRC_MSG_BODY_MAX_LEN + msg_len + 8;
+
+    if (CLIENT_CONF.pkt_log == 1) {
+        APPLOG(APPLOG_ERR, "\n\n%s", trcMsgInfo->trcMsg);
+    }
+    if (CLIENT_CONF.trace_enable == 1 && httpc_ctx->user_ctx.head.subsTraceFlag == 1) {
+        if (msgsnd(ixpcQid, (char *)&GeneralMsg, ixpcMsg->head.bodyLen + sizeof(long) + sizeof(ixpcMsg->head), IPC_NOWAIT) < 0) {
+            APPLOG(APPLOG_ERR, "{{{DBG}}} %s fail to send send trace, errno(%d), (%s)", __func__, errno, strerror(errno));
+        }
+    }
+}
+
+// httpc inbound, logwrite step 2 of 2 (all of body received or stream closed)
+void log_pkt_end_stream(httpc_ctx_t *httpc_ctx)
+{
+	if (CLIENT_CONF.pkt_log != 1 && CLIENT_CONF.trace_enable != 1) {
+        return;
+    }
 
 	if (httpc_ctx->recv_log_file == NULL) {
-		httpc_ctx->recv_log_file = open_memstream(&httpc_ctx->log_ptr, &httpc_ctx->file_size);
+		httpc_ctx->recv_log_file = open_memstream(&httpc_ctx->recv_log_ptr, &httpc_ctx->recv_file_size);
 		if (httpc_ctx->recv_log_file == NULL) {
 			APPLOG(APPLOG_ERR, "{{{PKT}}} in %s fail to call open_memstream!", __func__);
-			return;
-		}
+			return clear_trace_resource(httpc_ctx);
+        } else {
+            get_time_str(httpc_ctx->recv_time);
+        }
 	}
+
 	// print body to log
 	if (httpc_ctx->user_ctx.head.bodyLen > 0) {
-#if 0
-		util_dumphex(httpc_ctx->recv_log_file, httpc_ctx->user_ctx.body, httpc_ctx->user_ctx.head.bodyLen);
-#else
+        fprintf(httpc_ctx->recv_log_file, DUMPHEX_GUIDE_STR, httpc_ctx->user_ctx.head.bodyLen);
 		util_dumphex(httpc_ctx->recv_log_file, 
 				httpc_ctx->user_ctx.data + httpc_ctx->user_ctx.head.queryLen,
 				httpc_ctx->user_ctx.head.bodyLen);
-#endif
 	}
 
-	// 1) close file
-	fclose(httpc_ctx->recv_log_file);
-	httpc_ctx->recv_log_file = NULL;
-	// 2) use ptr
-	APPLOG(APPLOG_ERR, "{{{PKT}}} HTTPC RECV http sess/stream(%d:%d) ahifCid(%d)]\n\
---------------------------------------------------------------------------------------------------\n\
-%s\
-==================================================================================================\n",
-	httpc_ctx->session_id, 
-	stream_id, 
-	httpc_ctx->user_ctx.head.ahifCid,
-	httpc_ctx->log_ptr);
-	// 3) free ptr
-	free(httpc_ctx->log_ptr);
-	httpc_ctx->log_ptr = NULL;
+    send_trace_to_omp(httpc_ctx);
+
+    return;
 }
 
 void log_pkt_httpc_error_reply(httpc_ctx_t *httpc_ctx, int resp_code)
 {
-	if (CLIENT_CONF.pkt_log != 1)
-		return;
+    if (CLIENT_CONF.pkt_log != 1)
+        return;
 
-	APPLOG(APPLOG_ERR, "{{{PKT}}} HTTPC INTERNAL ERROR http sess/stream(N/A:N/A) ahifCid(%d)]\n\
---------------------------------------------------------------------------------------------------\n\
-:status:%d\n\
-==================================================================================================\n",
-	httpc_ctx->user_ctx.head.ahifCid, resp_code);
+    APPLOG(APPLOG_ERR, "{{{PKT}}} http/2 send request internal error(%d), ahifCid=(%d)", resp_code, httpc_ctx->user_ctx.head.ahifCid);
+}
+
+void log_pkt_httpc_reset(httpc_ctx_t *httpc_ctx)
+{
+    if (CLIENT_CONF.pkt_log != 1 && CLIENT_CONF.trace_enable != 1)
+        return;
+
+    APPLOG(APPLOG_ERR, "{{{PKT}}} http/2 send request / stream ressetted, ahifCid=(%d)", httpc_ctx->user_ctx.head.ahifCid);
+
+    send_trace_to_omp(httpc_ctx);
 }

@@ -19,9 +19,15 @@ int get_mml_para_int (MMLReqMsgType *msg, char *paraName)
 	int	i=0;
 
 	for( i=0; i<msg->head.paraCnt; i++ ) {
+#ifdef MMLPARA_TYPESTR
+		if( !strcasecmp(msg->head.para[i].typeStr, paraName)) {
+			return (int)strtol(msg->head.para[i].paraStr,0,0);
+		}
+#else
 		if( !strcasecmp(msg->head.para[i].paraName, paraName)) {
 			return (int)strtol(msg->head.para[i].paraVal,0,0);
 		}
+#endif
 	}
 	return -1;
 }
@@ -31,10 +37,17 @@ int get_mml_para_str (MMLReqMsgType *msg, char *paraName, char *buff)
 	int	i=0;      
 
 	for( i=0; i<msg->head.paraCnt; i++ ) {
+#ifdef MMLPARA_TYPESTR
+		if( !strcasecmp (msg->head.para[i].typeStr, paraName) ) {
+			strcpy (buff, msg->head.para[i].paraStr);
+			return 1;
+		}
+#else
 		if( !strcasecmp (msg->head.para[i].paraName, paraName) ) {
 			strcpy (buff, msg->head.para[i].paraVal);
 			return 1;
 		}
+#endif
 	}
 
 	return -1; 
@@ -45,6 +58,15 @@ int get_mml_para_strMax (MMLReqMsgType *msg, char *paraName, char *buff, int max
 	int	i=0;
 
 	for( i=0; i<msg->head.paraCnt; i++ ) {
+#ifdef MMLPARA_TYPESTR
+		if( !strcasecmp (msg->head.para[i].typeStr, paraName) ) {
+			if( strlen(msg->head.para[i].paraStr)<=maxSize ) {
+				strcpy (buff, msg->head.para[i].paraStr);
+				return 1;
+			}
+			break;
+		}
+#else
 		if( !strcasecmp (msg->head.para[i].paraName, paraName) ) {
 			if( strlen(msg->head.para[i].paraVal)<=maxSize ) {
 				strcpy (buff, msg->head.para[i].paraVal);
@@ -52,12 +74,13 @@ int get_mml_para_strMax (MMLReqMsgType *msg, char *paraName, char *buff, int max
 			}
 			break;
 		}
+#endif
 	}
 
 	return -1;
 }
 
-int send_mml_res_failMsg(IxpcQMsgType *rxIxpcMsg, char *rltMsg)
+int send_mml_res_failMsg(IxpcQMsgType *rxIxpcMsg, const char *rltMsg)
 {
 	int		len=0;
 	char	*txBuff=respBuff;
@@ -108,15 +131,26 @@ int send_response_mml(IxpcQMsgType *rxIxpcMsg, char *resbuf, char resCode, char 
 		txResMsg->head.resCode 		= resCode;
 		strcpy(txResMsg->head.cmdName, mmlReqMsg->head.cmdName);
 
+#if 0
 		int send_limit_len = (MAX_MML_RESULT_LEN - 128); // maybe omp process use this buff
+#else
+		int send_limit_len = 7000; // 5G-EIR OMP requirement
+#endif
+
+        if (remain_len > send_limit_len) {
+            int find_new_line = 0;
+            for (int i = send_limit_len; i < remain_len; i++) {
+                find_new_line++;
+                if (resbuf[i] == '\n')
+                    break;
+            }
+            send_limit_len += find_new_line;
+        }
+
 		int process_len = ((remain_len >= send_limit_len) ? send_limit_len : remain_len);
 		memcpy(txResMsg->body, resbuf, process_len);
-#if 0
+
 		txResMsg->body[process_len + 1] = '\0';
-#else
-		txResMsg->body[process_len] = '\n';
-		txResMsg->body[process_len + 1] = '\0';
-#endif
 
 		resbuf += process_len;
 		remain_len -= process_len;
