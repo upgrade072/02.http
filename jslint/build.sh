@@ -6,13 +6,13 @@ if [  -f ../../../bin/jslint ]; then
     exit
 fi
 
-VERSION="master"
-if [ ! -f ${VERSION}.zip ]; then
-    wget https://github.com/vincenthz/libjson/archive/${VSERION}.zip
+VERSION="0.8"
+if [ ! -f v${VERSION}.tar.gz ]; then
+    wget https://github.com/vincenthz/libjson/archive/v${VERSION}.tar.gz
 fi
 
 rm -rf libjson-${VERSION}
-unzip ${VERSION}.zip
+tar xvf v${VERSION}.tar.gz
 
 cd libjson-${VERSION}
 

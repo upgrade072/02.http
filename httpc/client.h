@@ -49,6 +49,10 @@
 #include <api_noverload.h>
 #endif
 
+#ifdef TRC_LIB
+#include <msgtrclib.h>
+#endif
+
 #define TM_INTERVAL		20000   // every 20 ms check, 
 #define TMOUT_VECTOR    50      // CLIENT_CONF.tmout_sec * TMOUT_VECTOR = N sec
 

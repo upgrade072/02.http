@@ -346,7 +346,11 @@ void send_trace_to_omp(https_ctx_t *https_ctx)
     TraceMsgInfo *trcMsgInfo = (TraceMsgInfo *)(ixpcMsg->body);
     memset(trcMsgInfo, 0x00, sizeof(TraceMsgInfo) - TRC_MSG_BODY_MAX_LEN);
 
+#ifdef TRC_LIB
+    GeneralMsg.mtype = MTYPE_TRC_DB_INSERT;
+#else
     GeneralMsg.mtype = MTYPE_TRACE_NOTIFICATION;
+#endif
     strcpy(ixpcMsg->head.srcSysName, mySysName);
     strcpy(ixpcMsg->head.srcAppName, myProcName);
     strcpy(ixpcMsg->head.dstSysName, "OMP");

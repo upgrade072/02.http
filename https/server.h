@@ -57,6 +57,10 @@
 #include <api_noverload.h>
 #endif
 
+#ifdef TRC_LIB
+#include <msgtrclib.h>
+#endif
+
 #define OUTPUT_WOULDBLOCK_THRESHOLD (1 << 16)
 
 /* CONFIG */
