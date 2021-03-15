@@ -54,6 +54,13 @@ nf_service_info *nf_discover_search_cache(nf_discover_key *search_info, nf_disco
 			return nf_discover_search_udm(search_info, DISC_TABLE, NFS_TABLE, NRFC_QID);
 		case NF_TYPE_AMF:
 			return nf_discover_search_amf(search_info, DISC_TABLE, NFS_TABLE, NRFC_QID);
+        // 2020.02.18 for epcf
+        case NF_TYPE_UDR:
+            return nf_discover_search_udr(search_info, DISC_TABLE, NFS_TABLE, NRFC_QID);
+        case NF_TYPE_CHF:
+            return nf_discover_search_chf(search_info, DISC_TABLE, NFS_TABLE, NRFC_QID);
+        case NF_TYPE_BSF:
+            return nf_discover_search_bsf(search_info, DISC_TABLE, NFS_TABLE, NRFC_QID);
 		default:
 			APPLOG(APPLOG_ERR, "(%s) recv unknown nfType(%d)", __func__, search_info->nfType);
 			return NULL;
@@ -107,6 +114,454 @@ nf_service_info *nf_discover_search_amf(nf_discover_key *search_info, nf_discove
                 }
             }
         }
+	}
+
+	/* check result */
+	nf_discover_res_log(&result_cache, search_info->selectionType);
+
+	/* find host name from SHM & return */
+	return nf_discover_result(&result_cache, search_info, DISC_TABLE, NFS_TABLE, NRFC_QID);
+}
+
+// 2020.02.18 for epcf
+nf_service_info *nf_discover_search_udr(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID)
+{
+    APPLOG(APPLOG_ERR, "(%s) nfType=%d, nfSearchType=%d, lbNum=%d", __func__, search_info->nfType, search_info->nfSearchType, search_info->lbNum);
+
+    switch (search_info->nfSearchType) {
+        case NF_DISC_ST_SUPI:
+            return nf_discover_search_udr_supi(search_info, DISC_TABLE, NFS_TABLE, NRFC_QID);
+        case NF_DISC_ST_GPSI:
+            return nf_discover_search_udr_gpsi(search_info, DISC_TABLE, NFS_TABLE, NRFC_QID);
+        default:
+            APPLOG(APPLOG_ERR, "(%s) recv unknown searchType(%d)", __func__, search_info->nfSearchType);
+            return NULL;
+    }
+}
+
+// 2020.02.18 for epcf
+nf_service_info *nf_discover_search_chf(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID)
+{
+    switch (search_info->nfSearchType) {
+        case NF_DISC_ST_SUPI:
+            return nf_discover_search_chf_supi(search_info, DISC_TABLE, NFS_TABLE, NRFC_QID);
+        case NF_DISC_ST_GPSI:
+            return nf_discover_search_chf_gpsi(search_info, DISC_TABLE, NFS_TABLE, NRFC_QID);
+        default:
+            APPLOG(APPLOG_ERR, "(%s) recv unknown searchType(%d)", __func__, search_info->nfSearchType);
+            return NULL;
+    }
+}
+
+// 2020.02.18 for epcf
+nf_service_info *nf_discover_search_bsf(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID)
+{
+    switch (search_info->nfSearchType) {
+        case NF_DISC_ST_IPV4:
+            return nf_discover_search_bsf_ipv4(search_info, DISC_TABLE, NFS_TABLE, NRFC_QID);
+        case NF_DISC_ST_IPV6:
+            return nf_discover_search_bsf_ipv6(search_info, DISC_TABLE, NFS_TABLE, NRFC_QID);
+        case NF_DISC_ST_IPDOMAIN:
+            return nf_discover_search_bsf_ipdomain(search_info, DISC_TABLE, NFS_TABLE, NRFC_QID);
+        case NF_DISC_ST_DNN:
+            return nf_discover_search_bsf_dnn(search_info, DISC_TABLE, NFS_TABLE, NRFC_QID);
+        default:
+            APPLOG(APPLOG_ERR, "(%s) recv unknown searchType(%d)", __func__, search_info->nfSearchType);
+            return NULL;
+    }
+}
+
+// 2020.02.18 for epcf
+nf_service_info *nf_discover_search_udr_supi(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID)
+{
+	nf_discover_local_res result_cache = {0,};
+	char imsi[128] = {0,};
+	int	 foundFlag = 0;
+
+	/* handle error check only library applicable */
+	if ((search_info->supi == NULL) || (sscanf(search_info->supi, "imsi-%127s", imsi) != 1)) {
+		APPLOG(APPLOG_ERR, "(%s) recv unknown supi(%s)", 
+				__func__, search_info->supi == NULL ? "null" : search_info->supi);
+		return NULL;
+	}
+
+	const char *default_svc_name = "nudr-dr";
+	if (search_info->serviceName == NULL)
+		search_info->serviceName = default_svc_name;
+
+	for (int i = 0; i < MAX_NF_CACHE_NUM; i++) {
+		nf_discover_raw *disc_raw = &DISC_TABLE->disc_cache[i];
+
+		if (nf_discover_check_cache_raw(disc_raw, search_info) < 0) /* default info matched */
+			continue;
+
+		nf_udr_info *udrInfo = &disc_raw->nfTypeInfo.udrInfo;
+
+		if (udrInfo->supiRangesNum <= 0) 
+			continue;
+
+		for (int k = 0; k < udrInfo->supiRangesNum && k < NF_MAX_SUPI_RANGES; k++) {
+			nf_comm_supi_range *supiRange = &udrInfo->supiRanges[k];
+			if (strncmp(imsi, supiRange->start, strlen(supiRange->start)) >= 0 && 
+					strncmp(imsi, supiRange->end, strlen(supiRange->end)) <= 0) {
+				nf_discover_order_local_res(disc_raw, &result_cache, search_info->selectionType);
+				foundFlag = 1;
+				break;
+			}
+		}
+		if (foundFlag == 1)
+			break;
+	}
+
+	/* check result */
+	nf_discover_res_log(&result_cache, search_info->selectionType);
+
+	APPLOG(APPLOG_ERR, "(%s) nfType=%d, nfSearchType=%d, lbNum=%d", __func__, search_info->nfType, search_info->nfSearchType, search_info->lbNum);
+
+	/* find host name from SHM & return */
+	return nf_discover_result(&result_cache, search_info, DISC_TABLE, NFS_TABLE, NRFC_QID);
+}
+
+// 2020.02.18 for epcf
+nf_service_info *nf_discover_search_udr_gpsi(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID)
+{
+	nf_discover_local_res result_cache = {0,};
+	char msisdn[128] = {0,};
+	int	 foundFlag = 0;
+
+	/* handle error check only library applicable */
+	if ((search_info->gpsi == NULL) || (sscanf(search_info->gpsi, "msisdn-%127s", msisdn) != 1)) {
+		APPLOG(APPLOG_ERR, "(%s) recv unknown gpsi(%s)", 
+				__func__, search_info->gpsi == NULL ? "null" : search_info->gpsi);
+		return NULL;
+	}
+
+	const char *default_svc_name = "nudr-dr";
+	if (search_info->serviceName == NULL)
+		search_info->serviceName = default_svc_name;
+
+	for (int i = 0; i < MAX_NF_CACHE_NUM; i++) {
+		nf_discover_raw *disc_raw = &DISC_TABLE->disc_cache[i];
+
+		if (nf_discover_check_cache_raw(disc_raw, search_info) < 0) /* default info matched */
+			continue;
+
+		nf_udr_info *udrInfo = &disc_raw->nfTypeInfo.udrInfo;
+
+		if (udrInfo->gpsiRangesNum <= 0) 
+			continue;
+
+		for (int k = 0; k < udrInfo->gpsiRangesNum && k < NF_MAX_GPSI_RANGES; k++) {
+			nf_comm_identity_range *gpsiRange = &udrInfo->gpsiRanges[k];
+			if (strncmp(msisdn, gpsiRange->start, strlen(gpsiRange->start)) >= 0 && 
+					strncmp(msisdn, gpsiRange->end, strlen(gpsiRange->end)) <= 0) {
+				nf_discover_order_local_res(disc_raw, &result_cache, search_info->selectionType);
+				foundFlag = 1;
+				break;
+			}
+		}
+		if (foundFlag == 1)
+			break;
+	}
+
+	/* check result */
+	nf_discover_res_log(&result_cache, search_info->selectionType);
+
+	/* find host name from SHM & return */
+	return nf_discover_result(&result_cache, search_info, DISC_TABLE, NFS_TABLE, NRFC_QID);
+}
+
+// 2020.02.18 for epcf
+nf_service_info *nf_discover_search_chf_supi(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID)
+{
+	nf_discover_local_res result_cache = {0,};
+	char imsi[128] = {0,};
+	int	 foundFlag = 0;
+
+	/* handle error check only library applicable */
+	if ((search_info->supi == NULL) || (sscanf(search_info->supi, "imsi-%127s", imsi) != 1)) {
+		APPLOG(APPLOG_ERR, "(%s) recv unknown supi(%s)", 
+				__func__, search_info->supi == NULL ? "null" : search_info->supi);
+		return NULL;
+	}
+
+	const char *default_svc_name = "nchf-spendinglimitcontrol";
+	if (search_info->serviceName == NULL)
+		search_info->serviceName = default_svc_name;
+
+	for (int i = 0; i < MAX_NF_CACHE_NUM; i++) {
+		nf_discover_raw *disc_raw = &DISC_TABLE->disc_cache[i];
+
+		if (nf_discover_check_cache_raw(disc_raw, search_info) < 0) /* default info matched */
+			continue;
+
+		nf_chf_info *chfInfo = &disc_raw->nfTypeInfo.chfInfo;
+
+		if (chfInfo->supiRangesNum <= 0) 
+			continue;
+
+		for (int k = 0; k < chfInfo->supiRangesNum && k < NF_MAX_SUPI_RANGES; k++) {
+			nf_comm_supi_range *supiRange = &chfInfo->supiRanges[k];
+			if (strncmp(imsi, supiRange->start, strlen(supiRange->start)) >= 0 && 
+					strncmp(imsi, supiRange->end, strlen(supiRange->end)) <= 0) {
+				nf_discover_order_local_res(disc_raw, &result_cache, search_info->selectionType);
+				foundFlag = 1;
+				break;
+			}
+		}
+		if (foundFlag == 1)
+			break;
+	}
+
+	/* check result */
+	nf_discover_res_log(&result_cache, search_info->selectionType);
+
+	/* find host name from SHM & return */
+	return nf_discover_result(&result_cache, search_info, DISC_TABLE, NFS_TABLE, NRFC_QID);
+}
+
+// 2020.02.18 for epcf
+nf_service_info *nf_discover_search_chf_gpsi(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID)
+{
+	nf_discover_local_res result_cache = {0,};
+	char msisdn[128] = {0,};
+	int	 foundFlag = 0;
+
+	/* handle error check only library applicable */
+	if ((search_info->gpsi == NULL) || (sscanf(search_info->gpsi, "msisdn-%127s", msisdn) != 1)) {
+		APPLOG(APPLOG_ERR, "(%s) recv unknown gpsi(%s)", 
+				__func__, search_info->gpsi == NULL ? "null" : search_info->gpsi);
+		return NULL;
+	}
+
+	const char *default_svc_name = "nchf-spendinglimitcontrol";
+	if (search_info->serviceName == NULL)
+		search_info->serviceName = default_svc_name;
+
+	for (int i = 0; i < MAX_NF_CACHE_NUM; i++) {
+		nf_discover_raw *disc_raw = &DISC_TABLE->disc_cache[i];
+
+		if (nf_discover_check_cache_raw(disc_raw, search_info) < 0) /* default info matched */
+			continue;
+
+		nf_chf_info *chfInfo = &disc_raw->nfTypeInfo.chfInfo;
+
+		if (chfInfo->gpsiRangesNum <= 0) 
+			continue;
+
+		for (int k = 0; k < chfInfo->gpsiRangesNum && k < NF_MAX_GPSI_RANGES; k++) {
+			nf_comm_identity_range *gpsiRange = &chfInfo->gpsiRanges[k];
+			if (strncmp(msisdn, gpsiRange->start, strlen(gpsiRange->start)) >= 0 && 
+					strncmp(msisdn, gpsiRange->end, strlen(gpsiRange->end)) <= 0) {
+				nf_discover_order_local_res(disc_raw, &result_cache, search_info->selectionType);
+				foundFlag = 1;
+				break;
+			}
+		}
+		if (foundFlag == 1)
+			break;
+	}
+
+	/* check result */
+	nf_discover_res_log(&result_cache, search_info->selectionType);
+
+	/* find host name from SHM & return */
+	return nf_discover_result(&result_cache, search_info, DISC_TABLE, NFS_TABLE, NRFC_QID);
+}
+
+// 2020.02.18 for epcf
+nf_service_info *nf_discover_search_bsf_ipv4(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID)
+{
+	nf_discover_local_res result_cache = {0,};
+	char ipv4[128] = {0,};
+	int	 foundFlag = 0;
+
+	/* handle error check only library applicable */
+#if 0
+	if ((search_info->ipv4 == NULL) || (sscanf(search_info->ipv4, "ipv4-%127s", ipv4) != 1)) {
+		APPLOG(APPLOG_ERR, "(%s) recv unknown ipv4(%s)", 
+				__func__, search_info->ipv4 == NULL ? "null" : search_info->ipv4);
+		return NULL;
+	}
+#else // 2020.06.03
+	if (search_info->ipv4 == NULL) {
+		APPLOG(APPLOG_ERR, "(%s) recv unknown ipv4(null)", __func__);
+		return NULL;
+	}
+	if (sscanf(search_info->ipv4, "ipv4-%127s", ipv4) != 1) {
+		strcpy(ipv4, search_info->ipv4);
+	}
+#endif
+
+	const char *default_svc_name = "nbsf-management";
+	if (search_info->serviceName == NULL)
+		search_info->serviceName = default_svc_name;
+
+	for (int i = 0; i < MAX_NF_CACHE_NUM; i++) {
+		nf_discover_raw *disc_raw = &DISC_TABLE->disc_cache[i];
+
+		if (nf_discover_check_cache_raw(disc_raw, search_info) < 0) /* default info matched */
+			continue;
+
+		nf_bsf_info *bsfInfo = &disc_raw->nfTypeInfo.bsfInfo;
+
+		if (bsfInfo->ipv4AddressRangesNum <= 0) 
+			continue;
+
+		for (int k = 0; k < bsfInfo->ipv4AddressRangesNum && k < NF_MAX_IPV4_ADDR_RANGES; k++) {
+			nf_comm_ipv4_addr_range *ipv4AddrRange = &bsfInfo->ipv4AddrRanges[k];
+			if (strncmp(ipv4, ipv4AddrRange->start, strlen(ipv4AddrRange->start)) >= 0 && 
+					strncmp(ipv4, ipv4AddrRange->end, strlen(ipv4AddrRange->end)) <= 0) {
+				nf_discover_order_local_res(disc_raw, &result_cache, search_info->selectionType);
+				foundFlag = 1;
+				break;
+			}
+		}
+		if (foundFlag == 1)
+			break;
+	}
+
+	/* check result */
+	nf_discover_res_log(&result_cache, search_info->selectionType);
+
+	/* find host name from SHM & return */
+	return nf_discover_result(&result_cache, search_info, DISC_TABLE, NFS_TABLE, NRFC_QID);
+}
+
+// 2020.02.18 for epcf
+nf_service_info *nf_discover_search_bsf_ipv6(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID)
+{
+	nf_discover_local_res result_cache = {0,};
+	char ipv6[128] = {0,};
+	int	 foundFlag = 0;
+
+	/* handle error check only library applicable */
+	if ((search_info->ipv6 == NULL) || (sscanf(search_info->ipv6, "ipv6-%127s", ipv6) != 1)) {
+		APPLOG(APPLOG_ERR, "(%s) recv unknown ipv6(%s)", 
+				__func__, search_info->ipv6 == NULL ? "null" : search_info->ipv6);
+		return NULL;
+	}
+
+	const char *default_svc_name = "nbsf-management";
+	if (search_info->serviceName == NULL)
+		search_info->serviceName = default_svc_name;
+
+	for (int i = 0; i < MAX_NF_CACHE_NUM; i++) {
+		nf_discover_raw *disc_raw = &DISC_TABLE->disc_cache[i];
+
+		if (nf_discover_check_cache_raw(disc_raw, search_info) < 0) /* default info matched */
+			continue;
+
+		nf_bsf_info *bsfInfo = &disc_raw->nfTypeInfo.bsfInfo;
+
+		if (bsfInfo->ipv6PrefixRangesNum <= 0) 
+			continue;
+
+		for (int k = 0; k < bsfInfo->ipv6PrefixRangesNum && k < NF_MAX_IPV6_PREFIX_RANGES; k++) {
+			nf_comm_ipv6_prefix_range *ipv6PrefixRange = &bsfInfo->ipv6PrefixRanges[k];
+			if (strncmp(ipv6, ipv6PrefixRange->start, strlen(ipv6PrefixRange->start)) >= 0 && 
+					strncmp(ipv6, ipv6PrefixRange->end, strlen(ipv6PrefixRange->end)) <= 0) {
+				nf_discover_order_local_res(disc_raw, &result_cache, search_info->selectionType);
+				foundFlag = 1;
+				break;
+			}
+		}
+		if (foundFlag == 1)
+			break;
+	}
+
+	/* check result */
+	nf_discover_res_log(&result_cache, search_info->selectionType);
+
+	/* find host name from SHM & return */
+	return nf_discover_result(&result_cache, search_info, DISC_TABLE, NFS_TABLE, NRFC_QID);
+}
+
+// 2020.02.18 for epcf
+nf_service_info *nf_discover_search_bsf_ipdomain(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID)
+{
+	nf_discover_local_res result_cache = {0,};
+	char ipdomain[128] = {0,};
+	int	 foundFlag = 0;
+
+	/* handle error check only library applicable */
+	if ((search_info->ipdomain == NULL) || (sscanf(search_info->ipdomain, "ipdomain-%127s", ipdomain) != 1)) {
+		APPLOG(APPLOG_ERR, "(%s) recv unknown ipdomain(%s)", 
+				__func__, search_info->ipdomain == NULL ? "null" : search_info->ipdomain);
+		return NULL;
+	}
+
+	const char *default_svc_name = "nbsf-management";
+	if (search_info->serviceName == NULL)
+		search_info->serviceName = default_svc_name;
+
+	for (int i = 0; i < MAX_NF_CACHE_NUM; i++) {
+		nf_discover_raw *disc_raw = &DISC_TABLE->disc_cache[i];
+
+		if (nf_discover_check_cache_raw(disc_raw, search_info) < 0) /* default info matched */
+			continue;
+
+		nf_bsf_info *bsfInfo = &disc_raw->nfTypeInfo.bsfInfo;
+
+		if (bsfInfo->ipDomainListNum <= 0) 
+			continue;
+
+		for (int k = 0; k < bsfInfo->ipDomainListNum && k < NF_MAX_IP_DOMAIN_LIST_NUM; k++) {
+			if (strcmp(ipdomain, bsfInfo->ipDomainList[k]) == 0) {
+				nf_discover_order_local_res(disc_raw, &result_cache, search_info->selectionType);
+				foundFlag = 1;
+				break;
+			}
+		}
+		if (foundFlag == 1)
+			break;
+	}
+
+	/* check result */
+	nf_discover_res_log(&result_cache, search_info->selectionType);
+
+	/* find host name from SHM & return */
+	return nf_discover_result(&result_cache, search_info, DISC_TABLE, NFS_TABLE, NRFC_QID);
+}
+
+// 2020.02.18 for epcf
+nf_service_info *nf_discover_search_bsf_dnn(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID)
+{
+	nf_discover_local_res result_cache = {0,};
+	char dnn[128] = {0,};
+	int	 foundFlag = 0;
+
+	/* handle error check only library applicable */
+	if ((search_info->dnn == NULL) || (sscanf(search_info->dnn, "dnn-%127s", dnn) != 1)) {
+		APPLOG(APPLOG_ERR, "(%s) recv unknown dnn(%s)", 
+				__func__, search_info->dnn == NULL ? "null" : search_info->dnn);
+		return NULL;
+	}
+
+	const char *default_svc_name = "nbsf-management";
+	if (search_info->serviceName == NULL)
+		search_info->serviceName = default_svc_name;
+
+	for (int i = 0; i < MAX_NF_CACHE_NUM; i++) {
+		nf_discover_raw *disc_raw = &DISC_TABLE->disc_cache[i];
+
+		if (nf_discover_check_cache_raw(disc_raw, search_info) < 0) /* default info matched */
+			continue;
+
+		nf_bsf_info *bsfInfo = &disc_raw->nfTypeInfo.bsfInfo;
+
+		if (bsfInfo->dnnListNum <= 0) 
+			continue;
+
+		for (int k = 0; k < bsfInfo->dnnListNum && k < NF_MAX_DNN_LIST_NUM; k++) {
+			if (strcmp(dnn, bsfInfo->dnnList[k]) == 0) {
+				nf_discover_order_local_res(disc_raw, &result_cache, search_info->selectionType);
+				foundFlag = 1;
+				break;
+			}
+		}
+		if (foundFlag == 1)
+			break;
 	}
 
 	/* check result */
@@ -218,8 +673,10 @@ nf_service_info *nf_discover_result(nf_discover_local_res *result_cache, nf_disc
 		/* key */
 		nf_discover_raw *discover_info = &DISC_TABLE->disc_cache[res_info->disc_raw_index];
 
-		if (search_info->lbNum <= 0)
-			APPLOG(APPLOG_ERR, "{{{DBG}}} (%s) something wrong, input lbnum=(0)", __func__);
+		if (search_info->lbNum <= 0) {
+			APPLOG(APPLOG_ERR, "{{{DBG}}} (%s) something wrong, input lbnum=(%d)", __func__, search_info->lbNum);
+			continue;
+		}
 
 		for (int k = 0; k < search_info->lbNum && k < NF_MAX_LB_NUM; k++) {
 			int lbIndex = (search_info->start_lbId + k) % search_info->lbNum;
@@ -779,9 +1236,9 @@ int nf_search_specific_info(json_object *nf_profile, json_object **js_specific_i
         *js_specific_info = search_json_object(nf_profile, key_specific_info);
         return NF_TYPE_BSF;
     } else if (!strcmp(nfType, "CHF")) {
-        char key_specific_info[128] = "csfInfo";
+        char key_specific_info[128] = "chfInfo";
         *js_specific_info = search_json_object(nf_profile, key_specific_info);
-        return NF_TYPE_BSF;
+        return NF_TYPE_CHF;
     } else {
         *js_specific_info = NULL;
         return NF_TYPE_UNKNOWN;
@@ -1040,20 +1497,28 @@ void nf_get_specific_info_bsf(json_object *js_specific_info, nf_type_info *nf_sp
         }
     }
     
-#if 0 // please check syntax for dnnList and ipDomainList
     /* dnnList */
     char key_dnn_list[128] = "dnnList";
     json_object *js_dnn_list = search_json_object(js_specific_info, key_dnn_list);
     if (js_dnn_list) {
         bsfInfo->dnnListNum = (json_object_array_length(js_dnn_list) > NF_MAX_DNN_LIST_NUM) ?
             NF_MAX_DNN_LIST_NUM : json_object_array_length(js_dnn_list);
+
         for (int i = 0; i < bsfInfo->dnnListNum; i++) {
+#if 0
             json_object *js_dnn_list_elem = json_object_array_get_idx(js_dnn_list, i);
             char key_dnn[128] = "dnn";
             json_object *js_dnn = search_json_object(js_dnn_list_elem, key_dnn);
             if (js_dnn) {
                 sprintf(bsfInfo->dnnList[i], "%s", json_object_get_string(js_dnn));
 			}
+#else // 2020.06.04
+			//const char *js_dnn = json_object_get_string(json_object_array_get_idx(js_dnn_list, i));
+            json_object *js_dnn = json_object_array_get_idx(js_dnn_list, i);
+            if (js_dnn) {
+                sprintf(bsfInfo->dnnList[i], "%s", json_object_get_string(js_dnn));
+			}
+#endif
         }
     }
     
@@ -1064,15 +1529,21 @@ void nf_get_specific_info_bsf(json_object *js_specific_info, nf_type_info *nf_sp
         bsfInfo->ipDomainListNum = (json_object_array_length(js_ip_domain_list) > NF_MAX_IP_DOMAIN_LIST_NUM) ?
             NF_MAX_IP_DOMAIN_LIST_NUM : json_object_array_length(js_ip_domain_list);
         for (int i = 0; i < bsfInfo->ipDomainListNum; i++) {
+#if 0
             json_object *js_ip_domain_list_elem = json_object_array_get_idx(js_ip_domain_list, i);
             char key_ipDomain[128] = "ipDomain";
             json_object *js_ipDomain = search_json_object(js_ip_domain_list_elem, key_ipDomain);
             if (js_ipDomain) {
                 sprintf(bsfInfo->ipDomainList[i], "%s", json_object_get_string(js_ipDomain));
 			}
+#else // 2020.06.04
+            json_object *js_ipDomain = json_object_array_get_idx(js_ip_domain_list, i);
+            if (js_ipDomain) {
+                sprintf(bsfInfo->ipDomainList[i], "%s", json_object_get_string(js_ipDomain));
+			}
+#endif
         }
     }
-#endif
 }
 
 // 2020.01.21 for ePCF
