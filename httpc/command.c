@@ -44,6 +44,17 @@ MmcHdlrVector   mmcHdlrVecTbl[MAX_CMD_NUM] =
 	{ "PCF-DEL-NF-SERVER",     func_del_http_server},
 	{ "PCF-DIS-HTTPC-CONFIG",  func_dis_httpc_config},
 	{ "PCF-CHG-HTTPC-CONFIG",  func_chg_httpc_config}
+#elif SPR
+	{ "SPR-DIS-NF-SERVER",     func_dis_http_server},
+	{ "SPR-ADD-NF-SERVER",     func_add_http_server},
+	{ "SPR-ADD-NF-SVR-IP",     func_add_http_svr_ip},
+	{ "SPR-ACT-NF-SERVER",     func_act_http_server},
+	{ "SPR-DACT-NF-SERVER",    func_dact_http_server},
+	{ "SPR-CHG-NF-SERVER",     func_chg_http_server},
+	{ "SPR-DEL-NF-SVR-IP",     func_del_http_svr_ip},
+	{ "SPR-DEL-NF-SERVER",     func_del_http_server},
+	{ "SPR-DIS-HTTPC-CONFIG",  func_dis_httpc_config},
+	{ "SPR-CHG-HTTPC-CONFIG",  func_chg_httpc_config}
 #else
 	{ "DIS-NF-SERVER",     func_dis_http_server},
 	{ "ADD-NF-SERVER",     func_add_http_server},

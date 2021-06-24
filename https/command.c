@@ -45,6 +45,19 @@ MmcHdlrVector   mmcHdlrVecTbl[MAX_CMD_NUM] =
 	{ "PCF-CHG-HTTPS-CONFIG",  func_chg_https_config},
 	{ "PCF-DIS-HTTPS-WEIGHT",  func_https_weight_conf},
 	{ "PCF-CHG-HTTPS-WEIGHT",  func_https_weight_conf}
+#elif SPR
+    { "SPR-DIS-NF-CLIENT",     func_dis_http_client},
+    { "SPR-ADD-NF-CLIENT",     func_add_http_client},
+    { "SPR-ADD-NF-CLI-IP",     func_add_http_cli_ip},
+    { "SPR-ACT-NF-CLIENT",     func_act_http_client},
+    { "SPR-DACT-NF-CLIENT",    func_dact_http_client},
+    { "SPR-CHG-NF-CLIENT",     func_chg_http_client},
+    { "SPR-DEL-NF-CLI-IP",     func_del_http_cli_ip},
+    { "SPR-DEL-NF-CLIENT",     func_del_http_client},
+	{ "SPR-DIS-HTTPS-CONFIG",  func_dis_https_config},
+	{ "SPR-CHG-HTTPS-CONFIG",  func_chg_https_config},
+	{ "SPR-DIS-HTTPS-WEIGHT",  func_https_weight_conf},
+	{ "SPR-CHG-HTTPS-WEIGHT",  func_https_weight_conf}
 #else
     { "DIS-NF-CLIENT",     func_dis_http_client},
     { "ADD-NF-CLIENT",     func_add_http_client},
