@@ -32,6 +32,20 @@ typedef enum server_cmd {
 
 MmcHdlrVector   mmcHdlrVecTbl[MAX_CMD_NUM] =
 {
+#ifdef EPCF
+    { "PCF-DIS-NF-CLIENT",     func_dis_http_client},
+    { "PCF-ADD-NF-CLIENT",     func_add_http_client},
+    { "PCF-ADD-NF-CLI-IP",     func_add_http_cli_ip},
+    { "PCF-ACT-NF-CLIENT",     func_act_http_client},
+    { "PCF-DACT-NF-CLIENT",    func_dact_http_client},
+    { "PCF-CHG-NF-CLIENT",     func_chg_http_client},
+    { "PCF-DEL-NF-CLI-IP",     func_del_http_cli_ip},
+    { "PCF-DEL-NF-CLIENT",     func_del_http_client},
+	{ "PCF-DIS-HTTPS-CONFIG",  func_dis_https_config},
+	{ "PCF-CHG-HTTPS-CONFIG",  func_chg_https_config},
+	{ "PCF-DIS-HTTPS-WEIGHT",  func_https_weight_conf},
+	{ "PCF-CHG-HTTPS-WEIGHT",  func_https_weight_conf}
+#else
     { "DIS-NF-CLIENT",     func_dis_http_client},
     { "ADD-NF-CLIENT",     func_add_http_client},
     { "ADD-NF-CLI-IP",     func_add_http_cli_ip},
@@ -44,6 +58,7 @@ MmcHdlrVector   mmcHdlrVecTbl[MAX_CMD_NUM] =
 	{ "CHG-HTTPS-CONFIG",  func_chg_https_config},
 	{ "DIS-HTTPS-WEIGHT",  func_https_weight_conf},
 	{ "CHG-HTTPS-WEIGHT",  func_https_weight_conf}
+#endif
 };
 
 void handle_nrfm_request(GeneralQMsgType *msg)

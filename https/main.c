@@ -1555,6 +1555,12 @@ void send_status_to_omp(evutil_socket_t fd, short what, void *arg)
 	SFM_HttpConnStatusList conn_list;
 	allow_list_t *allow_status;
 
+#ifdef EPCF
+	// KHL ADD STANDBY HTTPS report maxconn to zero to OMP 20210406
+	int sys_mode;
+	sys_mode = sys_ha_get_mode();
+#endif
+
 	memset(&conn_list, 0x00, sizeof(SFM_HttpConnStatusList));
 	for (i = 0; i < MAX_LIST_NUM; i++) {
 		if (ALLOW_LIST[i].used != 1 || ALLOW_LIST[i].item_index == -1)
@@ -1568,8 +1574,18 @@ void send_status_to_omp(evutil_socket_t fd, short what, void *arg)
         snprintf(conn_list.conn[index].type, sizeof(conn_list.conn[index].type), "%s", allow_status->type);
         snprintf(conn_list.conn[index].ip, sizeof(conn_list.conn[index].ip), "%s", allow_status->ip);
         conn_list.conn[index].port = 0;
-        conn_list.conn[index].max = allow_status->max;
+		
+       	conn_list.conn[index].max = allow_status->max;
         conn_list.conn[index].curr = allow_status->curr;
+
+#ifdef EPCF
+		// KHL ADD STANDBY HTTPS report maxconn to zero to OMP 20210406
+		if (sys_mode != MODE_ACTIVE) {
+			if (conn_list.conn[index].curr <= 0) {
+				conn_list.conn[index].max = 0;
+			}
+		}
+#endif
 	}
 
 	http_report_status(&conn_list, MSGID_HTTP_CLIENT_STATUS_REPORT);

@@ -33,6 +33,18 @@ typedef enum client_cmd {
 
 MmcHdlrVector   mmcHdlrVecTbl[MAX_CMD_NUM] =
 {
+#ifdef EPCF
+	{ "PCF-DIS-NF-SERVER",     func_dis_http_server},
+	{ "PCF-ADD-NF-SERVER",     func_add_http_server},
+	{ "PCF-ADD-NF-SVR-IP",     func_add_http_svr_ip},
+	{ "PCF-ACT-NF-SERVER",     func_act_http_server},
+	{ "PCF-DACT-NF-SERVER",    func_dact_http_server},
+	{ "PCF-CHG-NF-SERVER",     func_chg_http_server},
+	{ "PCF-DEL-NF-SVR-IP",     func_del_http_svr_ip},
+	{ "PCF-DEL-NF-SERVER",     func_del_http_server},
+	{ "PCF-DIS-HTTPC-CONFIG",  func_dis_httpc_config},
+	{ "PCF-CHG-HTTPC-CONFIG",  func_chg_httpc_config}
+#else
 	{ "DIS-NF-SERVER",     func_dis_http_server},
 	{ "ADD-NF-SERVER",     func_add_http_server},
 	{ "ADD-NF-SVR-IP",     func_add_http_svr_ip},
@@ -43,6 +55,7 @@ MmcHdlrVector   mmcHdlrVecTbl[MAX_CMD_NUM] =
 	{ "DEL-NF-SERVER",     func_del_http_server},
 	{ "DIS-HTTPC-CONFIG",  func_dis_httpc_config},
 	{ "CHG-HTTPC-CONFIG",  func_chg_httpc_config}
+#endif
 };
 
 void handle_nrfm_request(GeneralQMsgType *msg)
@@ -386,7 +399,7 @@ void nrfm_mmc_tombstone_proc(nrfm_mml_t *nrfm_cmd)
 			}
 			/* for fast delete */
 			memset(&CONN_LIST[k], 0x00, sizeof(conn_list_t));
-			break;
+			//break; // bugfix
 		}
 	}
 	del_item(list_index, nrfm_cmd->nf_conns[0].ip, nrfm_cmd->nf_conns[0].port);

@@ -5,7 +5,7 @@ SUBDIRS := openssl libevent nghttp2 \
 		   libhttp libs lbengine \
 		   libnrf nrfm nrfc \
 		   httpreq httpc https authsvr \
-		   perfsim restsvr restcli dev_check
+		   restsvr restcli dev_check
 
 subdirs: $(SUBDIRS)
 

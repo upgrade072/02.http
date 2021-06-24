@@ -1,5 +1,5 @@
 ### TARGET : eir, vgmlc, epcc, lmf, eudr
-TARGET      = eudr
+TARGET      = epcf
 
 CFLAGS      = -std=gnu99 -g -m64 -Wall -DHOLDSESS  -Wno-unused-label -Wno-missing-braces
 INC_PATH    = -I. -I../../../include -I../../../libsrc/COMM -I../build/include
@@ -11,6 +11,8 @@ else ifeq ($(TARGET),epcc)
 CFLAGS      += -DLOG_LIB -DSTAT_SFM #-DOVLD_LEGACY -DOVLD_2TEAM
 else ifeq ($(TARGET),eudr)
 CFLAGS      += -DLOG_LIB -DSTAT_SFM -DTRC_LIB
+else ifeq ($(TARGET),epcf)
+CFLAGS      += -DLOG_LIB -DSTAT_SFM -DTRC_LIB -DEPCF
 else
 CFLAGS      += -DLOG_APP -DSTAT_SFM
 endif
@@ -18,6 +20,8 @@ endif
 ifeq ($(TARGET),epcc)
 LIBS        = -lShmQueue -lcomm -lpthread -ldl -lrt -lm
 else ifeq ($(TARGET),eudr)
+LIBS        = -lShmQueue -lcomm -lpthread -ldl -lrt -lm
+else ifeq ($(TARGET),epcf)
 LIBS        = -lShmQueue -lcomm -lpthread -ldl -lrt -lm
 else
 LIBS        = -lShmQueue -lcomm -lLog -lpthread -ldl -lrt

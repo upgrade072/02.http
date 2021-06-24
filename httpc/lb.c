@@ -219,10 +219,18 @@ void stp_err_to_fep(tcp_ctx_t *fep_tcp_ctx, httpc_ctx_t *recv_ctx)
 	}
 
 	recv_ctx->user_ctx.head.mtype = MTYPE_HTTP2_RESPONSE_HTTPC_TO_AHIF;
+#ifdef EPCF
+	recv_ctx->user_ctx.head.respCode = HTTP_RESP_CODE_INTERNAL_SERVER_ERR;
+#else
 	recv_ctx->user_ctx.head.respCode = HTTP_RESP_CODE_NOT_FOUND;
-	
+#endif
+
 	/* for error debuging */
+#ifdef EPCF
+	log_pkt_httpc_error_reply(recv_ctx, -HTTP_RESP_CODE_INTERNAL_SERVER_ERR);
+#else
 	log_pkt_httpc_error_reply(recv_ctx, -HTTP_RESP_CODE_NOT_FOUND);
+#endif
 
 	/* response only header */
 	recv_ctx->user_ctx.head.vheaderCnt = 0;
