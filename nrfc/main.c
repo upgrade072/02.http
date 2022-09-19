@@ -390,12 +390,11 @@ int set_bep_conn_num(SHM_IsifConnSts *shmConnSts)
 void collect_service_status(service_info_t *fep_svc)
 {
 	fep_svc->curr_tps = ovldInfo->sts.last_svc_tps[fep_svc->olcd_table_index];
-	fep_svc->curr_load = (int)((double)fep_svc->curr_tps / (double)fep_svc->ovld_tps * 100);
 #if 0
-	fep_svc->proc_last_count = fep_svc->proc_curr_count;
-	fep_svc->proc_curr_count = keepalive->cnt[fep_svc->proc_table_index];
-	fep_svc->proc_alive = (fep_svc->proc_last_count == fep_svc->proc_curr_count) ? -1 : 1;
+	fep_svc->curr_load = (int)((double)fep_svc->curr_tps / (double)fep_svc->ovld_tps * 100);
 #else
+	fep_svc->curr_load = (int)round((double)fep_svc->curr_tps / (double)fep_svc->ovld_tps * 100);
+#endif
     int proc_status = 0;
     for (int i = 0; i < fep_svc->proc_num; i++) {
         fep_svc->proc_last_count[i] = fep_svc->proc_curr_count[i];
@@ -409,7 +408,6 @@ void collect_service_status(service_info_t *fep_svc)
     } else {
         fep_svc->proc_alive = 1;
     }
-#endif
 	fep_svc->bep_conn = set_bep_conn_num(shmConnSts);
 	APPLOG(APPLOG_ERR, "{{{DBG}}} svc[%s] tps[curr:%d/max:%d] load[%d] alive[%s] bep[%d(conn:%d)]",
 			fep_svc->service_name,

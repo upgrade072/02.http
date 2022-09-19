@@ -16,5 +16,5 @@ endif
 ifeq ($(TARGET),epcc)
 LIBS        = -lShmQueue -lcomm -lpthread -ldl -lrt -lm
 else
-LIBS        = -lShmQueue -lcomm -lLog -lpthread -ldl -lrt
+LIBS        = -lShmQueue -lcomm -lLog -lpthread -ldl -lrt -lm
 endif

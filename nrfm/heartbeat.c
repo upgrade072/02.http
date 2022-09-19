@@ -70,7 +70,11 @@ int nf_heartbeat_create_body(main_ctx_t *MAIN_CTX, AhifHttpCSMsgType *ahifPkt)
 		APPLOG(APPLOG_ERR, "{{{DBG}}} %s fep_num=(%d) capacity=(%d) collected", __func__, fep_num, capacity);
 
 		if (capacity >= 65535) capacity = 65535;
+#if 0
 		if (fep_num != 0) load = (double)load / (double)fep_num;
+#else
+		if (fep_num != 0) load = (int)round((double)load / (double)fep_num);
+#endif
 
 		char temp_buff[1024 * 12] = {0,};
 		/* service status */

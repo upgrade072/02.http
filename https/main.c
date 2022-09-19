@@ -3,6 +3,8 @@
 char mySysName[COMM_MAX_NAME_LEN];
 char myProcName[COMM_MAX_NAME_LEN];
 
+struct event_base *EV_BASE_MAIN; 
+
 //#ifdef LOG_APP
 int logLevel = APPLOG_DEBUG;
 int *lOG_FLAG = &logLevel;
@@ -264,6 +266,19 @@ static http2_session_data *create_http2_session_data(app_context *app_ctx,
 	return session_data;
 }
 
+void reduce_worker_client_num(evutil_socket_t fd, short what, void *arg)       
+{                                                                              
+    thrd_context *THRD_WORKER = (thrd_context *)arg;                           
+    THRD_WORKER->client_num --;                                                
+}                                                                              
+                                                                               
+void reduce_allow_list_curr_num(evutil_socket_t fd, short what, void *arg)     
+{                                                                              
+    allow_list_t *ALLOW_LIST = (allow_list_t *)arg;                            
+    ALLOW_LIST->curr --;                                                       
+    ALLOW_LIST->tombstone_date = time(NULL);                                   
+}
+
 /* caution!!! this func must called by worker */
 static void delete_http2_session_data(http2_session_data *session_data) {
 	http2_stream_data *stream_data;
@@ -274,12 +289,13 @@ static void delete_http2_session_data(http2_session_data *session_data) {
 	http_stat_inc(session_data->thrd_index, session_data->list_index, HTTP_DISCONN);
 
 	APPLOG(APPLOG_DETAIL, "%s() peer %s disconnected", __func__, session_data->client_addr);
+#if 0
 	THRD_WORKER[session_data->thrd_index].client_num --;
 	ALLOW_LIST[session_data->allowlist_index].curr --;
     ALLOW_LIST[session_data->allowlist_index].tombstone_date = time(NULL);
-#if 0
-    // this code might be useless 2019.12.09
-	del_from_allowlist(session_data->allowlist_index, session_data->thrd_index, session_data->session_index);
+#else
+	event_base_once(EV_BASE_MAIN, -1, EV_TIMEOUT, reduce_worker_client_num, &THRD_WORKER[session_data->thrd_index], NULL);
+	event_base_once(EV_BASE_MAIN, -1, EV_TIMEOUT, reduce_allow_list_curr_num, &ALLOW_LIST[session_data->allowlist_index], NULL);
 #endif
 
 	if (!strcmp(session_data->scheme, "https")) {
@@ -1848,46 +1864,45 @@ static void main_loop(const char *key_file, const char *cert_file) {
 	app_context comm_app_ctx_tcp = {0,};
 	app_context direct_app_ctx_tls[MAX_PORT_NUM];
 	app_context direct_app_ctx_tcp[MAX_PORT_NUM];
-	struct event_base *evbase;
 	char port_str[12] = {0,};
 	int i;
 
 	ssl_ctx = create_ssl_ctx(key_file, cert_file);
 
 	/* create event base */
-	evbase = event_base_new();
+	EV_BASE_MAIN = event_base_new();
 
 	/* initialize https (over tls) listen ports */
-	initialize_app_context(&comm_app_ctx_tls, ssl_ctx, evbase, 0, 0);
+	initialize_app_context(&comm_app_ctx_tls, ssl_ctx, EV_BASE_MAIN, 0, 0);
 	for (i = 0; i < MAX_PORT_NUM; i++) {
 		if (SERVER_CONF.https_listen_port[i]) {
 			sprintf(port_str, "%d", SERVER_CONF.https_listen_port[i]);
-			start_listen(evbase, port_str, &comm_app_ctx_tls);
+			start_listen(EV_BASE_MAIN, port_str, &comm_app_ctx_tls);
 		}
 	}
 	/* initialize http (over tcp) listen ports */
-	initialize_app_context(&comm_app_ctx_tcp, NULL, evbase, 0, 0);
+	initialize_app_context(&comm_app_ctx_tcp, NULL, EV_BASE_MAIN, 0, 0);
 	for (i = 0; i < MAX_PORT_NUM; i++) {
 		if (SERVER_CONF.http_listen_port[i]) {
 			sprintf(port_str, "%d", SERVER_CONF.http_listen_port[i]);
-			start_listen(evbase, port_str, &comm_app_ctx_tcp);
+			start_listen(EV_BASE_MAIN, port_str, &comm_app_ctx_tcp);
 		}
 	}
 
 	/* if enabled, initial direct relay listen ports, it only https (over tls) support now */
 	if (SERVER_CONF.dr_enabled) {
 		for (i = 0; i < MAX_PORT_NUM; i++) {
-			initialize_app_context(&direct_app_ctx_tls[i], ssl_ctx, evbase, 1, i);
+			initialize_app_context(&direct_app_ctx_tls[i], ssl_ctx, EV_BASE_MAIN, 1, i);
 			if (SERVER_CONF.callback_port_tls[i]) {
 				sprintf(port_str, "%d", SERVER_CONF.callback_port_tls[i]);
-				start_listen(evbase, port_str, &direct_app_ctx_tls[i]);
+				start_listen(EV_BASE_MAIN, port_str, &direct_app_ctx_tls[i]);
 			}
 		}
 		for (i = 0; i < MAX_PORT_NUM; i++) {
-			initialize_app_context(&direct_app_ctx_tcp[i], NULL, evbase, 1, i);
+			initialize_app_context(&direct_app_ctx_tcp[i], NULL, EV_BASE_MAIN, 1, i);
 			if (SERVER_CONF.callback_port_tcp[i]) {
 				sprintf(port_str, "%d", SERVER_CONF.callback_port_tcp[i]);
-				start_listen(evbase, port_str, &direct_app_ctx_tcp[i]);
+				start_listen(EV_BASE_MAIN, port_str, &direct_app_ctx_tcp[i]);
 			}
 		}
 	}
@@ -1895,57 +1910,57 @@ static void main_loop(const char *key_file, const char *cert_file) {
 	/* tick function */
 	struct timeval tic_sec = {1, 0};
 	struct event *ev_tick;
-	ev_tick = event_new(evbase, -1, EV_PERSIST, main_tick_callback, NULL);
+	ev_tick = event_new(EV_BASE_MAIN, -1, EV_PERSIST, main_tick_callback, NULL);
 	event_add(ev_tick, &tic_sec);
 
     /* publish allow list to shm */
 	struct event *ev_https_shm;
-    ev_https_shm = event_new(evbase, -1, EV_PERSIST, https_shm_callback, NULL);
+    ev_https_shm = event_new(EV_BASE_MAIN, -1, EV_PERSIST, https_shm_callback, NULL);
 	event_add(ev_https_shm, &tic_sec);
 
 	/* check context timeout */
     struct timeval tm_interval = {0, TM_INTERVAL * 5};
     struct event *ev_timeout;
-    ev_timeout = event_new(evbase, -1, EV_PERSIST, chk_tmout_callback, NULL);
+    ev_timeout = event_new(EV_BASE_MAIN, -1, EV_PERSIST, chk_tmout_callback, NULL);
     event_add(ev_timeout, &tm_interval);
 
 	/* send ping & delete goaway session */
 	struct timeval tm_ping = {1, 0};
 	struct event *ev_ping;
-	ev_ping = event_new(evbase, -1, EV_PERSIST, send_ping_callback, NULL);
+	ev_ping = event_new(EV_BASE_MAIN, -1, EV_PERSIST, send_ping_callback, NULL);
 	event_add(ev_ping, &tm_ping);
 
     /* send conn status to OMP FIMD */
     struct timeval tm_status = {5, 0};
     struct event *ev_status;
-    ev_status = event_new(evbase, -1, EV_PERSIST, send_status_to_omp, NULL);
+    ev_status = event_new(EV_BASE_MAIN, -1, EV_PERSIST, send_status_to_omp, NULL);
     event_add(ev_status, &tm_status);
 
 	/* system message handle */
     //struct timeval tm_milisec = {0, 100000}; // 100 ms
     struct timeval tm_milisec = {0, 1000}; // 1 ms
     struct event *ev_msg_handle;
-    ev_msg_handle = event_new(evbase, -1, EV_PERSIST, message_handle, NULL);
+    ev_msg_handle = event_new(EV_BASE_MAIN, -1, EV_PERSIST, message_handle, NULL);
     event_add(ev_msg_handle, &tm_milisec);
 
     /* LB stat print */
     struct timeval lbctx_print_interval = {1, 0};
     struct event *ev_lbctx_print;
-    ev_lbctx_print = event_new(evbase, -1, EV_PERSIST, fep_stat_print, NULL);
+    ev_lbctx_print = event_new(EV_BASE_MAIN, -1, EV_PERSIST, fep_stat_print, NULL);
     event_add(ev_lbctx_print, &lbctx_print_interval);
 
 	/* check cert expire */
 	struct timeval check_cert_interval = { 60 * 60 * 12, 0}; // every 12 hour
 	struct event *ev_cert_check;
-	ev_cert_check = event_new(evbase, -1, EV_PERSIST, check_cert_cb, NULL); 
+	ev_cert_check = event_new(EV_BASE_MAIN, -1, EV_PERSIST, check_cert_cb, NULL); 
 	event_add(ev_cert_check, &check_cert_interval);
 
 	/* start loop */
-	event_base_loop(evbase, EVLOOP_NO_EXIT_ON_EMPTY);
+	event_base_loop(EV_BASE_MAIN, EVLOOP_NO_EXIT_ON_EMPTY);
 
 
 	/* never reach here */
-	event_base_free(evbase);
+	event_base_free(EV_BASE_MAIN);
 	SSL_CTX_free(ssl_ctx);
 }
 

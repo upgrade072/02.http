@@ -12,6 +12,7 @@
 #include <arpa/inet.h>
 
 #include <libs.h>
+#include <math.h>
 
 #ifdef LOG_LIB
 #include <loglib.h>
