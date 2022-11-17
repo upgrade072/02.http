@@ -10,8 +10,8 @@ if [ ! -d ${HOME}/ac_install ]; then
 	if [ ! -f ./automake-1.15.tar.gz ]; then
 		curl -O http://ftp.gnu.org/gnu/automake/automake-1.15.tar.gz
 	fi
-	if [ ! -f ./libtool-2.2.6b.tar.gz ]; then
-		curl -O http://ftp.gnu.org/gnu/libtool/libtool-2.2.6b.tar.gz
+	if [ ! -f ./libtool-2.4.2tar.gz ]; then
+		curl -O http://ftp.gnu.org/gnu/libtool/libtool-2.4.2.tar.gz
 	fi
 	if [ ! -f ./pkg-config-0.29.2.tar.gz ]; then
 		wget https://pkg-config.freedesktop.org/releases/pkg-config-0.29.2.tar.gz
@@ -19,7 +19,7 @@ if [ ! -d ${HOME}/ac_install ]; then
 
 	tar xzf autoconf-2.69.tar.gz
 	tar xzf automake-1.15.tar.gz
-	tar xzf libtool-2.2.6b.tar.gz
+	tar xzf libtool-2.4.2.tar.gz
 	tar xvf pkg-config-0.29.2.tar.gz
 
 	(cd autoconf-2.69 && \
@@ -36,7 +36,7 @@ if [ ! -d ${HOME}/ac_install ]; then
 
 	alias automake=${HOME}/ac_install/bin/automake
 
-	(cd libtool-2.2.6b && \
+	(cd libtool-2.4.2 && \
 	  ./configure --prefix ${HOME}/ac_install && \
 	  make && \
 	  make install)

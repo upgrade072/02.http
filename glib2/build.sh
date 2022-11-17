@@ -8,7 +8,7 @@ fi
 
 VERSION="2.57.3"
 if [ ! -f glib-${VERSION}.tar.xz ]; then
-	wget https://download.gnome.org/sources/glib/2.57/glib-${VERSION}.tar.xz
+	wget https://download.gnome.org/sources/glib/2.57/glib-${VERSION}.tar.xz --no-check-certificate
 fi
 
 rm -rf glib-${VERSION}

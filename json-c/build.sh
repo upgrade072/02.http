@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -x
 
 export ROOTDIR="${PWD}"
 if [  -f ${ROOTDIR}/../build/lib/libjson-c.a ]; then
@@ -6,15 +6,15 @@ if [  -f ${ROOTDIR}/../build/lib/libjson-c.a ]; then
     exit
 fi
 
-VERSION="master"
+VERSION="0.13.1-20180305" 
 if [ ! -f ${VERSION}.zip ]; then
-	wget https://github.com/json-c/json-c/archive/${VERSION}.zip
+	wget https://github.com/json-c/json-c/archive/json-c-${VERSION}.tar.gz
 fi
 
 rm -rf json-c-${VERSION}
-unzip ${VERSION}.zip
+tar xvf json-c-${VERSION}.tar.gz
 
-cd json-c-${VERSION}
+cd json-c-json-c-${VERSION}
 
 export PATH=${HOME}/ac_install/bin:$PATH
 export PKG_CONFIG_PATH=${ROOTDIR}/../build/lib/pkgconfig:$PKG_CONFIG_PATH

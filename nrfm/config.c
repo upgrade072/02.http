@@ -263,7 +263,9 @@ int init_cfg(config_t *CFG)
 	}
 
 	// sysconfig
-	save_sysconfig(CFG, &MAIN_CTX);
+	if (save_sysconfig(CFG, &MAIN_CTX) < 0) {
+        return (-1);
+    }
 
 	// save with indent
 	config_set_tab_width(CFG, 4);
@@ -550,6 +552,10 @@ int save_sysconfig(config_t *CFG, main_ctx_t *MAIN_CTX)
     }
     if (config_lookup_int(CFG, CF_NFS_SHM_CREATE, &MAIN_CTX->sysconfig.nfs_shm_create) == CONFIG_FALSE) {
         APPLOG(APPLOG_ERR, "DBG| (%s) .cfg [%s] not exist!", __func__, CF_NFS_SHM_CREATE);
+        return -1;
+    }
+    if (config_lookup_string(CFG, CF_CONNECT_TYPE, &MAIN_CTX->sysconfig.connect_type) == CONFIG_FALSE) {
+        APPLOG(APPLOG_ERR, "DBG| (%s) .cfg [%s] not exist!", __func__, CF_CONNECT_TYPE);
         return -1;
     }
     if (config_lookup_int(CFG, CF_OAUTH_ENABLE, &MAIN_CTX->sysconfig.oauth_enable) == CONFIG_FALSE) {

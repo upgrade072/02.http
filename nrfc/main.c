@@ -264,7 +264,7 @@ int initialize(main_ctx_t *MAIN_CTX)
 	init_mml(MAIN_CTX);
 
     /* load fep assoc list */
-	if ((MAIN_CTX->lb_assoc_list = get_associate_node(MAIN_CTX->lb_assoc_list, "LB")) == NULL) {
+	if ((MAIN_CTX->lb_assoc_list = get_associate_node(MAIN_CTX->lb_assoc_list, MAIN_CTX->sysconfig.connect_type)) == NULL) {
         APPLOG(APPLOG_ERR, "{{{INIT}}} fail to get associate_lb, but proc continue");
         //return -1;
     }
@@ -522,8 +522,8 @@ void directory_watch_action(const char *file_name)
 {
 	if (!strcmp(file_name, "associate_config")) {
 		APPLOG(APPLOG_ERR, "{{{DBG}}} %s() detect \"associate_config\" changed!", __func__);
-		MAIN_CTX.lb_assoc_list = get_associate_node(MAIN_CTX.lb_assoc_list, "LB");
-		APPLOG(APPLOG_ERR, "{{{DBG}}} %s() re-arrange FEP node done!", __func__);
+		MAIN_CTX.lb_assoc_list = get_associate_node(MAIN_CTX.lb_assoc_list, MAIN_CTX.sysconfig.connect_type);
+		APPLOG(APPLOG_ERR, "{{{DBG}}} %s() re-arrange [%s] node done!", __func__, MAIN_CTX.sysconfig.connect_type);
 	}
 }
 

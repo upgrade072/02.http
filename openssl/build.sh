@@ -8,7 +8,7 @@ fi
 
 VERSION="1.1.0h"
 if [ ! -f openssl-${VERSION}.tar.gz ]; then
-	wget https://www.openssl.org/source/openssl-${VERSION}.tar.gz
+	wget https://www.openssl.org/source/openssl-${VERSION}.tar.gz --no-check-certificate
 fi
 
 rm -rf openssl-${VERSION}

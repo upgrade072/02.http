@@ -1,5 +1,5 @@
 ### TARGET : eir, vgmlc, epcc, lmf
-TARGET      = vgmlc
+TARGET      = udm
 
 CFLAGS      = -std=gnu99 -g -m64 -Wall -DHOLDSESS  -Wno-unused-label -Wno-missing-braces
 INC_PATH    = -I. -I../../../include -I../../../libsrc/COMM -I../build/include
@@ -7,6 +7,8 @@ LIB_PATH    = -L../../../lib
 
 ifeq ($(TARGET),eir)
 CFLAGS      += -DLOG_APP -DSTAT_SFM -DMMLPARA_TYPESTR -DSYSCONF_LEGACY -DOVLD_LEGACY -DSTAT_LEGACY
+else ifeq ($(TARGET),udm)
+CFLAGS      += -DLOG_APP
 else ifeq ($(TARGET),epcc)
 CFLAGS      += -DLOG_LIB -DSTAT_SFM #-DOVLD_LEGACY -DOVLD_2TEAM
 else

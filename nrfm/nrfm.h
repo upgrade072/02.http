@@ -58,6 +58,7 @@
 #define CF_OVLD_NOTIFY_CODE	"nrfm_cfg.sys_config.ovld_notify_code"
 #define CF_ISIFCS_MODE      "nrfm_cfg.sys_config.isifcs_mode"
 #define CF_NFS_SHM_CREATE   "nrfm_cfg.sys_config.nfs_shm_create"
+#define CF_CONNECT_TYPE     "nrfm_cfg.sys_config.connect_type"
 #define CF_OAUTH_ENABLE     "nrfm_cfg.sys_config.oauth_enable"
 #define CF_RECOVERY_TIME	"nrfm_cfg.sys_info.recovery_time"
 #define CF_SUBSCRIBE_FORM	"nrfm_cfg.subscription_form"
@@ -170,6 +171,7 @@ typedef struct sys_conf {
 	int debug_mode;
 	int isifcs_mode;
 	int nfs_shm_create;
+    const char *connect_type;
 	int ovld_tps_enabled;
 	int ovld_notify_code;
     int oauth_enable;

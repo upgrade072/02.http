@@ -26,6 +26,8 @@ OBJS		= $(SRCS:.c=.o)
 AOUT		= httpc
 
 DEST		= ../../../bin
+DEST2       = ~/PKG_UDM/MP/T1.0.0/bin
+DEST3       = ~/PKG_AUSF/MP/T1.0.0/bin
 
 #
 #---------------------------------------------------------------------
@@ -41,6 +43,8 @@ $(AOUT): $(OBJS)
 
 install:
 	\cp $(AOUT) $(DEST)
+	\cp $(AOUT) $(DEST2)
+	\cp $(AOUT) $(DEST3)
 
 clean:
 	\rm -f $(OBJS) $(AOUT) core.* 

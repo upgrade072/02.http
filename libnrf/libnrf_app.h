@@ -72,6 +72,13 @@ typedef struct {
     /* almost for UDM */
 #define NF_DISC_ST_SUPI		0x0001
 #define NF_DISC_ST_SUCI		0x0002
+    /* ePCF for UDR, CHF */
+#define NF_DISC_ST_GPSI     0x0003
+    /* ePcF for BSF */
+#define NF_DISC_ST_IPV4     0x0004
+#define NF_DISC_ST_IPV6     0x0005
+#define NF_DISC_ST_IPDOMAIN 0x0006
+#define NF_DISC_ST_DNN      0x0007
 	int nfSearchType;
 	const char *routing_indicators;
 	const char *supi;
@@ -81,6 +88,15 @@ typedef struct {
     const char *amf_set_id;
     const char *plmnId_in_guami;
     const char *amfId_in_guami;
+
+    /* ePCF for UDR, CHF */
+    const char *gpsi;
+
+    /* ePCF for BSF */
+    const char *ipv4;
+    const char *ipv6;
+    const char *ipdomain;
+    const char *dnn;
 
 	const char *serviceName;
 
@@ -110,6 +126,17 @@ nf_service_info *nf_discover_search(nf_discover_key *search_info, nf_discover_ta
 nf_service_info *nf_discover_search_cache(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID);
 nf_service_info *nf_discover_search_udm(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID);
 nf_service_info *nf_discover_search_amf(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID);
+nf_service_info *nf_discover_search_udr(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID);
+nf_service_info *nf_discover_search_chf(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID);
+nf_service_info *nf_discover_search_bsf(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID);
+nf_service_info *nf_discover_search_udr_supi(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID);
+nf_service_info *nf_discover_search_udr_gpsi(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID);
+nf_service_info *nf_discover_search_chf_supi(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID);
+nf_service_info *nf_discover_search_chf_gpsi(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID);
+nf_service_info *nf_discover_search_bsf_ipv4(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID);
+nf_service_info *nf_discover_search_bsf_ipv6(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID);
+nf_service_info *nf_discover_search_bsf_ipdomain(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID);
+nf_service_info *nf_discover_search_bsf_dnn(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID);
 nf_service_info *nf_discover_search_udm_supi(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID);
 nf_service_info *nf_discover_search_udm_suci(nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID);
 nf_service_info *nf_discover_result(nf_discover_local_res *result_cache, nf_discover_key *search_info, nf_discover_table *DISC_TABLE, nfs_avail_shm_t *NFS_TABLE, int NRFC_QID);

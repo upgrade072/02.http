@@ -1,6 +1,6 @@
 
 SUBDIRS := openssl libevent nghttp2 \
-		   json-c jslint libconfig libcli \
+		   json-c libconfig libcli \
 		   libjansson libjwt libffi glib2 \
 		   libhttp libs lbengine \
 		   libnrf nrfm nrfc \

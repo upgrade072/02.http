@@ -42,6 +42,7 @@
 #define CF_SYS_DBG_MODE     "nrfc_cfg.sys_config.debug_mode"
 #define CF_ISIFCS_MODE      "nrfc_cfg.sys_config.isifcs_mode"
 #define CF_NFS_SHM_CREATE   "nrfc_cfg.sys_config.nfs_shm_create"
+#define CF_CONNECT_TYPE     "nrfc_cfg.sys_config.connect_type"
 #define CF_OVLDINFO         "nrfc_cfg.service_profile"
 
 typedef struct qid_info {
@@ -59,6 +60,7 @@ typedef struct sys_conf {
 	int debug_mode;
     int isifcs_mode;
     int nfs_shm_create;
+    const char *connect_type;
 } sys_conf_t;
 
 typedef struct mml_conf {

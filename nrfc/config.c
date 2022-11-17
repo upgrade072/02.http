@@ -27,7 +27,9 @@ int init_cfg(config_t *CFG)
     }   
 
 	// sysconfig
-	save_sysconfig(CFG, &MAIN_CTX);
+	if (save_sysconfig(CFG, &MAIN_CTX) < 0) {
+        return (-1);
+    }
         
     //write_cfg(&MAIN_CTX);
     
@@ -48,6 +50,10 @@ int save_sysconfig(config_t *CFG, main_ctx_t *MAIN_CTX)
 		APPLOG(APPLOG_ERR, "DBG| (%s) .cfg [%s] not exist!", __func__, CF_NFS_SHM_CREATE);
 		return -1;
 	}
+    if (config_lookup_string(CFG, CF_CONNECT_TYPE, &MAIN_CTX->sysconfig.connect_type) == CONFIG_FALSE) {
+		APPLOG(APPLOG_ERR, "DBG| (%s) .cfg [%s] not exist!", __func__, CF_CONNECT_TYPE);
+		return -1;
+    }
 
 	return 0;
 }
